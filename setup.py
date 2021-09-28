@@ -10,7 +10,7 @@ with open(path.join(this_directory, 'README.md')) as f:
 setup(
     name='topopyscale',
     version='0.0.1',
-    description='A Python package to perform climate downscaling at the slope scale',
+    description='A Python package to perform statistical climate downscaling at the hillslope scale',
     long_description=long_description,
 
     # The project's main homepage.
@@ -29,7 +29,7 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 4 - Beta',
+        'Development Status :: 3 - Alpha',
 
         # Indicate who your project is intended for
         'Intended Audience :: Science/Research',
@@ -40,12 +40,12 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
     ],
 
     # What does your project relate to?
     keywords=['climate','downscaling', 'meteorology'],
     packages=find_packages(),
-    install_requires=['matplotlib', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc'],
+    install_requires=['matplotlib', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi'],
     include_package_data=True
 )
