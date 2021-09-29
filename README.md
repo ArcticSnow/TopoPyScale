@@ -9,6 +9,18 @@ Contributor to this current version (2021)
 - Joel Fiddes
 - Kristoffer Aalstad
 
+## TODO
+
+- [ ] class `toposcale`:
+    - [x] create project folder structure if not existing
+    - [x] read config file
+    - [x] get ERA5 data
+    - [ ] write save output in the various format version
+    - [ ] fetch other dataset routines
+    - [ ] implement routine to fecth DEM automatically from SRTM or ArcticDEM
+- [ ] write DEM
+
+
 ## Design
 
 1. Inputs
@@ -37,11 +49,14 @@ Contributor to this current version (2021)
 ```bash
 conda create -n downscaling
 conda activate downscaling
-conda install ipython numpy pandas xarray matplotlib netcdf4 ipykernel
+conda install ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio
 pip install cdsapi
 pip install h5netcdf
 pip install topocalc
 pip install pvlib
+
+sudo apt-get install nco
+sudo apt-get install cdo
 
 cd github  # navigate to where you want to clone TopoPyScale
 git clone git@github.com:ArcticSnow/TopoPyScale.git
