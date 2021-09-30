@@ -15,6 +15,7 @@ import glob, os
 import configparser
 import rasterio
 import fetch_era5 as fe
+import elevation
 
 
 class toposcale(object):
@@ -32,11 +33,18 @@ class toposcale(object):
             if self.config.dem_dataset.lower() == 'srtm':
                 # use STRM DEM for extent of interest
                 print('ERROR: Fecthing SRTM DEM not yet available')
-                self.dem = None
+                self.config.dem_file = 'dem_30m_SRTM.tif'
+                elevation.clip(bounds=(self.config.lonW, 
+                                       self.config.latS, 
+                                       self.config.lonE, 
+                                       self.config.latN), 
+                               output= self.config.project_dir + '/input/dem/' + self.config.dem_file )
+                with rasterio.open(self.config.dem_file) as rast:
+                    self.dem = rast
                 
             elif self.config.dem_dataset.lower() == 'arcticdem':
                 # write code to pull ArcticDEM for extent of interest
-                print('ERROR: Fecthing ArcticDEM not yet available')
+                print('ERROR: Fecthing ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
                 self.dem = None
                 
         else:

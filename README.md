@@ -17,7 +17,7 @@ Contributor to this current version (2021)
     - [x] get ERA5 data
     - [ ] write save output in the various format version
     - [ ] fetch other dataset routines
-    - [ ] implement routine to fecth DEM automatically from SRTM or ArcticDEM
+    - [ ] implement routine to fecth DEM automatically from ArcticDEM
 - [ ] write DEM
 
 
@@ -54,6 +54,7 @@ pip install cdsapi
 pip install h5netcdf
 pip install topocalc
 pip install pvlib
+pip install elevation
 
 sudo apt-get install nco
 sudo apt-get install cdo
