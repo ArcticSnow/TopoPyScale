@@ -10,40 +10,41 @@ project/
     -> output/
 
 '''
-import xarray as xr
-import glob, os
+import os
 import configparser
 import rasterio
 import fetch_era5 as fe
-import pandas as pd
+import topo_param as tp
+import topo_sub as ts
 
 
-class toposcale(object):
+class Topoclass(object):
     
     def __init__(self, config_file):
         
-        self.config = self.config(config_file)
+        self.Config = self.Config(config_file)
+        self.Toposub = self.Toposub()
         
-        if self.config.download_dataset:
-            if self.config.dataset.lower() == 'era5':
+        if self.Config.download_dataset:
+            if self.Config.dataset.lower() == 'era5':
                 self.get_era5()
         
-        if self.config.dem_file is None:
-            #write code to fetch dem from SRTM, Arctic DEM or other public repository
-            if (self.config.dem_dataset.lower() == 'srtm') and self.config.dem_download:
+        if self.Config.dem_file is None:
+            # code to fetch dem from SRTM, Arctic DEM or other public repository
+            if (self.Config.dem_dataset.lower() == 'srtm') and self.Config.dem_download:
                 
                 import elevation
                 # use STRM DEM for extent of interest
                 print('ERROR: Fetching SRTM DEM not yet available')
-                self.config.dem_file = 'dem_30m_SRTM.tif'
-                elevation.clip(bounds=(self.config.lonW, 
-                                       self.config.latS, 
-                                       self.config.lonE, 
-                                       self.config.latN),
-                               output= self.config.project_dir + '/input/dem/' + self.config.dem_file )
-                self.dem = rasterio.open(self.config.dem_file)
+                self.Config.dem_file = 'dem_30m_SRTM.tif'
+                elevation.clip(bounds=(self.Config.lonW,
+                                       self.Config.latS,
+                                       self.Config.lonE,
+                                       self.Config.latN),
+                               output= self.Config.project_dir + '/input/dem/' + self.Config.dem_file )
+                self.dem = rasterio.open(self.Config.dem_file)
                 
-            elif (self.config.dem_dataset.lower() == 'arcticdem') and self.config.dem_download:
+            elif (self.Config.dem_dataset.lower() == 'arcticdem') and self.Config.dem_download:
                 # write code to pull ArcticDEM for extent of interest
                 print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
                 self.dem = None
@@ -51,31 +52,33 @@ class toposcale(object):
         else:
             self.dem = rasterio.open(self.config.dem_file)
 
-    def compute_DEM_parameters(self):
-        # add here code to compute slope, aspect, horizon angle, solar zenith and azimuth
-        # store all in a pandas dataframe. X,Y,Z,slope,aspect. What about for ha,sz,sa?
-        from topocalc import gradient
-        from topocalc import viewf
-        
-        self.dem_param = pd.DataFrame()
-        
-        dx, dy = self.dem.read_transform()[1], -self.dem.read_transform()[-1]
-        dem_arr = self.dem.read()
-        if dem_arr.shape.__len__() == 3:
-            dem_arr = dem_arr[0,:,:]
-        slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
-        self.dem_param['elev'] = dem_arr.flatten()
-        self.dem_param['slope'] = slope.flatten()
-        self.dem_param['aspect'] = aspect.flatten()
-        slope, aspect = None, None
-        
-        svf = viewf.viewf(dem_arr,dx)[0]
-        self.dem_param['svf'] = svf.flatten()
-        svf, slope, aspect = None, None, None
-        dem_arr = None
-        
-        
-    class config():
+    class Toposub:
+        '''
+        Class to store TopoSub variables
+        '''
+        def __init__(self):
+            self.df_param = None
+            self.df_centroids = None
+            self.kmeans_obj = None
+            self.df_centroids = None
+
+    def clustering_dem(self):
+        '''
+        Function to compute DEM parameters, and cluster DEM in nb_clusters
+        :return:
+        '''
+        self.Toposub.df_param = tp.compute_DEM_param(self.Config.dem_file)
+        df_scaled, scaler = ts.scale_df(self.Toposub.df_param)
+        if self.Config.clustering_method.lower() == 'kmean':
+            self.Toposub.df_centroids, self.Toposub.kmeans_obj = ts.kmeans_clustering(df_scaled, self.Config.nb_clusters)
+        else:
+            print('ERROR: {} clustering method not available'.format(self.Config.clustering_method))
+        self.Toposub.df_centroids = ts.inverse_scale_df(self.Toposub.df_centroids, scaler)
+
+    class Config:
+        '''
+        Class to contain all config.ini parameters
+        '''
         def __init__(self, config_file):
             self.file_config = config_file 
             
@@ -123,33 +126,36 @@ class toposcale(object):
             self.dem_file = conf.get('forcing','dem_file')
             self.dem_dataset = conf.get('forcing','dem_dataset')
             self.dem_download = conf.getbool('forcing','dem_download')
-            
+
+            self.nb_clusters = conf.getint('toposcale','nb_clusters')
+            self.clustering_method = conf.get('toposcale','clustering_method')
+            self.interp_method = conf.getint('toposcale','interpolation_method')
             
     def get_era5(self):
         # write code to fetch data from era5
-        lonW = self.config.extent.get('lonW') - 0.25
-        lonE = self.config.extent.get('lonE') + 0.25
-        latN = self.config.extent.get('latN') + 0.25
-        latS = self.config.extent.get('latS') - 0.25
+        lonW = self.Config.extent.get('lonW') - 0.25
+        lonE = self.Config.extent.get('lonE') + 0.25
+        latN = self.Config.extent.get('latN') + 0.25
+        latS = self.Config.extent.get('latS') - 0.25
 
         # retreive ERA5 surface data
         fe.retrieve_era5_surf(
-            self.config.forcing_era5_product,
-            self.config.start_date, 
-            self.config.end_date,
-            self.config.project_dir + 'inputs/forcings/', 
+            self.Config.forcing_era5_product,
+            self.Config.start_date,
+            self.Config.end_date,
+            self.Config.project_dir + 'inputs/forcings/',
             latN,latS,lonE,lonW,
-            self.config.time_step, self.config.number_cores
+            self.Config.time_step, self.Config.number_cores
             )
         # retrieve era5 plevels
         fe.retrieve_era5_plev(
-            self.config.forcing_era5_product,
-            self.config.start_date, 
-            self.config.end_date,
-            self.config.project_dir + 'inputs/forcings/', 
+            self.Config.forcing_era5_product,
+            self.Config.start_date,
+            self.Config.end_date,
+            self.Config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW, 
-            self.config.time_step, self.config.plevels,
-            self.config.number_cores
+            self.Config.time_step, self.Config.plevels,
+            self.Config.number_cores
             )
             
     

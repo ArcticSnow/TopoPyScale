@@ -36,7 +36,8 @@ def compute_DEM_param(dem_file):
     dem_param['y'] = Ys.flatten()
     dem_param['elev'] = dem_arr.flatten()
     dem_param['slope'] = slope.flatten()
-    dem_param['aspect'] = aspect.flatten()
+    dem_param['aspect_cos'] = np.cos(np.deg2rad(aspect.flatten()))
+    dem_param['aspect_sin'] = np.sin(np.deg2rad(aspect.flatten()))
     Xs, Ys, slope, aspect = None, None, None, None
 
     svf = viewf.viewf(np.double(dem_arr), dx)[0]

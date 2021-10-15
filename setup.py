@@ -17,8 +17,8 @@ setup(
     url='https://github.com/ArcticSnow/TopoPyScale',
 
     # Author details
-    author=['Simon Filhol','Joel Fiddes', 'Kristoffer Aalstad'],
-    author_email=['simon.filhol@geo.uio.no','joelfiddes@gmail.com','kristoffer.aalstad@geo.uio.no'],
+    author=['Simon Filhol', 'Joel Fiddes', 'Kristoffer Aalstad'],
+    author_email=['simon.filhol@geo.uio.no', 'joelfiddes@gmail.com', 'kristoffer.aalstad@geo.uio.no'],
 
     # Choose your license
     license='MIT',
@@ -46,6 +46,6 @@ setup(
     # What does your project relate to?
     keywords=['climate','downscaling', 'meteorology'],
     packages=find_packages(),
-    install_requires=['matplotlib', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi', 'rasterio'],
+    install_requires=['matplotlib', 'scikit-learn', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi', 'rasterio'],
     include_package_data=True
 )
