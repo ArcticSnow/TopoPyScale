@@ -21,7 +21,7 @@ from joblib import Parallel, delayed
 import subprocess
 #import multiprocessing 
 
-def retrieve_era5_surf( product, startDate,endDate,eraDir, latN,latS,lonE,lonW, stepn num_cores):
+def retrieve_era5_surf( product, startDate,endDate,eraDir, latN, latS, lonE,lonW, step, num_cores):
 	""" Sets up era5 surface retrieval.
 	* Creates list of year/month pairs to iterate through. 
 	* MARS retrievals are most efficient when subset by time. 
@@ -92,13 +92,13 @@ def retrieve_era5_surf( product, startDate,endDate,eraDir, latN,latS,lonE,lonW, 
 	for date in dateList:	
 		strsplit = date.split('-' )
 		year =  int(strsplit[0])
-		month = int(strsplit[1])   
-	  #  firstDate = "%04d%02d%02d" % (year, month, 1)
-	  #  numberOfDays = calendar.monthrange(year, month)[1]
-	  #  lastDate = "%04d%02d%02d" % (year, month, numberOfDays)
+		month = int(strsplit[1])
+		#  firstDate = "%04d%02d%02d" % (year, month, 1)
+	  	#  numberOfDays = calendar.monthrange(year, month)[1]
+	  	#  lastDate = "%04d%02d%02d" % (year, month, numberOfDays)
 		target = eraDir + "SURF_%04d%02d.nc" % (year, month)
-	#	requestDates = (firstDate + "/TO/" + lastDate)
-	 #   requestDatesVec.append(requestDates)
+		#	requestDates = (firstDate + "/TO/" + lastDate)
+	 	#   requestDatesVec.append(requestDates)
 		targetVec.append(target) 
 		yearVec.append(year)
 		monthVec.append(month) 
@@ -232,12 +232,12 @@ def retrieve_era5_plev(product, startDate,endDate,eraDir, latN,latS,lonE,lonW, s
 		strsplit = date.split('-' )
 		year =  int(strsplit[0])
 		month = int(strsplit[1])   
-	  #  firstDate = "%04d%02d%02d" % (year, month, 1)
-	  #  numberOfDays = calendar.monthrange(year, month)[1]
-	  #  lastDate = "%04d%02d%02d" % (year, month, numberOfDays)
+		#firstDate = "%04d%02d%02d" % (year, month, 1)
+	  	#numberOfDays = calendar.monthrange(year, month)[1]
+	  	#lastDate = "%04d%02d%02d" % (year, month, numberOfDays)
 		target = eraDir + "PLEV_%04d%02d.nc" % (year, month)
-	#	requestDates = (firstDate + "/TO/" + lastDate)
-	 #   requestDatesVec.append(requestDates)
+		#requestDates = (firstDate + "/TO/" + lastDate)
+	 	#requestDatesVec.append(requestDates)
 		targetVec.append(target) 
 		yearVec.append(year)
 		monthVec.append(month) 

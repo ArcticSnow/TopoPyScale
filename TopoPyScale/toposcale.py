@@ -10,58 +10,77 @@ project/
     -> output/
 
 '''
-import xarray as as xr
+import xarray as xr
 import glob, os
 import configparser
 import rasterio
 import fetch_era5 as fe
-import elevation
+import pandas as pd
 
 
 class toposcale(object):
     
     def __init__(self, config_file):
         
-        self.config = config(config_file)
+        self.config = self.config(config_file)
         
         if self.config.download_dataset:
             if self.config.dataset.lower() == 'era5':
                 self.get_era5()
         
         if self.config.dem_file is None:
-            #write code to fecth dem from SRTM, Arctic DEM or other publi repository
-            if self.config.dem_dataset.lower() == 'srtm':
+            #write code to fetch dem from SRTM, Arctic DEM or other public repository
+            if (self.config.dem_dataset.lower() == 'srtm') and self.config.dem_download:
+                
+                import elevation
                 # use STRM DEM for extent of interest
-                print('ERROR: Fecthing SRTM DEM not yet available')
+                print('ERROR: Fetching SRTM DEM not yet available')
                 self.config.dem_file = 'dem_30m_SRTM.tif'
                 elevation.clip(bounds=(self.config.lonW, 
                                        self.config.latS, 
                                        self.config.lonE, 
-                                       self.config.latN), 
+                                       self.config.latN),
                                output= self.config.project_dir + '/input/dem/' + self.config.dem_file )
-                with rasterio.open(self.config.dem_file) as rast:
-                    self.dem = rast
+                self.dem = rasterio.open(self.config.dem_file)
                 
-            elif self.config.dem_dataset.lower() == 'arcticdem':
+            elif (self.config.dem_dataset.lower() == 'arcticdem') and self.config.dem_download:
                 # write code to pull ArcticDEM for extent of interest
-                print('ERROR: Fecthing ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
+                print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
                 self.dem = None
                 
         else:
-            with rasterio.open(self.config.dem_file) as rast:
-                self.dem = rast
+            self.dem = rasterio.open(self.config.dem_file)
 
     def compute_DEM_parameters(self):
         # add here code to compute slope, aspect, horizon angle, solar zenith and azimuth
-        # store all in a pandas dataframe. X,Y,Z,slope,aspect,ha,sz,sa
-                
+        # store all in a pandas dataframe. X,Y,Z,slope,aspect. What about for ha,sz,sa?
+        from topocalc import gradient
+        from topocalc import viewf
+        
+        self.dem_param = pd.DataFrame()
+        
+        dx, dy = self.dem.read_transform()[1], -self.dem.read_transform()[-1]
+        dem_arr = self.dem.read()
+        if dem_arr.shape.__len__() == 3:
+            dem_arr = dem_arr[0,:,:]
+        slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
+        self.dem_param['elev'] = dem_arr.flatten()
+        self.dem_param['slope'] = slope.flatten()
+        self.dem_param['aspect'] = aspect.flatten()
+        slope, aspect = None, None
+        
+        svf = viewf.viewf(dem_arr,dx)[0]
+        self.dem_param['svf'] = svf.flatten()
+        svf, slope, aspect = None, None, None
+        dem_arr = None
+        
         
     class config():
         def __init__(self, config_file):
             self.file_config = config_file 
             
             # parse configuration file into config class
-            _parse_config_file()
+            self._parse_config_file()
             
             # check if tree directory exists. If not create it
             if not os.path.exists('/'.join(self.project_dir, 'inputs/')):
@@ -74,7 +93,9 @@ class toposcale(object):
                 os.makedirs('/'.join(self.project_dir, 'outputs/'))                       
                 
         def _parse_config_file(self):
-            #function to parse config file
+            '''
+            Function to parse config file .ini into a python class
+            '''
             conf = configparser.ConfigParser(allow_no_value=True)
             conf.read(self.file_config)
             
@@ -97,10 +118,11 @@ class toposcale(object):
             self.number_cores = conf.getint('forcing','number_cores')
                 
             self.time_step = conf.getint('forcing','time_step')
-            self.plevels = cong.getint('forcing', 'plevels')
+            self.plevels = conf.getint('forcing', 'plevels')
             
             self.dem_file = conf.get('forcing','dem_file')
             self.dem_dataset = conf.get('forcing','dem_dataset')
+            self.dem_download = conf.getbool('forcing','dem_download')
             
             
     def get_era5(self):
@@ -134,16 +156,27 @@ class toposcale(object):
     
     
     def to_cryogrid(self):
-        # functiont to export toposcale output to cryosgrid format .mat
+        '''
+        function to export toposcale output to cryosgrid format .mat
+        '''
         
     def to_fsm(self):
-        # functiont to export toposcale output to FSM format
+        '''
+        function to export toposcale output to FSM format
+        '''
         
     def to_crocus(self):
-        # functiont to export toposcale output to crocus format .nc
+        '''
+        function to export toposcale output to crocus format .nc
+        '''
+
     
     def to_snowmodel(self):
-        # functiont to export toposcale output to snowmodel format .ascii
+        '''
+        function to export toposcale output to snowmodel format .ascii, for single station standard
+        '''
     
     def to_netcdf(self):
-        # functiont to export toposcale output to generic netcdf format
+        '''
+        function to export toposcale output to generic netcdf format
+        '''

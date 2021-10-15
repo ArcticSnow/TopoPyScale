@@ -30,13 +30,14 @@ Contributor to this current version (2021)
 2. Run TopoScale
     - compute derived values (from DEM)
     - toposcale (k-mean clustering)
-    - interpolation (bilinear, inverse square dist.)
+    - interpolation (bilinear, inverse square dist.) (interpolation optional only if output as gridded data)
 3. Output
     - Cryogrid format
     - FSM format
     - CROCUS format
     - Snowmodel format
     - basic netcfd
+    - For each method, have the choice to output either the abstract cluster points, or the gridded product after interpolation
 4. Validation toolset
     - validation to local observation timeseries
     - plotting

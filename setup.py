@@ -46,6 +46,6 @@ setup(
     # What does your project relate to?
     keywords=['climate','downscaling', 'meteorology'],
     packages=find_packages(),
-    install_requires=['matplotlib', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi'],
+    install_requires=['matplotlib', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi', 'rasterio'],
     include_package_data=True
 )
