@@ -22,29 +22,29 @@ class Topoclass(object):
     
     def __init__(self, config_file):
         
-        self.Config = self.Config(config_file)
-        self.Toposub = self.Toposub()
+        self.config = self.Config(config_file)
+        self.toposub = self.Toposub()
         
-        if self.Config.download_dataset:
-            if self.Config.dataset.lower() == 'era5':
+        if self.config.download_dataset:
+            if self.config.dataset.lower() == 'era5':
                 self.get_era5()
         
-        if self.Config.dem_file is None:
+        if self.config.dem_file is None:
             # code to fetch dem from SRTM, Arctic DEM or other public repository
-            if (self.Config.dem_dataset.lower() == 'srtm') and self.Config.dem_download:
+            if (self.config.dem_dataset.lower() == 'srtm') and self.config.dem_download:
                 
                 import elevation
                 # use STRM DEM for extent of interest
                 print('ERROR: Fetching SRTM DEM not yet available')
-                self.Config.dem_file = 'dem_30m_SRTM.tif'
-                elevation.clip(bounds=(self.Config.lonW,
-                                       self.Config.latS,
-                                       self.Config.lonE,
-                                       self.Config.latN),
-                               output= self.Config.project_dir + '/input/dem/' + self.Config.dem_file )
-                self.dem = rasterio.open(self.Config.dem_file)
+                self.config.dem_file = 'dem_30m_SRTM.tif'
+                elevation.clip(bounds=(self.config.lonW,
+                                       self.config.latS,
+                                       self.config.lonE,
+                                       self.config.latN),
+                               output= self.config.project_dir + '/input/dem/' + self.config.dem_file )
+                self.dem = rasterio.open(self.config.dem_file)
                 
-            elif (self.Config.dem_dataset.lower() == 'arcticdem') and self.Config.dem_download:
+            elif (self.config.dem_dataset.lower() == 'arcticdem') and self.config.dem_download:
                 # write code to pull ArcticDEM for extent of interest
                 print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
                 self.dem = None
@@ -54,26 +54,26 @@ class Topoclass(object):
 
     class Toposub:
         '''
-        Class to store TopoSub variables
+        Class to initialize variables to store TopoSub variables
         '''
         def __init__(self):
             self.df_param = None
             self.df_centroids = None
             self.kmeans_obj = None
-            self.df_centroids = None
+            self.scaler = None
 
     def clustering_dem(self):
         '''
         Function to compute DEM parameters, and cluster DEM in nb_clusters
         :return:
         '''
-        self.Toposub.df_param = tp.compute_DEM_param(self.Config.dem_file)
-        df_scaled, scaler = ts.scale_df(self.Toposub.df_param)
-        if self.Config.clustering_method.lower() == 'kmean':
-            self.Toposub.df_centroids, self.Toposub.kmeans_obj = ts.kmeans_clustering(df_scaled, self.Config.nb_clusters)
+        self.toposub.df_param = tp.compute_DEM_param(self.config.dem_file)
+        df_scaled, self.scaler = ts.scale_df(self.toposub.df_param)
+        if self.config.clustering_method.lower() == 'kmean':
+            self.toposub.df_centroids, self.toposub.kmeans_obj = ts.kmeans_clustering(df_scaled, self.config.nb_clusters)
         else:
-            print('ERROR: {} clustering method not available'.format(self.Config.clustering_method))
-        self.Toposub.df_centroids = ts.inverse_scale_df(self.Toposub.df_centroids, scaler)
+            print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
+        self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, scaler)
 
     class Config:
         '''
@@ -133,29 +133,29 @@ class Topoclass(object):
             
     def get_era5(self):
         # write code to fetch data from era5
-        lonW = self.Config.extent.get('lonW') - 0.25
-        lonE = self.Config.extent.get('lonE') + 0.25
-        latN = self.Config.extent.get('latN') + 0.25
-        latS = self.Config.extent.get('latS') - 0.25
+        lonW = self.config.extent.get('lonW') - 0.25
+        lonE = self.config.extent.get('lonE') + 0.25
+        latN = self.config.extent.get('latN') + 0.25
+        latS = self.config.extent.get('latS') - 0.25
 
         # retreive ERA5 surface data
         fe.retrieve_era5_surf(
-            self.Config.forcing_era5_product,
-            self.Config.start_date,
-            self.Config.end_date,
-            self.Config.project_dir + 'inputs/forcings/',
+            self.config.forcing_era5_product,
+            self.config.start_date,
+            self.config.end_date,
+            self.config.project_dir + 'inputs/forcings/',
             latN,latS,lonE,lonW,
-            self.Config.time_step, self.Config.number_cores
+            self.config.time_step, self.config.number_cores
             )
         # retrieve era5 plevels
         fe.retrieve_era5_plev(
-            self.Config.forcing_era5_product,
-            self.Config.start_date,
-            self.Config.end_date,
-            self.Config.project_dir + 'inputs/forcings/',
+            self.config.forcing_era5_product,
+            self.config.start_date,
+            self.config.end_date,
+            self.config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW, 
-            self.Config.time_step, self.Config.plevels,
-            self.Config.number_cores
+            self.config.time_step, self.config.plevels,
+            self.config.number_cores
             )
             
     
