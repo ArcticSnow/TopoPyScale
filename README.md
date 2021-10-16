@@ -1,5 +1,5 @@
 # TopoPyScale
-New version of Toposcale packaged as a Pypi library. Toposcale is an original idea of Joel Fiddes. 
+Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an original idea of Joel Fiddes to perform statistical downscaling of climate data to the hillslope scale.
 
 **References:**
 - 
@@ -22,7 +22,7 @@ Contributor to this current version (2021)
 - `topo_sub.py`:
   - [ ]look into alternative clustering method DBscan
   - [ ] implement minibatch kmean for large DEM
-- [ ] simplify fetch_era5.py routines. Code seems over complex
+- [ ] simplify `fetch_era5.py` routines. Code seems over complex
 - [ ] write download routine for CORDEX climate projection
 - `topo_scale.py`:
   - [ ] do it all.
@@ -59,7 +59,6 @@ Validation (4) and Gap filling (4) are future implementation.
 
 ## Installation
 
-1. 
 ```bash
 conda create -n downscaling
 conda activate downscaling
@@ -91,10 +90,7 @@ url: https://cds.climate.copernicus.eu/api/v2
 key: {uid}:{api-key}
 ```
 
-
 ## Basic usage
-
-## Principle of TopoScale
 
 1. Setup your Python environment
 2. Create your project directory
@@ -120,3 +116,5 @@ ts.plot_center_clusters(myproj.config.dem_file,
                         cmap=plt.cm.hsv)
 
 ```
+
+## Principle of TopoPyScale
