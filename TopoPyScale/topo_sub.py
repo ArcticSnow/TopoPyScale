@@ -2,8 +2,12 @@
 Clustering routines for TopoSUB
 S. Filhol, Oct 2021
 
-How to handle aspect? break in cosinus and sinus?
+TODO:
+- explore other clustering methods available in scikit-learn: https://scikit-learn.org/stable/modules/clustering.html
+- implement MiniBatchKmean for large DEMs to improve computation time
+- look into DBSCAN and its relative
 '''
+
 import rasterio
 from rasterio import plot
 from sklearn.preprocessing import StandardScaler
@@ -50,13 +54,14 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
     '''
     X = df_param.to_numpy()
     col_names = df_param.columns
-    print('---> Clustering with K-means')
+    print(('---> Clustering with K-means in {} clusters').format(n_clusters)
     start_time=time.time()
     kmeans = KMeans(n_clusters=n_clusters, **kwargs).fit(X)
     print('---> Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
+    df_param['cluster_labels'] = kmeans.label_
+    return df_centers, kmeans, df_param
 
-    return df_centers, kmeans
 
 
 def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis):
@@ -79,11 +84,11 @@ def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm
 
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 9))
     shade = ls.hillshade(np.reshape(df_param['elev'].values, shape), vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
-    rgb = ax.imshow(np.reshape(df_param[var].values, shape) * shade, extent=extent, cmap=cmap)
+    rgb = ax.imshow(np.reshape(df_param[var].values, shape)*shade, extent=extent, cmap=cmap)
     ax.scatter(df_centers.x, df_centers.y, c='r')
     cb = plt.colorbar(rgb)
     cb.set_label(var)
-    plt.title('Cluster Centroids')
+    ax.set_title('Cluster Centroids')
     ax.set_ylabel('y-coordinate')
     ax.set_xlabel('x-coordinate')
     plt.show()
