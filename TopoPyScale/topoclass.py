@@ -11,12 +11,13 @@ project/
 
 '''
 import os
-import configparser
+#import configparser
+from configobj import ConfigObj
 import rasterio
-import fetch_era5 as fe
-import topo_param as tp
-import topo_sub as ts
-
+from TopoPyScale import fetch_era5 as fe
+from TopoPyScale import topo_param as tp
+from TopoPyScale import topo_sub as ts
+import numpy as np
 
 class Topoclass(object):
     
@@ -26,7 +27,7 @@ class Topoclass(object):
         self.toposub = self.Toposub()
         
         if self.config.download_dataset:
-            if self.config.dataset.lower() == 'era5':
+            if self.config.forcing_dataset.lower() == 'era5':
                 self.get_era5()
         
         if self.config.dem_file is None:
@@ -86,50 +87,49 @@ class Topoclass(object):
             self._parse_config_file()
             
             # check if tree directory exists. If not create it
-            if not os.path.exists('/'.join(self.project_dir, 'inputs/')):
-                os.makedirs('/'.join(self.project_dir, 'inputs/'))
-            if not os.path.exists('/'.join(self.project_dir, 'inputs/forcings/')):
-                os.makedirs('/'.join(self.project_dir, 'inputs/forcings'))
-            if not os.path.exists('/'.join(self.project_dir, 'inputs/dem/')):
-                os.makedirs('/'.join(self.project_dir, 'inputs/dem/'))
-            if not os.path.exists('/'.join(self.project_dir, 'outputs/')):
-                os.makedirs('/'.join(self.project_dir, 'outputs/'))                       
+            if not os.path.exists('/'.join((self.project_dir, 'inputs/'))):
+                os.makedirs('/'.join((self.project_dir, 'inputs/')))
+            if not os.path.exists('/'.join((self.project_dir, 'inputs/forcings/'))):
+                os.makedirs('/'.join((self.project_dir, 'inputs/forcings')))
+            if not os.path.exists('/'.join((self.project_dir, 'inputs/dem/'))):
+                os.makedirs('/'.join((self.project_dir, 'inputs/dem/')))
+            if not os.path.exists('/'.join((self.project_dir, 'outputs/'))):
+                os.makedirs('/'.join((self.project_dir, 'outputs/')))
                 
         def _parse_config_file(self):
             '''
             Function to parse config file .ini into a python class
             '''
-            conf = configparser.ConfigParser(allow_no_value=True)
-            conf.read(self.file_config)
+            conf = ConfigObj(self.file_config)
             
-            self.project_dir = conf.get('main', 'project_dir')
-            self.project_description = conf.get('main', 'project_description')
-            self.project_name = conf.get('main', 'project_name')
-            self.project_author = conf.get('main', 'project_authors')
+            self.project_dir = conf['main']['project_dir']
+            self.project_description = conf['main']['project_description']
+            self.project_name = conf['main']['project_name']
+            self.project_author = conf['main']['project_authors']
             
-            self.start_date = conf.get('main', 'start_date')
-            self.end_date = conf.get('main', 'end_date')
-            self.extent = {'latN': conf.getfloat('main','latN'),
-                           'latS': conf.getfloat('main','latS'),
-                           'lonW': conf.getfloat('main','lonW'),
-                           'lonE': conf.getfloat('main','lonE')}
+            self.start_date = conf['main']['start_date']
+            self.end_date = conf['main']['end_date']
+            self.extent = {'latN': conf['main'].as_float('latN'),
+                           'latS': conf['main'].as_float('latS'),
+                           'lonW': conf['main'].as_float('lonW'),
+                           'lonE': conf['main'].as_float('lonE')}
             
-            self.forcing_dataset = conf.get('forcing', 'dataset')
-            self.download_dataset = conf.getbool('forcing', 'download_dataset')
-            if self.forcing_dataset is 'era5':
-                self.forcing_era5_product = conf.get('forcing', 'era5_product')
-            self.number_cores = conf.getint('forcing','number_cores')
+            self.forcing_dataset = conf['forcing']['dataset']
+            self.download_dataset = conf['forcing'].as_bool('download_dataset')
+            if self.forcing_dataset == 'era5':
+                self.forcing_era5_product = conf['forcing']['era5_product']
+            self.number_cores = conf['forcing'].as_int('number_cores')
                 
-            self.time_step = conf.getint('forcing','time_step')
-            self.plevels = conf.getint('forcing', 'plevels')
+            self.time_step = conf['forcing'].as_int('time_step')
+            self.plevels = np.array(list(map(int, conf['forcing']['plevels'])))
             
-            self.dem_file = conf.get('forcing','dem_file')
-            self.dem_dataset = conf.get('forcing','dem_dataset')
-            self.dem_download = conf.getbool('forcing','dem_download')
+            self.dem_file = conf['forcing']['dem_file']
+            self.dem_dataset = conf['forcing']['dem_dataset']
+            self.dem_download = conf['forcing'].as_bool('dem_download')
 
-            self.nb_clusters = conf.getint('toposcale','nb_clusters')
-            self.clustering_method = conf.get('toposcale','clustering_method')
-            self.interp_method = conf.getint('toposcale','interpolation_method')
+            self.nb_clusters = conf['toposcale'].as_int('nb_clusters')
+            self.clustering_method = conf['toposcale']['clustering_method']
+            self.interp_method = conf['toposcale']['interpolation_method']
             
     def get_era5(self):
         # write code to fetch data from era5

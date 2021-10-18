@@ -54,7 +54,7 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
     '''
     X = df_param.to_numpy()
     col_names = df_param.columns
-    print(('---> Clustering with K-means in {} clusters').format(n_clusters)
+    print(('---> Clustering with K-means in {} clusters').format(n_clusters))
     start_time=time.time()
     kmeans = KMeans(n_clusters=n_clusters, **kwargs).fit(X)
     print('---> Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))

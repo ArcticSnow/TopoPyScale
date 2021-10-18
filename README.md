@@ -25,7 +25,9 @@ Contributor to this current version (2021)
 - [ ] simplify `fetch_era5.py` routines. Code seems over complex
 - [ ] write download routine for CORDEX climate projection
 - `topo_scale.py`:
-  - [ ] do it all.
+  - [ ] do it all
+- `fetch_era5.py`:
+  - [ ] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
 - **Documentation**:
   - [ ] Complete `README.md` file
   - [ ] create small examples from a small dataset avail in the library
