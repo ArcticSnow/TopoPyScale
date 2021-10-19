@@ -12,6 +12,8 @@ project/
 '''
 import os
 #import configparser
+import sys
+
 from configobj import ConfigObj
 import rasterio
 from TopoPyScale import fetch_era5 as fe
@@ -26,32 +28,51 @@ class Topoclass(object):
         self.config = self.Config(config_file)
         self.toposub = self.Toposub()
         
-        if self.config.download_dataset:
-            if self.config.forcing_dataset.lower() == 'era5':
-                self.get_era5()
-        
-        if self.config.dem_file is None:
-            # code to fetch dem from SRTM, Arctic DEM or other public repository
-            if (self.config.dem_dataset.lower() == 'srtm') and self.config.dem_download:
-                
-                import elevation
-                # use STRM DEM for extent of interest
-                print('ERROR: Fetching SRTM DEM not yet available')
-                self.config.dem_file = 'dem_30m_SRTM.tif'
-                elevation.clip(bounds=(self.config.lonW,
-                                       self.config.latS,
-                                       self.config.lonE,
-                                       self.config.latN),
-                               output= self.config.project_dir + '/input/dem/' + self.config.dem_file )
-                self.dem = rasterio.open(self.config.dem_file)
-                
-            elif (self.config.dem_dataset.lower() == 'arcticdem') and self.config.dem_download:
-                # write code to pull ArcticDEM for extent of interest
-                print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
-                self.dem = None
-                
+        if self.config.forcing_dataset.lower() == 'era5':
+            self.get_era5()
+
+        if not os.path.isfile(self.config.dem_file):
+            ans = input(("---> Would you like to download a reference DEM from {}? (y/n)").format(self.config.dem_dataset))
+
+            if (ans.lower() == 'y') or (ans == 1):
+                # code to fetch dem from SRTM, Arctic DEM or other public repository
+                if (self.config.dem_dataset.lower() == 'srtm') and self.config.dem_download:
+                    '''
+                    This is not quite optimal to handle this here. 1. it only works for small area, and the DEM is in 
+                    WGS84 lat/lon which will require to be projected to UTM or other with gdal_translate.
+                    
+                    Maybe move this to fetch_dem.py to print out command to execute based on input parameters if DEM not available
+                    '''
+                    # use STRM DEM for extent of interest
+                    self.config.dem_file = 'dem_30m_SRTM.tif'
+                    os.system('eio clean')
+                    cmd = 'eio --product {} clip -o {} --bounds {} {} {} {} --margin {}'.format(self.config.dem_dataset,
+                                                                                                self.config.project_dir + 'inputs/dem/' + self.config.dem_file,
+                                                                                                self.config.extent.get('lonW'),
+                                                                                                self.config.extent.get('latS'),
+                                                                                                self.config.extent.get('lonE'),
+                                                                                                self.config.extent.get('latN'),
+                                                                                                0.25)
+                    print('/n', cmd, '\n')
+                    os.system(cmd)
+                    os.system('eio clean')
+
+                elif (self.config.dem_dataset.lower() == 'arcticdem') and self.config.dem_download:
+                    # write code to pull ArcticDEM for extent of interest
+                    print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
+                    self.dem = None
+
+                elif (self.config.dem_dataset.lower() == 'ASTER') and self.config.dem_download:
+                    # write code to pull ArcticDEM for extent of interest
+                    print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
+                    self.dem = None
+
+                else:
+                    sys.exit("ERROR: indicate a dem_dataset in config.ini.\n =-- Available: srtm")
+            else:
+                sys.exit("ERROR: Indicate a DEM file (GeoTiff) in config.ini or set to None to download SRTM DEM")
         else:
-            self.dem = rasterio.open(self.config.dem_file)
+            self.dem = rasterio.open(self.config.project_dir + 'inputs/dem/' + self.config.dem_file)
 
     class Toposub:
         '''
@@ -117,17 +138,17 @@ class Topoclass(object):
                            'lonW': conf['main'].as_float('lonW'),
                            'lonE': conf['main'].as_float('lonE')}
             
-            self.forcing_dataset = conf['forcing']['dataset']
-            self.download_dataset = conf['forcing'].as_bool('download_dataset')
-            if self.forcing_dataset == 'era5':
+            self.forcing_dataset = conf['forcing'].get('dataset')
+            if self.forcing_dataset.lower() == 'era5':
                 self.forcing_era5_product = conf['forcing']['era5_product']
+                self.forcing_nb_threads = conf['forcing'].as_int('nb_threads_download')
             self.number_cores = conf['forcing'].as_int('number_cores')
                 
             self.time_step = conf['forcing'].as_int('time_step')
             self.plevels = conf['forcing']['plevels']
             
-            self.dem_file = conf['forcing']['dem_file']
-            self.dem_dataset = conf['forcing']['dem_dataset']
+            self.dem_file = conf['forcing'].get('dem_file')
+            self.dem_dataset = conf['forcing'].get('dem_dataset')
             self.dem_download = conf['forcing'].as_bool('dem_download')
 
             self.nb_clusters = conf['toposcale'].as_int('nb_clusters')
@@ -149,8 +170,8 @@ class Topoclass(object):
             self.config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW,
             self.config.time_step,
-            self.config.number_cores,
-            surf_plev = 'surf'
+            self.config.forcing_nb_threads,
+            surf_plev='surf'
             )
         # retrieve era5 plevels
         fe.retrieve_era5(
@@ -160,7 +181,7 @@ class Topoclass(object):
             self.config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW, 
             self.config.time_step,
-            10,
+            self.config.forcing_nb_threads,
             surf_plev='plev',
             plevels=self.config.plevels,
             )

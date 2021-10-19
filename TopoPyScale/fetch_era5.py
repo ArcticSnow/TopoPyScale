@@ -12,7 +12,6 @@ from dateutil.relativedelta import *
 import logging
 import glob
 import subprocess
-
 from multiprocessing.dummy import Pool as ThreadPool
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None):
@@ -74,44 +73,50 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	print("Start date = ", df.dates[0])
 	print("End date = ", df.dates[len(df.dates) - 1])
 
-	logging.info("ECWMF SURF data found:")
+	logging.info(("ECWMF {} data found:").format(surf_plev.upper()))
 	logging.info(df.target_file.loc[df.file_exist == 1])
-	logging.info("Downloading SURF from ECWMF:")
+	logging.info(("Downloading {} from ECWMF:").format(surf_plev.upper()))
 	logging.info(df.target_file.loc[df.file_exist == 0])
 
-	download = df.loc[df.file_exist==0]
+	print(("ECWMF {} data found:").format(surf_plev.upper()))
+	print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
+	print(("Downloading {} from ECWMF:").format(surf_plev.upper()))
+	print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
 
 
-	#pool.starmap(era5_request_surf, zip(yearVecNew, monthVecNew, bbox, targetVecNew, product, time))
-	if surf_plev == 'surf':
-		pool = ThreadPool(num_threads)
-		pool.starmap(era5_request_surf, zip(list(download.year),
-											list(download.month),
-											list(download.bbox),
-											list(download.target_file),
-											list(download.product_type),
-											list(download.time_steps)))
-		pool.close()
-		pool.join()
-	elif surf_plev == 'plev':
-		pool = ThreadPool(num_threads)
-		pool.starmap(era5_request_plev, zip(list(download.year),
-											list(download.month),
-											list(download.bbox),
-											list(download.target_file),
-											list(download.product_type),
-											list(download.time_steps),
-											list(download.plevels)))
-		pool.close()
-		pool.join()
-	else:
-		sys.exit('ERROR: surf_plev can only be surf or plev')
-
+	download = df.loc[df.file_exist == 0]
+	if download.shape[0] > 0:
+		ans = input(('---> Download ERA5 {} data? (y/n)').format(surf_plev.upper()))
+		if (ans.lower() == 'y') or (ans == '1'):
+			if surf_plev == 'surf':
+				pool = ThreadPool(num_threads)
+				pool.starmap(era5_request_surf, zip(list(download.year),
+													list(download.month),
+													list(download.bbox),
+													list(download.target_file),
+													list(download.product_type),
+													list(download.time_steps)))
+				pool.close()
+				pool.join()
+			elif surf_plev == 'plev':
+				pool = ThreadPool(num_threads)
+				pool.starmap(era5_request_plev, zip(list(download.year),
+													list(download.month),
+													list(download.bbox),
+													list(download.target_file),
+													list(download.product_type),
+													list(download.time_steps),
+													list(download.plevels)))
+				pool.close()
+				pool.join()
+			else:
+				sys.exit('ERROR: surf_plev can only be surf or plev')
+		else:
+			sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
 
 def era5_request_surf(year, month, bbox, target, product, time):
 	"""CDS surface api call"""
 	c = cdsapi.Client()
-
 	c.retrieve(
 		'reanalysis-era5-single-levels',
 		{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
@@ -145,7 +150,6 @@ def era5_request_surf(year, month, bbox, target, product, time):
 def era5_request_plev(year, month, bbox, target, product, time, plevels):
 	"""CDS plevel api call"""
 	c = cdsapi.Client()
-
 	c.retrieve(
 		'reanalysis-era5-pressure-levels',
 		{

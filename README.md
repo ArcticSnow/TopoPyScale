@@ -17,17 +17,19 @@ Contributor to this current version (2021)
     - [x] get ERA5 data
     - [ ] write save output in the various format version
     - [ ] fetch other dataset routines
-    - [ ] implement routine to fecth DEM automatically from ArcticDEM
+    - [ ] implement routine to fecth DEM automatically from ArcticDEM/ASTER
     - [ ] add plotting routines.
 - `topo_sub.py`:
   - [ ]look into alternative clustering method DBscan
   - [ ] implement minibatch kmean for large DEM
-- [ ] simplify `fetch_era5.py` routines. Code seems over complex
+- [x] simplify `fetch_era5.py` routines. Code seems over complex
 - [ ] write download routine for CORDEX climate projection
 - `topo_scale.py`:
   - [ ] do it all
 - `fetch_era5.py`:
-  - [ ] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
+  - [x] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
+  - [ ] figure out in which case to use other function tpmm and other? how to integrate them?   
+
 - **Documentation**:
   - [ ] Complete `README.md` file
   - [ ] create small examples from a small dataset avail in the library
@@ -64,7 +66,7 @@ Validation (4) and Gap filling (4) are future implementation.
 ```bash
 conda create -n downscaling
 conda activate downscaling
-conda install ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio
+conda install ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio gdal
 pip install cdsapi
 pip install h5netcdf
 pip install topocalc
