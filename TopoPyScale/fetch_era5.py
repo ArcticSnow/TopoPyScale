@@ -6,25 +6,16 @@ S. Filhol adapted in 2021
 '''
 # !/usr/bin/env python
 import pandas as pd
-from datetime import datetime, timedelta
-from collections import OrderedDict
-import calendar
-import sys
-# from ecmwfapi import ECMWFDataServer
+from datetime import datetime
 import cdsapi, os, sys
 from dateutil.relativedelta import *
-# from retrying import retry
 import logging
 import glob
-from joblib import Parallel, delayed
 import subprocess
 
 from multiprocessing.dummy import Pool as ThreadPool
 
-
-# import multiprocessing
-
-def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf'):
+def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None):
 	""" Sets up era5 surface retrieval.
 	* Creates list of year/month pairs to iterate through. 
 	* MARS retrievals are most efficient when subset by time. 
@@ -40,14 +31,15 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		latS: south latitude of bbox
 		lonE: easterly lon of bbox
 		lonW: westerly lon of bbox
+		step: timestep to use: 1, 3, 6
+		num_threads: number of threads to use for downloading data
+		surf_plev: download surface single level or pressure level product: 'surf' or 'plev'
 
 	Returns:
 		Monthly era surface files.		 
 
 	"""
-
 	bbox = (str(latN) + "/" + str(lonW) + "/" + str(latS) + "/" + str(lonE))
-
 	time_step_dict = {1:['00:00', '01:00', '02:00',
 				'03:00', '04:00', '05:00',
 				'06:00', '07:00', '08:00',
@@ -59,9 +51,6 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 				  3: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
 				  6: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00']}
 
-
-	# download buffer of +/- 1 month to ensure all necessary timestamps are there for interpolations and consistency between plevel and surf
-
 	df = pd.DataFrame()
 	df['dates'] = pd.date_range(startDate, endDate, freq='M')
 	df['month'] = df.dates.dt.month
@@ -70,6 +59,9 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
 	elif surf_plev == 'plev':
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
+		loc_list = []
+		loc_list.extend([plevels]*df.shape[0])
+		df['plevels'] = loc_list
 	else:
 		sys.exit('ERROR: surf_plev can only be surf or plev')
 	df['file_exist'] = 0
@@ -108,18 +100,12 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 											list(download.bbox),
 											list(download.target_file),
 											list(download.product_type),
-											list(download.time_steps)))
+											list(download.time_steps),
+											list(download.plevels)))
 		pool.close()
 		pool.join()
 	else:
 		sys.exit('ERROR: surf_plev can only be surf or plev')
-
-
-
-	# https://zacharyst.com/2016/03/31/parallelize-a-multifunction-argument-in-python/
-	#Parallel(n_jobs=int(num_cores))(
-	#	delayed(era5_request_surf)(int(yearVecNew[i]), int(monthVecNew[i]), bbox, targetVecNew[i], product, time) for i
-	#	in range(0, len(yearVecNew)))
 
 
 def era5_request_surf(year, month, bbox, target, product, time):

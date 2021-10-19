@@ -100,8 +100,11 @@ class Topoclass(object):
             '''
             Function to parse config file .ini into a python class
             '''
-            conf = ConfigObj(self.file_config)
-            
+            try:
+                conf = ConfigObj(self.file_config)
+            except IOError:
+                print('ERROR: config file does not exist. Check path.')
+
             self.project_dir = conf['main']['project_dir']
             self.project_description = conf['main']['project_description']
             self.project_name = conf['main']['project_name']
@@ -121,7 +124,7 @@ class Topoclass(object):
             self.number_cores = conf['forcing'].as_int('number_cores')
                 
             self.time_step = conf['forcing'].as_int('time_step')
-            self.plevels = np.array(list(map(int, conf['forcing']['plevels'])))
+            self.plevels = conf['forcing']['plevels']
             
             self.dem_file = conf['forcing']['dem_file']
             self.dem_dataset = conf['forcing']['dem_dataset']
@@ -139,27 +142,30 @@ class Topoclass(object):
         latS = self.config.extent.get('latS') - 0.25
 
         # retreive ERA5 surface data
-        fe.retrieve_era5_surf(
+        fe.retrieve_era5(
             self.config.forcing_era5_product,
             self.config.start_date,
             self.config.end_date,
             self.config.project_dir + 'inputs/forcings/',
-            latN,latS,lonE,lonW,
-            self.config.time_step, self.config.number_cores
+            latN, latS, lonE, lonW,
+            self.config.time_step,
+            self.config.number_cores,
+            surf_plev = 'surf'
             )
         # retrieve era5 plevels
-        fe.retrieve_era5_plev(
+        fe.retrieve_era5(
             self.config.forcing_era5_product,
             self.config.start_date,
             self.config.end_date,
             self.config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW, 
-            self.config.time_step, self.config.plevels,
-            self.config.number_cores
+            self.config.time_step,
+            10,
+            surf_plev='plev',
+            plevels=self.config.plevels,
             )
             
-    
-    
+
     
     def to_cryogrid(self):
         '''
