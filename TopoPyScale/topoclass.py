@@ -20,6 +20,7 @@ from TopoPyScale import fetch_era5 as fe
 from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_sub as ts
 from TopoPyScale import fetch_dem as fd
+from TopoPyScale import solar_geom as sg
 
 
 class Topoclass(object):
@@ -28,14 +29,15 @@ class Topoclass(object):
         
         self.config = self.Config(config_file)
         self.toposub = self.Toposub()
+
+        self.solar_geometry = None
         
         if self.config.forcing_dataset.lower() == 'era5':
             self.get_era5()
 
-        if not os.path.isfile(self.config.dem_file):
+        if not os.path.isfile(self.config.dem_path):
             fd.fetch_dem(self.config.project_dir, self.config.extent, self.config.dem_file)
-        else:
-            self.dem = rasterio.open(self.config.project_dir + 'inputs/dem/' + self.config.dem_file)
+
 
     class Toposub:
         '''
@@ -52,13 +54,16 @@ class Topoclass(object):
         Function to compute DEM parameters, and cluster DEM in nb_clusters
         :return:
         '''
-        self.toposub.df_param = tp.compute_DEM_param(self.config.dem_file)
+        self.toposub.df_param = tp.compute_DEM_param(self.config.dem_path)
         df_scaled, self.toposub.scaler = ts.scale_df(self.toposub.df_param)
         if self.config.clustering_method.lower() == 'kmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj = ts.kmeans_clustering(df_scaled, self.config.nb_clusters)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
+
+    def solar_geometry(self):
+        self.solar_geometry = sg.get_solar_geom(self.toposub.df_centroids, self.config.start_date, self.config.end_date, self.config.time_step, self.config.dem_epsg)
 
     class Config:
         '''
@@ -107,19 +112,23 @@ class Topoclass(object):
                 self.forcing_nb_threads = conf['forcing'].as_int('nb_threads_download')
             self.number_cores = conf['forcing'].as_int('number_cores')
                 
-            self.time_step = conf['forcing'].as_int('time_step')
+            self.time_step = conf['forcing']['time_step']
             self.plevels = conf['forcing']['plevels']
             
             self.dem_file = conf['forcing'].get('dem_file')
-            self.dem_dataset = conf['forcing'].get('dem_dataset')
-            self.dem_download = conf['forcing'].as_bool('dem_download')
+            self.dem_epsg = conf['forcing'].get('dem_EPSG')
+            self.dem_path = self.project_dir + 'inputs/dem/' + self.dem_file
 
             self.nb_clusters = conf['toposcale'].as_int('nb_clusters')
             self.clustering_method = conf['toposcale']['clustering_method']
             self.interp_method = conf['toposcale']['interpolation_method']
             
     def get_era5(self):
-        # write code to fetch data from era5
+        '''
+        Funtion to call fetching of ERA5 data
+        TODO:
+        - merge monthly data into one file (cdo?)
+        '''
         lonW = self.config.extent.get('lonW') - 0.25
         lonE = self.config.extent.get('lonE') + 0.25
         latN = self.config.extent.get('latN') + 0.25

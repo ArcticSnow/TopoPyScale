@@ -119,6 +119,8 @@ ts.plot_center_clusters(myproj.config.dem_file,
                         var='cluster_labels', 
                         cmap=plt.cm.hsv)
 
+myproj.toposcale()
+myproj.to_netcdf()
 ```
 
 ## Principle of TopoPyScale

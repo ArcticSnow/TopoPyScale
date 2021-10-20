@@ -48,7 +48,7 @@ def fetch_dem(project_dir, extent, dem_file):
         print(cmd_1)
         print('eio clean')
         target_epsg = input("---> provide target EPSG (default: 32632):") or '32632'
-        cmd_2 = 'gdal_warp -tr 30 30 -r bilinear -s_srs epsg:4326 -t_srs epsg:{} {} {}'.format(target_epsg,
+        cmd_2 = 'gdal_warp -tr 90 90 -r bilinear -s_srs epsg:4326 -t_srs epsg:{} {} {}'.format(target_epsg,
                                                                                                project_dir + 'inputs/dem/dem_SRTM3.tif',
                                                                                                project_dir + 'inputs/dem/dem_SRTM3_proj.tif',)
         print(cmd_2)

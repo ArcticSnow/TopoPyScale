@@ -26,6 +26,7 @@ def scale_df(df_param, scaler=StandardScaler()):
     :param scaler: scikit learn scaler. Default is StandardScaler()
     :return: scaled pandas dataframe
     '''
+    print('---> Scaling data prior to clustering')
     df_scaled = pd.DataFrame(scaler.fit_transform(df_param.values),
                       columns=df_param.columns, index=df_param.index)
     return df_scaled, scaler
@@ -54,8 +55,8 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
     '''
     X = df_param.to_numpy()
     col_names = df_param.columns
-    print(('---> Clustering with K-means in {} clusters').format(n_clusters))
-    start_time=time.time()
+    print('---> Clustering with K-means in {} clusters'.format(n_clusters))
+    start_time = time.time()
     kmeans = KMeans(n_clusters=n_clusters, **kwargs).fit(X)
     print('---> Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
@@ -63,10 +64,10 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
     return df_centers, kmeans, df_param
 
 
-
 def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis):
     '''
     Function to plot the location of the cluster centroids over the DEM
+
     :param dem_file: path to dem raster file
     :param df_param: dataframe containing topo_param parameters ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     :param df_centers: dataframe containing cluster centroid parameters ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
