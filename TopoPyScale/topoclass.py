@@ -19,7 +19,8 @@ import rasterio
 from TopoPyScale import fetch_era5 as fe
 from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_sub as ts
-import numpy as np
+from TopoPyScale import fetch_dem as fd
+
 
 class Topoclass(object):
     
@@ -32,45 +33,7 @@ class Topoclass(object):
             self.get_era5()
 
         if not os.path.isfile(self.config.dem_file):
-            ans = input(("---> Would you like to download a reference DEM from {}? (y/n)").format(self.config.dem_dataset))
-
-            if (ans.lower() == 'y') or (ans == 1):
-                # code to fetch dem from SRTM, Arctic DEM or other public repository
-                if (self.config.dem_dataset.lower() == 'srtm') and self.config.dem_download:
-                    '''
-                    This is not quite optimal to handle this here. 1. it only works for small area, and the DEM is in 
-                    WGS84 lat/lon which will require to be projected to UTM or other with gdal_translate.
-                    
-                    Maybe move this to fetch_dem.py to print out command to execute based on input parameters if DEM not available
-                    '''
-                    # use STRM DEM for extent of interest
-                    self.config.dem_file = 'dem_30m_SRTM.tif'
-                    os.system('eio clean')
-                    cmd = 'eio --product {} clip -o {} --bounds {} {} {} {} --margin {}'.format(self.config.dem_dataset,
-                                                                                                self.config.project_dir + 'inputs/dem/' + self.config.dem_file,
-                                                                                                self.config.extent.get('lonW'),
-                                                                                                self.config.extent.get('latS'),
-                                                                                                self.config.extent.get('lonE'),
-                                                                                                self.config.extent.get('latN'),
-                                                                                                0.25)
-                    print('/n', cmd, '\n')
-                    os.system(cmd)
-                    os.system('eio clean')
-
-                elif (self.config.dem_dataset.lower() == 'arcticdem') and self.config.dem_download:
-                    # write code to pull ArcticDEM for extent of interest
-                    print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
-                    self.dem = None
-
-                elif (self.config.dem_dataset.lower() == 'ASTER') and self.config.dem_download:
-                    # write code to pull ArcticDEM for extent of interest
-                    print('ERROR: Fetching ArcticDEM not yet available.\n\nThere are libraries to download DEM independently of TopoPyScale: \n-https://github.com/samapriya/ArcticDEM-Batch-Pipeline')
-                    self.dem = None
-
-                else:
-                    sys.exit("ERROR: indicate a dem_dataset in config.ini.\n =-- Available: srtm")
-            else:
-                sys.exit("ERROR: Indicate a DEM file (GeoTiff) in config.ini or set to None to download SRTM DEM")
+            fd.fetch_dem(self.config.project_dir, self.config.extent, self.config.dem_file)
         else:
             self.dem = rasterio.open(self.config.project_dir + 'inputs/dem/' + self.config.dem_file)
 
@@ -90,12 +53,12 @@ class Topoclass(object):
         :return:
         '''
         self.toposub.df_param = tp.compute_DEM_param(self.config.dem_file)
-        df_scaled, self.scaler = ts.scale_df(self.toposub.df_param)
+        df_scaled, self.toposub.scaler = ts.scale_df(self.toposub.df_param)
         if self.config.clustering_method.lower() == 'kmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj = ts.kmeans_clustering(df_scaled, self.config.nb_clusters)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
-        self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, scaler)
+        self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
 
     class Config:
         '''

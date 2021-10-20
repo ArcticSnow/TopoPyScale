@@ -38,6 +38,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		Monthly era surface files.		 
 
 	"""
+	print('\n')
+	print('---> Loading ERA5 {} climate forcing'.format(surf_plev))
 	bbox = (str(latN) + "/" + str(lonW) + "/" + str(latS) + "/" + str(lonE))
 	time_step_dict = {1:['00:00', '01:00', '02:00',
 				'03:00', '04:00', '05:00',
