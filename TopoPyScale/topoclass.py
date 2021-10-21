@@ -15,7 +15,7 @@ import os
 import sys
 
 from configobj import ConfigObj
-import rasterio
+import matplotlib.pyplot as plt
 from TopoPyScale import fetch_era5 as fe
 from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_sub as ts
@@ -30,40 +30,54 @@ class Topoclass(object):
         self.config = self.Config(config_file)
         self.toposub = self.Toposub()
 
-        self.solar_geometry = None
-        
+        self.solar_ds = None
+        self.horizon_da = None
+
         if self.config.forcing_dataset.lower() == 'era5':
             self.get_era5()
 
         if not os.path.isfile(self.config.dem_path):
             fd.fetch_dem(self.config.project_dir, self.config.extent, self.config.dem_file)
-
+        else:
+            print('\n---> DEM file found')
+            self.toposub.dem_path = self.config.dem_path
 
     class Toposub:
         '''
         Class to initialize variables to store TopoSub variables
         '''
         def __init__(self):
+            self.dem_path = None
             self.df_param = None
             self.df_centroids = None
             self.kmeans_obj = None
             self.scaler = None
 
+        def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv):
+            ts.plot_center_clusters(self.dem_path, self.df_param, self.df_centroids, var=var, cmap=cmap)
+
+    def compute_dem_param(self):
+        self.toposub.df_param = tp.compute_dem_param(self.config.dem_path)
+
     def clustering_dem(self):
         '''
-        Function to compute DEM parameters, and cluster DEM in nb_clusters
+        Function to compute DEM parameters, and cluster DEM in n_clusters
         :return:
         '''
-        self.toposub.df_param = tp.compute_DEM_param(self.config.dem_path)
         df_scaled, self.toposub.scaler = ts.scale_df(self.toposub.df_param)
         if self.config.clustering_method.lower() == 'kmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj = ts.kmeans_clustering(df_scaled, self.config.nb_clusters)
+            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.kmeans_clustering(df_scaled, self.config.n_clusters)
+        elif self.config.clustering_method.lower() == 'minibatchkmean':
+            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(df_scaled, self.config.n_clusters, self.config.n_cores)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
 
-    def solar_geometry(self):
-        self.solar_geometry = sg.get_solar_geom(self.toposub.df_centroids, self.config.start_date, self.config.end_date, self.config.time_step, self.config.dem_epsg)
+    def compute_solar_geometry(self):
+        self.solar_ds = sg.get_solar_geom(self.toposub.df_centroids, self.config.start_date, self.config.end_date, self.config.time_step, self.config.dem_epsg)
+
+    def compute_horizon(self):
+        self.horizon_da = tp.compute_horizon(self.config.dem_path, self.config.horizon_az_inc)
 
     class Config:
         '''
@@ -109,8 +123,8 @@ class Topoclass(object):
             self.forcing_dataset = conf['forcing'].get('dataset')
             if self.forcing_dataset.lower() == 'era5':
                 self.forcing_era5_product = conf['forcing']['era5_product']
-                self.forcing_nb_threads = conf['forcing'].as_int('nb_threads_download')
-            self.number_cores = conf['forcing'].as_int('number_cores')
+                self.forcing_n_threads = conf['forcing'].as_int('n_threads_download')
+            self.n_cores = conf['forcing'].as_int('n_cores')
                 
             self.time_step = conf['forcing']['time_step']
             self.plevels = conf['forcing']['plevels']
@@ -118,8 +132,9 @@ class Topoclass(object):
             self.dem_file = conf['forcing'].get('dem_file')
             self.dem_epsg = conf['forcing'].get('dem_EPSG')
             self.dem_path = self.project_dir + 'inputs/dem/' + self.dem_file
+            self.horizon_az_inc = conf['forcing'].as_int('horizon_az_inc')
 
-            self.nb_clusters = conf['toposcale'].as_int('nb_clusters')
+            self.n_clusters = conf['toposcale'].as_int('n_clusters')
             self.clustering_method = conf['toposcale']['clustering_method']
             self.interp_method = conf['toposcale']['interpolation_method']
             
@@ -142,7 +157,7 @@ class Topoclass(object):
             self.config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW,
             self.config.time_step,
-            self.config.forcing_nb_threads,
+            self.config.forcing_n_threads,
             surf_plev='surf'
             )
         # retrieve era5 plevels
@@ -153,7 +168,7 @@ class Topoclass(object):
             self.config.project_dir + 'inputs/forcings/',
             latN, latS, lonE, lonW, 
             self.config.time_step,
-            self.config.forcing_nb_threads,
+            self.config.forcing_n_threads,
             surf_plev='plev',
             plevels=self.config.plevels,
             )

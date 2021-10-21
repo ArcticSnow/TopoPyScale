@@ -31,15 +31,15 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg=4326):
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x, df_position.y)
 
     times = pd.date_range(start_date, end_date, freq=tstep, tz='UTC')
-    arr = np.empty((2, df_position.shape[0], times.shape[0]))
+    arr = np.empty((df_position.shape[0], 2, times.shape[0]))
 
     for i, row in df_position.iterrows():
-        arr[:, i,:] = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude)[['zenith', 'azimuth']].values.T
+        arr[i, :, :] = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude)[['zenith', 'azimuth']].values.T
 
     ds = xr.Dataset(
         {
-            "zenith": (["point_id", "time"], arr[0, :, :]),
-            "azimuth": (["point_id", "time"], arr[1, :, :]),
+            "zenith": (["point_id", "time"], arr[:, 0, :]),
+            "azimuth": (["point_id", "time"], arr[:, 1, :]),
             "latitude": (["point_id", "time"], np.reshape(np.repeat(df_position.latitude.values, times.shape[0]),
                                                          (df_position.latitude.shape[0], times.shape[0]))),
             "longitude": (["point_id", "time"], np.reshape(np.repeat(df_position.longitude.values, times.shape[0]),
@@ -47,7 +47,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg=4326):
         },
         coords={
             "point_id": df_position.index,
-            "time": times,
+            "time": pd.date_range(start_date, end_date, freq=tstep),
             "reference_time": pd.Timestamp(start_date),
         },
     )

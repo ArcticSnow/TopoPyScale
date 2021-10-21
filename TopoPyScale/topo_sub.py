@@ -11,7 +11,7 @@ TODO:
 import rasterio
 from rasterio import plot
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+from sklearn import cluster
 import pandas as pd
 from matplotlib.colors import LightSource
 from matplotlib import pyplot as plt
@@ -28,7 +28,7 @@ def scale_df(df_param, scaler=StandardScaler()):
     '''
     print('---> Scaling data prior to clustering')
     df_scaled = pd.DataFrame(scaler.fit_transform(df_param.values),
-                      columns=df_param.columns, index=df_param.index)
+                             columns=df_param.columns, index=df_param.index)
     return df_scaled, scaler
 
 def inverse_scale_df(df_scaled, scaler):
@@ -40,7 +40,7 @@ def inverse_scale_df(df_scaled, scaler):
     :return:
     '''
     df_inv = pd.DataFrame(scaler.inverse_transform(df_scaled.values),
-                      columns=df_scaled.columns, index=df_scaled.index)
+                          columns=df_scaled.columns, index=df_scaled.index)
     return df_inv
 
 
@@ -57,11 +57,34 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
     col_names = df_param.columns
     print('---> Clustering with K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
-    kmeans = KMeans(n_clusters=n_clusters, **kwargs).fit(X)
+    kmeans = cluster.KMeans(n_clusters=n_clusters, **kwargs).fit(X)
     print('---> Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
-    df_param['cluster_labels'] = kmeans.label_
+    df_param['cluster_labels'] = kmeans.labels_
     return df_centers, kmeans, df_param
+
+
+def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, **kwargs):
+    '''
+    Function to perform K-mean clustering
+
+    :param df_param: pandas dataframe with features
+    :param n_clusters: (int) number of clusters
+    :param n_cores: (int) number of processor core
+    :param kwargs:
+    :return:
+    '''
+    X = df_param.to_numpy()
+    col_names = df_param.columns
+    print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
+    start_time = time.time()
+    miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256*n_cores, **kwargs).fit(X)
+    print('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
+    df_centers = pd.DataFrame(miniBkmeans.cluster_centers_, columns=col_names)
+    df_param['cluster_labels'] = miniBkmeans.labels_
+    return df_centers, miniBkmeans, df_param['cluster_labels']
+
+
 
 
 def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis):
@@ -86,7 +109,7 @@ def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 9))
     shade = ls.hillshade(np.reshape(df_param['elev'].values, shape), vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
     rgb = ax.imshow(np.reshape(df_param[var].values, shape)*shade, extent=extent, cmap=cmap)
-    ax.scatter(df_centers.x, df_centers.y, c='r')
+    ax.scatter(df_centers.x, df_centers.y, c='r', edgecolors='k')
     cb = plt.colorbar(rgb)
     cb.set_label(var)
     ax.set_title('Cluster Centroids')

@@ -107,20 +107,24 @@ from topopyscale import topo_sub as ts
 from matplotlib import pyplot as plt
 
 config_file = './config.ini'
-myproj = tc.Topoclass(config_file)
+mp = tc.Topoclass(config_file)
 
+mp.compute_dem_param()
 # Compute clustering of the input DEM
-myproj.clustering_dem()
+mp.clustering_dem()
 
 # plot clusters
-ts.plot_center_clusters(myproj.config.dem_file, 
-                        myproj.toposub.df_param, 
-                        myproj.toposub.df_centers, 
-                        var='cluster_labels', 
-                        cmap=plt.cm.hsv)
+mp.toposub.plot_clusters_map()
+# plot sky view factor
+mp.toposub.plot_clusters_map(var='svf', cmap=plt.cmap.viridis)
 
-myproj.toposcale()
-myproj.to_netcdf()
+# compute solar geometry and horizon angles
+mp.compute_solar_geometry()
+mp.compute_horizon()
+
+
+mp.toposcale()
+mp.to_netcdf()
 ```
 
 ## Principle of TopoPyScale
