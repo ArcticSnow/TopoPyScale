@@ -185,59 +185,6 @@ def era5_request_plev(year, month, bbox, target, product, time, plevels):
 	print(target + " complete")
 
 
-def eraCat(wd, grepStr):
-	"""
-	*** CDO ***
-	Concats monthly era (interim or 5) files by some keyword *grepStr*. Depends on CDO.
-	- reads monthly ERA5 data files (MARS efficiency)
-	- concats to single file timeseries
-
-	Syntax: cdo -b F64 -f nc2 mergetime SURF* SURF.nc
-
-	Args:
-		wd: directory of era monthly datafiles
-		grepStr: "PLEV" or "SURF"
-	Example:
-		wd=/home/eraDat/
-		grepStr= "PLEV"
-		eraCat("/home/joel/mnt/myserver/sim/wfj_era5/eraDat/", "PLEV")
-	"""
-
-	cmd = ("cdo -b F64 -f nc2 mergetime " + wd + grepStr + "* " + wd + "/" + grepStr + ".nc")
-	subprocess.check_output(cmd, shell="TRUE")
-
-def eraCat5d(wd, grepStr):
-	"""
-	*** NCO ***
-	Updated method to deal with 5D of ensemble datasets NOT supported by CDO
-	Concats monthly era (interim or 5) files by some keyword *grepStr*. Depends on NCO.
-	sudo apt-get install nco
-	- reads monthly ERA5 data files (MARS efficiency)
-	- concats to single file timeseries
-	- 2 steps 
-		- assign time to "record" dimeanion in firstfile
-		- concat files
-
-	Args:
-		wd: directory of era monthly datafiles
-		grepStr: "PLEV" or "SURF"
-	Example:
-		wd=/home/eraDat/
-		grepStr= "PLEV"
-		eraCat("/home/joel/mnt/myserver/sim/wfj_era5/eraDat/", "PLEV")
-	"""
-
-	lst = glob.glob(wd + grepStr + '*')
-	lst.sort()
-
-	firstfile = lst[0]
-	cmd = ("ncks -O --mk_rec_dmn time " + firstfile + " " + firstfile)
-	subprocess.check_output(cmd, shell="TRUE")
-
-	cmd = ("ncrcat " + grepStr + "*" + " " + grepStr + ".nc")
-	subprocess.check_output(cmd, shell="TRUE")
-
-
 def retrieve_era5_tpmm(startDate, endDate, eraDir, latN, latS, lonE, lonW):
 	"""
 	retrieve monthly tp means to correct 6 or 3h TP retrieval

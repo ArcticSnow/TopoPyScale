@@ -73,9 +73,6 @@ pip install topocalc
 pip install pvlib
 pip install elevation
 
-sudo apt-get install nco
-sudo apt-get install cdo
-
 cd github  # navigate to where you want to clone TopoPyScale
 git clone git@github.com:ArcticSnow/TopoPyScale.git
 pip install -e TopoPyScale    #install a development version

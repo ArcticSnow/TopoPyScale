@@ -4,7 +4,6 @@ S. Filhol, Oct 2021
 
 TODO:
 - explore other clustering methods available in scikit-learn: https://scikit-learn.org/stable/modules/clustering.html
-- implement MiniBatchKmean for large DEMs to improve computation time
 - look into DBSCAN and its relative
 '''
 
@@ -66,13 +65,13 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
 
 def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, **kwargs):
     '''
-    Function to perform K-mean clustering
+    Function to perform mini-batch K-mean clustering
 
     :param df_param: pandas dataframe with features
     :param n_clusters: (int) number of clusters
     :param n_cores: (int) number of processor core
     :param kwargs:
-    :return:
+    :return: centroids, kmean-object, and labels of input data
     '''
     X = df_param.to_numpy()
     col_names = df_param.columns
@@ -83,8 +82,6 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, **kwargs):
     df_centers = pd.DataFrame(miniBkmeans.cluster_centers_, columns=col_names)
     df_param['cluster_labels'] = miniBkmeans.labels_
     return df_centers, miniBkmeans, df_param['cluster_labels']
-
-
 
 
 def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis):
@@ -116,3 +113,8 @@ def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm
     ax.set_ylabel('y-coordinate')
     ax.set_xlabel('x-coordinate')
     plt.show()
+
+    def plot_pca_clusters():
+        # write here function to reduce input data with PCA, plot first 2 dimension, and color by labels to visualized clusters
+        # thin data for plotting
+        return
