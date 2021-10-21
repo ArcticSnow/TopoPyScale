@@ -130,7 +130,7 @@ class Topoclass(object):
             self.plevels = conf['forcing']['plevels']
             
             self.dem_file = conf['forcing'].get('dem_file')
-            self.dem_epsg = conf['forcing'].get('dem_EPSG')
+            self.dem_epsg = conf['forcing'].get('dem_epsg')
             self.dem_path = self.project_dir + 'inputs/dem/' + self.dem_file
             self.horizon_az_inc = conf['forcing'].as_int('horizon_az_inc')
 

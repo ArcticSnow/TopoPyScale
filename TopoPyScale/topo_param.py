@@ -26,9 +26,8 @@ def compute_dem_param(dem_file):
     with rasterio.open(dem_file) as rf:
         dem_arr = rf.read()
         geot = rf.read_transform()
-        bounds = rf.bounds
-        if dem.shape.__len__() == 3:
-            dem = dem[0, :, :]
+        if dem_arr.shape.__len__() == 3:
+            dem_arr = dem_arr[0, :, :]
         dx, dy = geot[1], -geot[-1]
         x = np.linspace(rf.bounds.left + np.round(geot[1], 3), rf.bounds.right, rf.shape[1])
         y = np.linspace(rf.bounds.bottom + np.round(geot[5], 3), rf.bounds.top, rf.shape[0])
@@ -63,7 +62,7 @@ def compute_horizon(dem_file, azimuth_inc=30):
     Function to compute horizon angles for
     :param dem_file:
     :param azimuth_inc:
-    :return:
+    :return: xarray dataset containing the
     '''
 
     with rasterio.open(dem_file) as rf:
@@ -76,17 +75,17 @@ def compute_horizon(dem_file, azimuth_inc=30):
         y = np.linspace(rf.bounds.bottom + np.round(geot[5], 3), rf.bounds.top, rf.shape[0])
     azimuth = np.arange(-180, 180, azimuth_inc)
     arr = np.empty((azimuth.shape[0], dem.shape[0], dem.shape[1]))
+    dem = np.flip(dem.astype(float))
     for i, azi in enumerate(azimuth):
-        arr[i, :, :] = horizon.horizon(azi, dem.astype(float), dx)
+        arr[i, :, :] = horizon.horizon(azi, dem, dx)
 
-    da = xr.DataArray(data=arr,
+    da = xr.DataArray(data=np.flip(np.arccos(arr),2),
                       coords={
                           "y": y,
-                          "z": x,
+                          "x": x,
                           "azimuth": azimuth
                       },
                       dims=["azimuth", "y", "x"]
                       )
-
     arr, dem = None, None
     return da

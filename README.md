@@ -102,8 +102,7 @@ key: {uid}:{api-key}
 4. Run TopoPyScale
 
 ```python
-from topopyscale import topoclass as tc
-from topopyscale import topo_sub as ts
+from TopoPyScale import topoclass as tc
 from matplotlib import pyplot as plt
 
 config_file = './config.ini'
@@ -116,7 +115,7 @@ mp.clustering_dem()
 # plot clusters
 mp.toposub.plot_clusters_map()
 # plot sky view factor
-mp.toposub.plot_clusters_map(var='svf', cmap=plt.cmap.viridis)
+mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
 
 # compute solar geometry and horizon angles
 mp.compute_solar_geometry()
