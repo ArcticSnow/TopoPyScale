@@ -11,7 +11,7 @@ import numpy as np
 from pyproj import Transformer
 
 
-def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg=4326):
+def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     '''
     Function to compute solar position for each location given in the dataframe
 
@@ -26,8 +26,8 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg=4326):
         - check if degrees is the correct unit
     '''
 
-    if (int(sr_epsg) != 4326) or ('longitude' not in df_position.columns):
-        trans = Transformer.from_proj(int(sr_epsg), 4326)
+    if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
+        trans = Transformer.from_crs("epsg:" + sr_epsg, "epsg:4326", always_xy=True)
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x, df_position.y)
 
     times = pd.date_range(start_date, end_date, freq=tstep, tz='UTC')
