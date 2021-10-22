@@ -25,11 +25,14 @@ Contributor to this current version (2021)
 - [x] simplify `fetch_era5.py` routines. Code seems over complex
 - [ ] write download routine for CORDEX climate projection
 - `topo_scale.py`:
-  - [ ] do it all
+  - [ ] develop to do one point. then loop over a list of point
+    
 - `fetch_era5.py`:
   - [x] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
   - [ ] figure out in which case to use other function tpmm and other? how to integrate them?   
-
+- `topo_param.py`:
+    - [ ] add routine to sample dem or var at any given point. Do it for Horizons
+    - [ ] change aspect to have 0 as south. (same convention as in horizon)
 - **Documentation**:
   - [ ] Complete `README.md` file
   - [ ] create small examples from a small dataset avail in the library

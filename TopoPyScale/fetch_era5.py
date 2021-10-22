@@ -122,7 +122,7 @@ def era5_request_surf(year, month, bbox, target, product, time):
 	c.retrieve(
 		'reanalysis-era5-single-levels',
 		{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
-					  'surface_solar_radiation_downwards',
+					  'surface_solar_radiation_downwards','surface_pressure',
 					  'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
 					  'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
 					  ],
