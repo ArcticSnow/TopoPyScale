@@ -3,7 +3,7 @@ Set of functions to work with DEMs
 S. Filhol, Oct 2021
 
 TODO:
-- write function to get ERA5 x,y,z at each point list
+- an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
 '''
 
 import rasterio

@@ -21,7 +21,7 @@ Contributor to this current version (2021)
     - [ ] add plotting routines.
 - `topo_sub.py`:
   - [ ]look into alternative clustering method DBscan
-  - [ ] implement minibatch kmean for large DEM
+  - [x] implement minibatch kmean for large DEM
 - [x] simplify `fetch_era5.py` routines. Code seems over complex
 - [ ] write download routine for CORDEX climate projection
 - `topo_scale.py`:
