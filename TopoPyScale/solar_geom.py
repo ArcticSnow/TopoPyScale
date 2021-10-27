@@ -20,7 +20,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     :param end_date: end date in string     "2015-05-10"
     :param tstep: time step to use (str)    '6H'
     :param sr_epsg: source EPSG code for the input coordinate
-    :return: xarray dataset of solar angles in degrees
+    :return: xarray dataset of   solar angles in degrees
 
     TODO:
         - check if degrees is the correct unit
@@ -35,6 +35,9 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
 
     for i, row in df_position.iterrows():
         arr[i, :, :] = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude)[['zenith', 'azimuth']].values.T
+
+    # add buffer start date by tstep that later aeraging does not produce NaNs
+    #start_date = pd.Timestamp(start_date) - pd.Timedelta(tstep)
 
     ds = xr.Dataset(
         {

@@ -49,12 +49,9 @@ def compute_dem_param(dem_file):
     svf = viewf.viewf(np.double(dem_arr), dx)[0]
     dem_param['svf'] = svf.flatten()
     print('---> Sky-view-factor finished in {}s'.format(np.round(time.time()-start_time), 0))
+
     dem_arr = None
     return dem_param
-
-
-def extract_ERA5_xyz(ds, df_centroids):
-    return
 
 
 def compute_horizon(dem_file, azimuth_inc=30):
@@ -89,3 +86,5 @@ def compute_horizon(dem_file, azimuth_inc=30):
                       )
     arr, dem = None, None
     return da
+
+

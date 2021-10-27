@@ -74,10 +74,24 @@ class Topoclass(object):
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
 
     def compute_solar_geometry(self):
-        self.solar_ds = sg.get_solar_geom(self.toposub.df_centroids, self.config.start_date, self.config.end_date, self.config.time_step, self.config.dem_epsg)
+        self.solar_ds = sg.get_solar_geom(self.toposub.df_centroids,
+                                          self.config.start_date,
+                                          self.config.end_date,
+                                          self.config.time_step,
+                                          self.config.dem_epsg)
 
     def compute_horizon(self):
+        '''
+        Function to compute horizon angle and sample values for list of points
+        :return:
+        '''
         self.horizon_da = tp.compute_horizon(self.config.dem_path, self.config.horizon_az_inc)
+        for az in self.horizon_da.azimuth:
+            self.toposub.df_centroids['azi_'+str(az)] = self.horizon_da.sel(x=self.toposub.df_centroids.x,
+                                                                            y=self.toposub.df_centroids.y,
+                                                                            azimuth=az,
+                                                                            method='nearest').values.flatten()
+
 
     class Config:
         '''
