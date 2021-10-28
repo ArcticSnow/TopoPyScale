@@ -44,12 +44,13 @@ def inverse_scale_df(df_scaled, scaler):
     return df_inv
 
 
-def kmeans_clustering(df_param, n_clusters=100, **kwargs):
+def kmeans_clustering(df_param, n_clusters=100, seed=None, **kwargs):
     '''
     Function to perform K-mean clustering
 
     :param df_param: pandas dataframe with features
     :param n_clusters: number of clusters
+    :param seed: None or int for random seed generator
     :param kwargs:
     :return:
     '''
@@ -57,14 +58,14 @@ def kmeans_clustering(df_param, n_clusters=100, **kwargs):
     col_names = df_param.columns
     print('---> Clustering with K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
-    kmeans = cluster.KMeans(n_clusters=n_clusters, **kwargs).fit(X)
+    kmeans = cluster.KMeans(n_clusters=n_clusters, random_state=seed, **kwargs).fit(X)
     print('---> Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
     df_param['cluster_labels'] = kmeans.labels_
     return df_centers, kmeans, df_param
 
 
-def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, **kwargs):
+def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, **kwargs):
     '''
     Function to perform mini-batch K-mean clustering
 
@@ -78,7 +79,7 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, **kwargs):
     col_names = df_param.columns
     print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
-    miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256*n_cores, **kwargs).fit(X)
+    miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256*n_cores, random_state=seed, **kwargs).fit(X)
     print('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
     df_centers = pd.DataFrame(miniBkmeans.cluster_centers_, columns=col_names)
     df_param['cluster_labels'] = miniBkmeans.labels_

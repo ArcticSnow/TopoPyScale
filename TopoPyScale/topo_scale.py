@@ -164,7 +164,7 @@ surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
 # Compute clear sky emissivity
 down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
 surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
-# Calculate the "cloud" emissivity
+# Calculate the "cloud" emissivity, CHECK UNIT OF SSRD (J/m2) or (W/m2)
 surf_interp['cle'] = surf_interp.ssrd / (sbc * surf_interp.t2m^4) - surf_interp['cse']
 # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
 surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']

@@ -66,9 +66,9 @@ class Topoclass(object):
         '''
         df_scaled, self.toposub.scaler = ts.scale_df(self.toposub.df_param)
         if self.config.clustering_method.lower() == 'kmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.kmeans_clustering(df_scaled, self.config.n_clusters)
+            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.kmeans_clustering(df_scaled, self.config.n_clusters, seed=self.config.random_seed)
         elif self.config.clustering_method.lower() == 'minibatchkmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(df_scaled, self.config.n_clusters, self.config.n_cores)
+            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(df_scaled, self.config.n_clusters, self.config.n_cores,  seed=self.config.random_seed)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
@@ -86,9 +86,11 @@ class Topoclass(object):
         :return:
         '''
         self.horizon_da = tp.compute_horizon(self.config.dem_path, self.config.horizon_az_inc)
-        for az in self.horizon_da.azimuth:
-            self.toposub.df_centroids['azi_'+str(az)] = self.horizon_da.sel(x=self.toposub.df_centroids.x,
-                                                                            y=self.toposub.df_centroids.y,
+        tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
+        tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
+        for az in self.horizon_da.azimuth.values:
+            self.toposub.df_centroids['hori_azi_'+str(az)] = self.horizon_da.sel(x=tgt_x,
+                                                                            y=tgt_y,
                                                                             azimuth=az,
                                                                             method='nearest').values.flatten()
 
@@ -149,6 +151,7 @@ class Topoclass(object):
             self.horizon_az_inc = conf['forcing'].as_int('horizon_az_inc')
 
             self.n_clusters = conf['toposcale'].as_int('n_clusters')
+            self.random_seed = conf['toposcale'].as_int('random_seed')
             self.clustering_method = conf['toposcale']['clustering_method']
             self.interp_method = conf['toposcale']['interpolation_method']
             
