@@ -2,6 +2,7 @@
 Toposcale functionalities
 S. Filhol, Oct 2021
 
+======= Organization of input data to Toposcale ======
 dem_descriton (nb_points)
     X
     Y,
@@ -18,11 +19,8 @@ solar_geom (nb_points * time * 2)
 surface_climate_data (spatial + time + var)
 plevels_climate_data (spatial + time + var + plevel)
 
-NOTE:
-surface and plevels, open with xr.open_mfdataset()
 
-
-Dataset naming convention:
+======= Dataset naming convention:  =========
 ds_surf => dataset direct from ERA5 single level surface
 ds_plev => dataset direct from ERA5 pressure levels
 
@@ -62,8 +60,17 @@ g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
 
-
 def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG):
+    '''
+    Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
+
+    :param path_forcing: path to forcing data [SURF*, PLEV*]
+    :param df_centroids: pandas dataframe containing a list of point for which to downscale (includes all terrain data)
+    :param solar_ds: xarray dataset containing solar geometry: sun zenith, azimuth, elevation
+    :param horizon_da: xarray dataarray containing the horizon angles for a list of azimuth
+    :param target_EPSG: EPSG code of the DEM
+    :return: xarray dataset containing downscaled data organized with time, point_id, lat, long
+    '''
     start_time = time.time()
     # =========== Open dataset with Dask =================
     ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*')
@@ -119,14 +126,10 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
         # ========= Converting z from [m**2 s**-2] to [m] asl =======
         plev_interp.z.values = plev_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
-        plev_interp.z.attrs['units'] = 'm'  # modify z unit
-        plev_interp.z.attrs['standard_name'] = 'Elevation'  # modify z unit
-        plev_interp.z.attrs['Long_name'] = 'Elevation of plevel'  # modify z unit
+        plev_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}
 
         surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
-        surf_interp.z.attrs['units'] = 'm'  # modify z unit
-        surf_interp.z.attrs['standard_name'] = 'Elevation'  # modify z unit
-        surf_interp.z.attrs['Long_name'] = 'Elevation of ERA5 surface'  # modify z unit
+        surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
         # ========== Vertical interpolation at the DEM surface z  ===============
         ind_z_bot = (plev_interp.where(plev_interp.z < row.elev).z - row.elev).argmin('level')
@@ -174,12 +177,19 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp['cle'] = surf_interp.ssrd / (sbc * surf_interp.t2m**4) - surf_interp['cse']
         # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
         surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
-        down_pt['strd'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
+        down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
+        down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+        surf_interp.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+        surf_interp.cle.attrs = {'units': 'xxx', 'standard_name': 'Cloud emissivity'}
+        surf_interp.aef.attrs = {'units': 'xxx', 'standard_name': 'All sky emissivity'}
+        down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
 
         mu0 = np.cos(solar_ds.sel(point_id=row.name).zenith_avg) * (np.cos(solar_ds.sel(point_id=row.name).zenith_avg)>0)
         S0=1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
         solar_ds['SWtoa'] = S0 * mu0
         solar_ds['sunset'] = mu0 < np.cos(89*np.pi/180)
+        solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
+        solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
         kt = (surf_interp.ssrd/pd.Timedelta('1H').seconds) / solar_ds.sel(point_id=row.name).SWtoa     # clearness index
         kd = np.max(0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt)), 0)    # Diffuse index
@@ -187,8 +197,11 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp['SW'] = surf_interp.ssrd/pd.Timedelta('1H').seconds
         surf_interp['SW_diffuse'] = kd * surf_interp.SW
         down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
-
+        surf_interp.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
+        surf_interp.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
+        down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
         surf_interp['SW_direct'] = surf_interp.SW - surf_interp.SW_diffuse
+        surf_interp.SW_direct.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave direct radiations downward'}
 
         # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
         ka = (g*mu0/down_pt.p)*np.log(solar_ds.sel(point_id=row.name).SWtoa/surf_interp.SW_direct)
@@ -207,6 +220,9 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         down_pt['SW_direct'] =down_pt.SW_direct_tmp * (down_pt.cos_illumination/mu0)*(1-shade)
         down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
         down_pt = down_pt.drop(['SW_direct_tmp'])
+
+        down_pt.SW_direct.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave direct radiations downward'}
+        down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
         dataset.append(down_pt)
 
     down_pts = xr.concat(dataset, dim='point_id')

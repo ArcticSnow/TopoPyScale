@@ -15,6 +15,7 @@ Contributor to this current version (2021)
     - [x] create project folder structure if not existing
     - [x] read config file
     - [x] get ERA5 data
+    - [ ] create possibility to provide a list of points by lat,long to run toposcale completely
     - [ ] write save output in the various format version
     - [ ] fetch other dataset routines
     - [ ] implement routine to fecth DEM automatically from ArcticDEM/ASTER
@@ -22,17 +23,22 @@ Contributor to this current version (2021)
 - `topo_sub.py`:
   - [ ]look into alternative clustering method DBscan
   - [x] implement minibatch kmean for large DEM
-- [x] simplify `fetch_era5.py` routines. Code seems over complex
-- [ ] write download routine for CORDEX climate projection
+  - [x] simplify `fetch_era5.py` routines. Code seems over complex
+  - [ ] write download routine for CORDEX climate projection
 - `topo_scale.py`:
-  - [ ] develop to do one point. then loop over a list of point
+    - [x] develop to do one point. then loop over a list of point
+    - [ ] add metadata to the newly created dataset (variable name, units, etc)
+    - [ ] try to rewrite function to skip for loop using the power of zarray
+    - [ ] check against previous implementation of TopoScale
+    
     
 - `fetch_era5.py`:
   - [x] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
   - [ ] figure out in which case to use other function tpmm and other? how to integrate them?   
+    
 - `topo_param.py`:
-    - [ ] add routine to sample dem or var at any given point. Do it for Horizons
-    - [ ] change aspect to have 0 as south. (same convention as in horizon)
+    - [x] add routine to sample dem or var at any given point. Do it for Horizons
+    - [x] change aspect to have 0 as south. (same convention as in horizon)
 - **Documentation**:
   - [ ] Complete `README.md` file
   - [ ] create small examples from a small dataset avail in the library
@@ -120,9 +126,8 @@ mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
 # compute solar geometry and horizon angles
 mp.compute_solar_geometry()
 mp.compute_horizon()
+mp.downscale_climate()
 
-
-mp.toposcale()
 mp.to_netcdf()
 ```
 
