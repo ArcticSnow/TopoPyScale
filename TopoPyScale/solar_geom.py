@@ -29,16 +29,21 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
         trans = Transformer.from_crs("epsg:" + sr_epsg, "epsg:4326", always_xy=True)
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x, df_position.y)
-    tstep_dict = {'1H':1, '3H':3, '6H':6}
+    tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
 
     times = pd.date_range(start_date, end_date, freq='1H', tz='UTC')
     tstep_vec = pd.date_range(start_date, end_date, freq=tstep, tz='UTC')
-    arr_val = np.empty((df_position.shape[0], 2, tstep_vec.shape[0]))
-    arr_avg = np.empty((df_position.shape[0], 2, tstep_vec.shape[0]))
+    arr_val = np.empty((df_position.shape[0], 3, tstep_vec.shape[0]))
+    arr_avg = np.empty((df_position.shape[0], 4, tstep_vec.shape[0]))
 
     for i, row in df_position.iterrows():
-        arr_val[i, :, :] = pvlib.solarposition.get_solarposition(tstep_vec, row.latitude, row.longitude)[['zenith', 'azimuth']].values.T
-        arr_avg[i, :, :] = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude)[['zenith', 'azimuth']].resample(tstep).mean().values.T
+        arr_val[i, :, :] = pvlib.solarposition.get_solarposition(tstep_vec, row.latitude, row.longitude, row.elev)[['zenith', 'azimuth', 'elevation']].values.T
+
+        # compute cos and sin of azimuth to get avg (to avoid discontinuity at North)
+        df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elev)[['zenith', 'azimuth', 'elevation']]
+        df['cos_az'] = np.cos((df.azimuth - 180) * np.pi / 180)
+        df['sin_az'] = np.sin((df.azimuth - 180) * np.pi / 180)
+        arr_avg[i, :, :] = df[['zenith', 'cos_az', 'sin_az', 'elevation']].resample(tstep).mean().values.T
 
 
 
@@ -47,14 +52,12 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
 
     ds = xr.Dataset(
         {
-            "zenith": (["point_id", "time"], arr_val[:, 0, :]),
-            "azimuth": (["point_id", "time"], arr_val[:, 1, :] - 180),
-            "zenith_avg": (["point_id", "time"], arr_avg[:, 0, :]),
-            "azimuth_avg": (["point_id", "time"], arr_avg[:, 0, :] - 180),
-            "latitude": (["point_id", "time"], np.reshape(np.repeat(df_position.latitude.values, tstep_vec.shape[0]),
-                                                         (df_position.latitude.shape[0], tstep_vec.shape[0]))),
-            "longitude": (["point_id", "time"], np.reshape(np.repeat(df_position.longitude.values, tstep_vec.shape[0]),
-                                                         (df_position.longitude.shape[0], tstep_vec.shape[0]))),
+            "zenith": (["point_id", "time"], np.deg2rad(arr_val[:, 0, :])),
+            "azimuth": (["point_id", "time"], np.deg2rad(arr_val[:, 1, :])),
+            "elevation": (["point_id", "time"], np.deg2rad(arr_val[:, 2, :])),
+            "zenith_avg": (["point_id", "time"], np.deg2rad(arr_avg[:, 0, :])),
+            "azimuth_avg": (["point_id", "time"], np.arctan2(arr_avg[:, 1, :], arr_avg[:, 2, :])),
+            "elevation_avg": (["point_id", "time"], np.deg2rad(arr_avg[:, 3, :])),
         },
         coords={
             "point_id": df_position.index,

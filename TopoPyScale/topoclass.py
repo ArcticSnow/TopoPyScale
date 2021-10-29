@@ -21,7 +21,7 @@ from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_sub as ts
 from TopoPyScale import fetch_dem as fd
 from TopoPyScale import solar_geom as sg
-
+from TopoPyScale import topo_scale as ta
 
 class Topoclass(object):
     
@@ -94,6 +94,12 @@ class Topoclass(object):
                                                                             azimuth=az,
                                                                             method='nearest').values.flatten()
 
+    def downscale_climate(self):
+        down_pts = ta.downscale_climate(self.config.forcing_path,
+                                        self.toposub.df_centroids,
+                                        self.solar_ds,
+                                        self.horizon_da,
+                                        self.config.dem_epsg)
 
     class Config:
         '''
@@ -141,6 +147,7 @@ class Topoclass(object):
                 self.forcing_era5_product = conf['forcing']['era5_product']
                 self.forcing_n_threads = conf['forcing'].as_int('n_threads_download')
             self.n_cores = conf['forcing'].as_int('n_cores')
+            self.forcing_path = self.project_dir + 'inputs/forcings/'
                 
             self.time_step = conf['forcing']['time_step']
             self.plevels = conf['forcing']['plevels']
@@ -171,7 +178,7 @@ class Topoclass(object):
             self.config.forcing_era5_product,
             self.config.start_date,
             self.config.end_date,
-            self.config.project_dir + 'inputs/forcings/',
+            self.config.forcing_path,
             latN, latS, lonE, lonW,
             self.config.time_step,
             self.config.forcing_n_threads,
@@ -182,7 +189,7 @@ class Topoclass(object):
             self.config.forcing_era5_product,
             self.config.start_date,
             self.config.end_date,
-            self.config.project_dir + 'inputs/forcings/',
+            self.config.forcing_path,
             latN, latS, lonE, lonW, 
             self.config.time_step,
             self.config.forcing_n_threads,

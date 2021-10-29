@@ -40,6 +40,7 @@ def compute_dem_param(dem_file):
     dem_param['y'] = Ys.flatten()
     dem_param['elev'] = dem_arr.flatten()
     dem_param['slope'] = slope.flatten()
+    dem_param['aspect'] = np.deg2rad(aspect.flatten() - 180)
     dem_param['aspect_cos'] = np.cos(np.deg2rad(aspect.flatten()))
     dem_param['aspect_sin'] = np.sin(np.deg2rad(aspect.flatten()))
     Xs, Ys, slope, aspect = None, None, None, None
@@ -72,11 +73,12 @@ def compute_horizon(dem_file, azimuth_inc=30):
         y = np.linspace(rf.bounds.bottom + np.round(geot[5], 3), rf.bounds.top, rf.shape[0])
     azimuth = np.arange(-180, 180, azimuth_inc)
     arr = np.empty((azimuth.shape[0], dem.shape[0], dem.shape[1]))
-    dem = np.flip(dem.astype(float))
+    #dem = np.flip(dem.astype(float))
+    dem = dem.astype(float)
     for i, azi in enumerate(azimuth):
         arr[i, :, :] = horizon.horizon(azi, dem, dx)
 
-    da = xr.DataArray(data=np.flip(np.arccos(arr),2),
+    da = xr.DataArray(data= np.flip(np.pi/2 - np.arccos(arr), 1),
                       coords={
                           "y": y,
                           "x": x,

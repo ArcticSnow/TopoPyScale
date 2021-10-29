@@ -72,5 +72,5 @@ def vapor_pressure(ds, var):
     :return:
     '''
     eps0 = 0.622  # Ratio of molecular weight of water and dry air [-]
-    ds['vp'] = 0.5 * ds[var['pressure']] * (-1 + np.sqrt(1 + 4 * ds[var['mixin_ratio']] / eps0))
+    ds['vp'] = 0.5 * ds[var['pressure']] * (-1 + np.sqrt(1 + 4 * ds[var['mix_ratio']] / eps0))
     return ds
