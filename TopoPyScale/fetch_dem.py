@@ -58,6 +58,7 @@ def fetch_dem(project_dir, extent, dem_file):
         sys.exit('WARNING: fetch ArcticDEM functionality not available')
     elif ans == '4':
         print('WARNING: fetch ASTER DEM functionality not available')
+        print('Please visit https://lpdaacsvc.cr.usgs.gov/appeears/task/area to manually download a DEM')
         sys.exit()
     else:
         sys.exit("ERROR: dem file '{}' not existing".format(dem_file))
