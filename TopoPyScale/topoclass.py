@@ -95,7 +95,7 @@ class Topoclass(object):
                                                                             method='nearest').values.flatten()
 
     def downscale_climate(self):
-        down_pts = ta.downscale_climate(self.config.forcing_path,
+        self.down_pts = ta.downscale_climate(self.config.forcing_path,
                                         self.toposub.df_centroids,
                                         self.solar_ds,
                                         self.horizon_da,
@@ -220,7 +220,8 @@ class Topoclass(object):
         function to export toposcale output to snowmodel format .ascii, for single station standard
         '''
     
-    def to_netcdf(self):
+    def to_netcdf(self, file_out='./outputs/output.nc'):
         '''
         function to export toposcale output to generic netcdf format
         '''
+        self.down_pts.to_netcdf(file_out)
