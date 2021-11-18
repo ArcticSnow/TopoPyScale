@@ -75,7 +75,8 @@ Validation (4) and Gap filling (4) are future implementation.
 ```bash
 conda create -n downscaling
 conda activate downscaling
-conda install ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio gdal
+conda install mamba -n base -c conda-forge
+mamba install ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio gdal
 pip install cdsapi
 pip install h5netcdf
 pip install topocalc
