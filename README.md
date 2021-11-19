@@ -82,6 +82,7 @@ pip install h5netcdf
 pip install topocalc
 pip install pvlib
 pip install elevation
+pip install configobj
 
 cd github  # navigate to where you want to clone TopoPyScale
 git clone git@github.com:ArcticSnow/TopoPyScale.git
