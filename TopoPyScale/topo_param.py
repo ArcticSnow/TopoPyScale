@@ -16,6 +16,47 @@ from topocalc import horizon
 import time
 
 
+def extract_pts_param(df_pts, ds_param, method='nearest'):
+    '''
+    Function to use a list point as input rather than cluster centroids from DEM segmentation (topo_sub.py/self.clustering_dem()).
+    :param df_pts: pandas DataFrame
+    :param ds_param: xarray dataset of dem parameters
+    :return:
+
+    TODO:
+    - add option to return xarray dataset from compute_dem_param()
+    - use the xarray dataset to sample just like in topo_scale the dataset using weights
+    '''
+    for i, row in df_pts.iterrows():
+        ind_lat = np.abs(ds_param.latitude-row.y).argmin()
+        ind_lon = np.abs(ds_param.longitude-row.x).argmin()
+        ds_param_pt = ds_param.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1])
+
+        Xs, Ys = np.meshgrid(ds_param_pt.longitude.values, ds_param_pt.latitude.values)
+
+        if method == 'nearest':
+            print('TBI')
+        if method == 'idw':
+            print('TBI')
+            dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
+            idw = 1/(dist**2)
+            weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
+            # see line 103 of topo_scale.py for weights
+        if method == 'linear':
+            print('TBI')
+            dist = np.array([np.abs(row.x - Xs).values, np.abs(row.y - Ys).values])
+            weights = dist / np.sum(dist, axis=0)
+            # see line 103 of topo_scale.py for weights
+
+
+
+
+# sample methods: nearest, inverse
+
+
+
+#return self.toposub.df_centroids
+
 def compute_dem_param(dem_file):
     '''
     Function to compute and derive DEM parameters: slope, aspect, sky view factor
@@ -71,7 +112,7 @@ def compute_horizon(dem_file, azimuth_inc=30):
         dx = geot[1]
         x = np.linspace(rf.bounds.left + np.round(geot[1], 3), rf.bounds.right, rf.shape[1])
         y = np.linspace(rf.bounds.bottom + np.round(geot[5], 3), rf.bounds.top, rf.shape[0])
-    azimuth = np.arange(-180, 180, azimuth_inc)
+    azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc) # center the azimuth in middle of the bin
     arr = np.empty((azimuth.shape[0], dem.shape[0], dem.shape[1]))
     #dem = np.flip(dem.astype(float))
     dem = dem.astype(float)

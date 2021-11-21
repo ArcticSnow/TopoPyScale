@@ -86,7 +86,7 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
-def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis):
+def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis, figsize=(14,10)):
     '''
     Function to plot the location of the cluster centroids over the DEM
 
@@ -105,7 +105,7 @@ def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm
         dx = dem.transform[0]
         dy = -dem.transform[4]
 
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 9))
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
     shade = ls.hillshade(np.reshape(df_param['elev'].values, shape), vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
     rgb = ax.imshow(np.reshape(df_param[var].values, shape)*shade, extent=extent, cmap=cmap)
     ax.scatter(df_centers.x, df_centers.y, c='r', edgecolors='k')

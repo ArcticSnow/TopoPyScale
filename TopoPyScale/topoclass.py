@@ -36,6 +36,8 @@ class Topoclass(object):
         if self.config.forcing_dataset.lower() == 'era5':
             self.get_era5()
 
+        # add here a little routinr doing chek on start and end date in config.ini compare to forcing in case
+
         if not os.path.isfile(self.config.dem_path):
             fd.fetch_dem(self.config.project_dir, self.config.extent, self.config.dem_file)
         else:
@@ -53,15 +55,32 @@ class Topoclass(object):
             self.kmeans_obj = None
             self.scaler = None
 
-        def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv):
-            ts.plot_center_clusters(self.dem_path, self.df_param, self.df_centroids, var=var, cmap=cmap)
+        def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14,10)):
+            ts.plot_center_clusters(self.dem_path, self.df_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
 
     def compute_dem_param(self):
         self.toposub.df_param = tp.compute_dem_param(self.config.dem_path)
 
-    def clustering_dem(self):
+    def extract_pts_param(self, df, method=None):
         '''
-        Function to compute DEM parameters, and cluster DEM in n_clusters
+        Function to use a list point as input rather than cluster centroids from DEM segmentation (topo_sub.py/self.clustering_dem()).
+        :param df: pandas DataFrame
+        :return:
+        '''
+        if method is None:
+            method = self.config.pt_sampling_method
+
+        if method == 'nearest':
+            print('TBI')
+            # sample methods: nearest, inverse
+
+
+
+            #return self.toposub.df_centroids
+
+    def extract_dem_cluster_param(self):
+        '''
+        Function to segment a DEM in clusters and retain only the centroids of each cluster.
         :return:
         '''
         df_scaled, self.toposub.scaler = ts.scale_df(self.toposub.df_param)
@@ -161,6 +180,7 @@ class Topoclass(object):
             self.random_seed = conf['toposcale'].as_int('random_seed')
             self.clustering_method = conf['toposcale']['clustering_method']
             self.interp_method = conf['toposcale']['interpolation_method']
+            self.pt_sampling_method = conf['toposcale']['pt_sampling_method']
             
     def get_era5(self):
         '''

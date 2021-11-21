@@ -110,26 +110,44 @@ key: {uid}:{api-key}
 4. Run TopoPyScale
 
 ```python
+import pandas as pd
 from TopoPyScale import topoclass as tc
 from matplotlib import pyplot as plt
 
+# ========= STEP 1 ==========
+# Load Configuration
 config_file = './config.ini'
 mp = tc.Topoclass(config_file)
-
+# Compute parameters of the DEM (slope, aspect, sky view factor)
 mp.compute_dem_param()
-# Compute clustering of the input DEM
-mp.clustering_dem()
 
+# ========== STEP 2 ===========
+# Extract DEM parameters for points of interest (centroids or physical points)
+
+# ----- Option 1:
+# Compute clustering of the input DEM and extract cluster centroids
+mp.extract_dem_cluster_param()
 # plot clusters
 mp.toposub.plot_clusters_map()
 # plot sky view factor
-mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
+    mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
 
+# ------ Option 2:
+# provide a list of point coordinates for which extract the DEM parameters for
+df_pts = pd.read_csv('pts_list.csv') # a file with points pt_name, x, y columns 
+mp.extract_pts_param(df_pts)
+
+# ========= STEP 3 ==========
 # compute solar geometry and horizon angles
 mp.compute_solar_geometry()
 mp.compute_horizon()
+
+# ========= STEP 4 ==========
+# Perform the downscaling
 mp.downscale_climate()
 
+# ========= STEP 5 ==========
+# Export output to desired format
 mp.to_netcdf()
 ```
 
