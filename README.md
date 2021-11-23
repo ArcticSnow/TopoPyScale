@@ -11,6 +11,8 @@ Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an ori
 3. wanna develop a new feature/idea? -> create a new branch. Do the development. Merge with main branch when accomplished.
 4. Create release version when significant improvements and bug fix has been done. Coordinate with others
 
+And check out our [Slack](tscaleworkspace.slack.com)
+
 Contributors to the current version (2021) are:
 - Simon Filhol
 - Joel Fiddes
