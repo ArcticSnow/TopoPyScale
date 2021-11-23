@@ -4,7 +4,14 @@ Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an ori
 **References:**
 - 
 
-Contributor to this current version (2021)
+## Contribution Workflow
+**Please follow these simple rules:**
+1. a bug -> fix it! 
+2. an idea or a bug you cannot fix? -> create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) after checking an issue doesn't already exist. If so, add material to that existing issue.
+3. wanna develop a new feature/idea? -> create a new branch. Do the development. Merge with main branch when accomplished.
+4. Create release version when significant improvements and bug fix has been done. Coordinate with others
+
+Contributors to the current version (2021) are:
 - Simon Filhol
 - Joel Fiddes
 - Kristoffer Aalstad
