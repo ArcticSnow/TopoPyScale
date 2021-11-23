@@ -130,7 +130,7 @@ mp.extract_dem_cluster_param()
 # plot clusters
 mp.toposub.plot_clusters_map()
 # plot sky view factor
-    mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
+mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
 
 # ------ Option 2:
 # provide a list of point coordinates for which extract the DEM parameters for
