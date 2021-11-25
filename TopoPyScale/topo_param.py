@@ -33,6 +33,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     Function to use a list point as input rather than cluster centroids from DEM segmentation (topo_sub.py/self.clustering_dem()).
     :param df_pts: pandas DataFrame
     :param ds_param: xarray dataset of dem parameters
+    :param method:
     :return:
 
     TODO:

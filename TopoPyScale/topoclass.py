@@ -25,7 +25,10 @@ from TopoPyScale import topo_scale as ta
 
 
 class Topoclass(object):
-    
+    '''
+    A python class to bring the typical use-case of toposcale in a user friendly object
+    '''
+
     def __init__(self, config_file):
         
         self.config = self.Config(config_file)
