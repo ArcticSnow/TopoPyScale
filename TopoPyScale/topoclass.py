@@ -23,6 +23,7 @@ from TopoPyScale import fetch_dem as fd
 from TopoPyScale import solar_geom as sg
 from TopoPyScale import topo_scale as ta
 
+
 class Topoclass(object):
     
     def __init__(self, config_file):
@@ -33,9 +34,6 @@ class Topoclass(object):
         self.solar_ds = None
         self.horizon_da = None
 
-        if self.config.forcing_dataset.lower() == 'era5':
-            self.get_era5()
-
         # add here a little routinr doing chek on start and end date in config.ini compare to forcing in case
 
         if not os.path.isfile(self.config.dem_path):
@@ -43,6 +41,13 @@ class Topoclass(object):
         else:
             print('\n---> DEM file found')
             self.toposub.dem_path = self.config.dem_path
+
+        # little routine checking that the DEM extent is within the climate extent
+        if not self.check_extent_overlap():
+            sys.exit()
+
+        if self.config.forcing_dataset.lower() == 'era5':
+            self.get_era5()
 
     class Toposub:
         '''
@@ -55,8 +60,25 @@ class Topoclass(object):
             self.kmeans_obj = None
             self.scaler = None
 
-        def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14,10)):
+        def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14, 10)):
             ts.plot_center_clusters(self.dem_path, self.df_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
+
+    def check_extent_overlap(self):
+        '''
+        Function to check if the DEM spatial extent is within the climate data spatial extent
+        :return: boolean, True if DEM is included within climate data
+        '''
+        dem_extent = tp.get_extent_latlon(self.config.dem_file, self.config.dem_epsg)
+        print('---> Checking DEM and Climate data extent compatibilities')
+        if (dem_extent.get('latN') > self.config.extent.get('latN')) or\
+                (dem_extent.get('latS') < self.config.extent.get('latS')) or \
+                (dem_extent.get('lonW') < self.config.extent.get('lonW')) or \
+                (dem_extent.get('lonE') > self.config.extent.get('lonE')):
+            print('ERROR: DEM extent falls outside of the climate data extent. \nVerify lat/lon in config file')
+            return False
+        else:
+            print('OK')
+            return True
 
     def compute_dem_param(self):
         self.toposub.df_param = tp.compute_dem_param(self.config.dem_path)

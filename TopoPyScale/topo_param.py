@@ -7,6 +7,7 @@ TODO:
 '''
 
 import rasterio
+from pyproj import Transformer
 import pandas as pd
 import numpy as np
 import xarray as xr
@@ -14,6 +15,17 @@ from topocalc import gradient
 from topocalc import viewf
 from topocalc import horizon
 import time
+
+def get_extent_latlon(dem_file, epsg_src):
+    with rasterio.open(dem_file) as rf:
+        xs, ys = [rf.bounds.left, rf.bounds.right], [rf.bounds.bottom, rf.bounds.top]
+    trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:4326", always_xy=True)
+    lons, lats = trans.transform(xs, ys)
+    extent = {'latN': lats[1],
+              'latS': lats[0],
+              'lonW': lons[0],
+              'lonE': lons[1]}
+    return extent
 
 
 def extract_pts_param(df_pts, ds_param, method='nearest'):
