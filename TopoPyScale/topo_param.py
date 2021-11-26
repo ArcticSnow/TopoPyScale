@@ -17,6 +17,12 @@ from topocalc import horizon
 import time
 
 def get_extent_latlon(dem_file, epsg_src):
+    '''
+    Function to extract DEM extent in Lat/Lon
+    :param dem_file: path to DEM file (GeoTiFF)
+    :param epsg_src: int, EPSG projection code
+    :return: dict, extent in lat/lon, {latN, latS, lonW, lonE}
+    '''
     with rasterio.open(dem_file) as rf:
         xs, ys = [rf.bounds.left, rf.bounds.right], [rf.bounds.bottom, rf.bounds.top]
     trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:4326", always_xy=True)
@@ -62,8 +68,6 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
             # see line 103 of topo_scale.py for weights
 
 
-
-
 # sample methods: nearest, inverse
 
 
@@ -73,8 +77,8 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
 def compute_dem_param(dem_file):
     '''
     Function to compute and derive DEM parameters: slope, aspect, sky view factor
-    :param dem_file: path to raster file (geotif)
-    :return: pandas dataframe containing x, y, elev, slope, aspect, svf
+    :param dem_file: path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
+    :return:  xarray dataset containing x, y, elev, slope, aspect, svf
     '''
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
     with rasterio.open(dem_file) as rf:
@@ -90,23 +94,38 @@ def compute_dem_param(dem_file):
     Xs, Ys = np.meshgrid(x, y)
 
     slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
-    dem_param['x'] = Xs.flatten()
-    dem_param['y'] = Ys.flatten()
-    dem_param['elev'] = dem_arr.flatten()
-    dem_param['slope'] = slope.flatten()
-    dem_param['aspect'] = np.deg2rad(aspect.flatten() - 180)
-    dem_param['aspect_cos'] = np.cos(np.deg2rad(aspect.flatten()))
-    dem_param['aspect_sin'] = np.sin(np.deg2rad(aspect.flatten()))
-    Xs, Ys, slope, aspect = None, None, None, None
-
     print('---> Computing sky view factor')
     start_time = time.time()
     svf = viewf.viewf(np.double(dem_arr), dx)[0]
     dem_param['svf'] = svf.flatten()
     print('---> Sky-view-factor finished in {}s'.format(np.round(time.time()-start_time), 0))
+    # Build an xarray dataset
+    ds = xr.Dataset(
+        data_vars=dict(
+            elevation=(["y", "x"], np.flip(dem_arr, 0)),
+            slope=(["y", "x"], np.flip(slope, 0)),
+            aspect=(["y", "x"], np.flip(np.deg2rad(aspect - 180), 0)),
+            aspect_cos=(["y", "x"], np.flip(np.cos(np.deg2rad(aspect)), 0)),
+            aspect_sin=(["y", "x"], np.flip(np.sin(np.deg2rad(aspect)), 0)),
+            svf=(["y", "x"], np.flip(svf, 0))
+        ),
+        coords={'x': x, 'y': y}
+        ,
+        attrs=dict(description="DEM input parameters to TopoSub",
+                   author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale"),
+        )
+    ds.x.attrs = {'units':'m'}
+    ds.y.attr = {'units':'m'}
+    ds.elevation.attrs = {'units':'m'}
+    ds.slope.attrs = {'units':'rad'}
+    ds.aspect.attrs = {'units':'rad'}
+    ds.aspect_cos.attrs = {'units':'cosinus'}
+    ds.aspect_sin.attrs = {'units':'sinus'}
+    ds.svf.attrs = {'units':'ratio', 'standard_name':'svf', 'long_name':'Sky view factor'}
 
+    Xs, Ys, slope, aspect = None, None, None, None
     dem_arr = None
-    return dem_param
+    return ds
 
 
 def compute_horizon(dem_file, azimuth_inc=30):

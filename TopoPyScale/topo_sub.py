@@ -18,6 +18,19 @@ from matplotlib import pyplot as plt
 import numpy as np
 import time
 
+def ds_to_indexed_dataframe(ds):
+    '''
+    Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
+    WARNING: this only works if the variable of the dataset have all the same dimensions!
+
+    By default the ds.to_dataframe() returns a multi-index dataframe. Here the coordinates are transfered as columns in the dataframe
+    :param ds: xarray dataset with all variable of same number of dimensions
+    :return: pandas dataframe
+    '''
+    df = ds.to_dataframe()
+    n_levels = df.index.names.__len__()
+    return df.reset_index(level=list(range(0, n_levels)))
+
 def scale_df(df_param, scaler=StandardScaler()):
     '''
     Function to scale features of a pandas dataframe
@@ -86,12 +99,12 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
-def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm.viridis, figsize=(14,10)):
+def plot_center_clusters(dem_file, ds_param, df_centers, var='elev', cmap=plt.cm.viridis, figsize=(14,10)):
     '''
     Function to plot the location of the cluster centroids over the DEM
 
     :param dem_file: path to dem raster file
-    :param df_param: dataframe containing topo_param parameters ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
+    :param ds_param: xarray dataset containing topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     :param df_centers: dataframe containing cluster centroid parameters ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     :param var: variable to plot as background
     :param cmap: pyplot colormap to represent the variable.
@@ -99,15 +112,12 @@ def plot_center_clusters(dem_file, df_param, df_centers, var='elev', cmap=plt.cm
     '''
     ls = LightSource(azdeg=315, altdeg=45)
 
-    with rasterio.open(dem_file) as dem:
-        shape = dem.shape
-        extent = plot.plotting_extent(dem)
-        dx = dem.transform[0]
-        dy = -dem.transform[4]
+    dx = np.diff(ds_param.x.values)[0]
+    dy = np.diff(ds_param.y.values)[0]
 
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
-    shade = ls.hillshade(np.reshape(df_param['elev'].values, shape), vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
-    rgb = ax.imshow(np.reshape(df_param[var].values, shape)*shade, extent=extent, cmap=cmap)
+    shade = ls.hillshade(ds_param.elevation.values, vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
+    rgb = (ds_param[var] * shade).plot(cmap=cmap)
     ax.scatter(df_centers.x, df_centers.y, c='r', edgecolors='k')
     cb = plt.colorbar(rgb)
     cb.set_label(var)

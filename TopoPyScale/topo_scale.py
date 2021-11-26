@@ -47,7 +47,7 @@ import pandas as pd
 import xarray as xr
 from pyproj import Transformer
 import numpy as np
-import sys, time, pdb
+import sys, time
 from TopoPyScale import meteo_util as mu
 
 # to get from Topo_class
@@ -123,7 +123,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         plev_interp = dw.sum(['longitude', 'latitude'], keep_attrs=True)    # compute horizontal inverse weighted horizontal interpolation
         dw = xr.core.weighted.DatasetWeighted(ds_surf_pt, da_idw)
         surf_interp = dw.sum(['longitude', 'latitude'], keep_attrs=True)    # compute horizontal inverse weighted horizontal interpolation
-        #pdb.set_trace()
+
         # ========= Converting z from [m**2 s**-2] to [m] asl =======
         plev_interp.z.values = plev_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
         plev_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}

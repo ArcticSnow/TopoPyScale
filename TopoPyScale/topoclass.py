@@ -58,13 +58,13 @@ class Topoclass(object):
         '''
         def __init__(self):
             self.dem_path = None
-            self.df_param = None
+            self.ds_param = None
             self.df_centroids = None
             self.kmeans_obj = None
             self.scaler = None
 
         def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14, 10)):
-            ts.plot_center_clusters(self.dem_path, self.df_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
+            ts.plot_center_clusters(self.dem_path, self.ds_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
 
     def check_extent_overlap(self):
         '''
@@ -84,7 +84,7 @@ class Topoclass(object):
             return True
 
     def compute_dem_param(self):
-        self.toposub.df_param = tp.compute_dem_param(self.config.dem_path)
+        self.toposub.ds_param = tp.compute_dem_param(self.config.dem_path)
 
     def extract_pts_param(self, df, method=None):
         '''
@@ -108,11 +108,12 @@ class Topoclass(object):
         Function to segment a DEM in clusters and retain only the centroids of each cluster.
         :return:
         '''
-        df_scaled, self.toposub.scaler = ts.scale_df(self.toposub.df_param)
+        df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+        df_scaled, self.toposub.scaler = ts.scale_df(df_param)
         if self.config.clustering_method.lower() == 'kmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.kmeans_clustering(df_scaled, self.config.n_clusters, seed=self.config.random_seed)
+            self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.kmeans_clustering(df_scaled, self.config.n_clusters, seed=self.config.random_seed)
         elif self.config.clustering_method.lower() == 'minibatchkmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj, self.toposub.df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(df_scaled, self.config.n_clusters, self.config.n_cores,  seed=self.config.random_seed)
+            self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(df_scaled, self.config.n_clusters, self.config.n_cores,  seed=self.config.random_seed)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
