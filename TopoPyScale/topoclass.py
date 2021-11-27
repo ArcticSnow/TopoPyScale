@@ -71,7 +71,7 @@ class Topoclass(object):
         Function to check if the DEM spatial extent is within the climate data spatial extent
         :return: boolean, True if DEM is included within climate data
         '''
-        dem_extent = tp.get_extent_latlon(self.config.dem_file, self.config.dem_epsg)
+        dem_extent = tp.get_extent_latlon(self.config.dem_path, self.config.dem_epsg)
         print('---> Checking DEM and Climate data extent compatibilities')
         if (dem_extent.get('latN') > self.config.extent.get('latN')) or\
                 (dem_extent.get('latS') < self.config.extent.get('latS')) or \
