@@ -99,7 +99,7 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
-def plot_center_clusters(dem_file, ds_param, df_centers, var='elev', cmap=plt.cm.viridis, figsize=(14,10)):
+def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=plt.cm.viridis, figsize=(14,10)):
     '''
     Function to plot the location of the cluster centroids over the DEM
 
@@ -129,7 +129,7 @@ def plot_center_clusters(dem_file, ds_param, df_centers, var='elev', cmap=plt.cm
 
 def plot_pca_clusters(dem_file, df_param, df_centroids, scaler, n_components, subsample=3):
     pca = PCA(n_components)
-    col_names = ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
+    col_names = ['x', 'y', 'elevation', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     dfs = scale_df(df_param[col_names], scaler=scaler)[0]
     param_pca = pca.fit_transform(dfs[col_names])
 

@@ -161,4 +161,14 @@ mp.downscale_climate()
 mp.to_netcdf()
 ```
 
+TopoClass will create a file structure in the project folder as follow:
+```
+my_project/
+    ├── inputs/
+        ├── dem/ 
+        └── climate/
+    ├── outputs/
+    └── config.ini
+```
+
 ## Principle of TopoPyScale

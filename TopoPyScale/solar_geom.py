@@ -26,7 +26,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     TODO:
         - check if degrees is the correct unit
     '''
-
+    print('---> Computing solar geometry')
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
         trans = Transformer.from_crs("epsg:" + sr_epsg, "epsg:4326", always_xy=True)
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x.values, df_position.y.values)
@@ -38,10 +38,10 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     arr_avg = np.empty((df_position.shape[0], 4, tstep_vec.shape[0]))
 
     for i, row in tqdm(df_position.iterrows(), total=df_position.shape[0]):
-        arr_val[i, :, :] = pvlib.solarposition.get_solarposition(tstep_vec, row.latitude, row.longitude, row.elev)[['zenith', 'azimuth', 'elevation']].values.T
+        arr_val[i, :, :] = pvlib.solarposition.get_solarposition(tstep_vec, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']].values.T
 
         # compute cos and sin of azimuth to get avg (to avoid discontinuity at North)
-        df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elev)[['zenith', 'azimuth', 'elevation']]
+        df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']]
         df['cos_az'] = np.cos((df.azimuth - 180) * np.pi / 180)
         df['sin_az'] = np.sin((df.azimuth - 180) * np.pi / 180)
         arr_avg[i, :, :] = df[['zenith', 'cos_az', 'sin_az', 'elevation']].resample(tstep).mean().values.T

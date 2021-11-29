@@ -5,6 +5,7 @@ S. Filhol, Oct 2021
 TODO:
 - an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
 '''
+import pdb
 
 import rasterio
 from pyproj import Transformer
@@ -36,43 +37,62 @@ def get_extent_latlon(dem_file, epsg_src):
 
 def extract_pts_param(df_pts, ds_param, method='nearest'):
     '''
-    Function to use a list point as input rather than cluster centroids from DEM segmentation (topo_sub.py/self.clustering_dem()).
-    :param df_pts: pandas DataFrame
+    Function to sample DEM parameters for a list point. This is used as an alternative the the TopoSub method, to perform downscaling at selected locations (x,y)
+    WARNING: the projection and coordiante system of the EDM and point coordinates MUST be the same!
+
+    :param df_pts: pandas DataFrame containing a list of points coordinates with coordiantes in (x,y).
     :param ds_param: xarray dataset of dem parameters
-    :param method:
-    :return:
-
-    TODO:
-    - add option to return xarray dataset from compute_dem_param()
-    - use the xarray dataset to sample just like in topo_scale the dataset using weights
+    :param method: sampling method. Supported 'nearest', 'linear' interpolation, 'idw' interpolation (inverse-distance weighted)
+    :return: df_pts updated with new columns ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']
     '''
-    for i, row in df_pts.iterrows():
-        ind_lat = np.abs(ds_param.latitude-row.y).argmin()
-        ind_lon = np.abs(ds_param.longitude-row.x).argmin()
-        ds_param_pt = ds_param.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1])
+    # delete columns in case they already exist
+    df_pts = df_pts.drop(['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'], errors='ignore')
+    # create columns, filled with 0
+    df_pts[['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = 0
 
-        Xs, Ys = np.meshgrid(ds_param_pt.longitude.values, ds_param_pt.latitude.values)
+    if method == 'nearest':
+        for i, row in df_pts.iterrows():
+            d_mini = ds_param.sel(x=row.x, y=row.y, method='nearest')
+            df_pts.loc[i, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
+                                                                                                   d_mini.slope.values,
+                                                                                                   d_mini.aspect.values,
+                                                                                                   d_mini.aspect_cos,
+                                                                                                   d_mini.aspect_sin,
+                                                                                                   d_mini.svf.values))
+    elif method == 'idw' or method == 'linear':
+        for i, row in df_pts.iterrows():
+            ind_lat = np.abs(ds_param.y-row.y).argmin()
+            ind_lon = np.abs(ds_param.x-row.x).argmin()
+            ds_param_pt = ds_param.isel(y=[ind_lat-1, ind_lat, ind_lat+1], x=[ind_lon-1, ind_lon, ind_lon+1])
+            Xs, Ys = np.meshgrid(ds_param_pt.x.values, ds_param_pt.y.values)
 
-        if method == 'nearest':
-            print('TBI')
-        if method == 'idw':
-            print('TBI')
-            dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
-            idw = 1/(dist**2)
-            weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
-            # see line 103 of topo_scale.py for weights
-        if method == 'linear':
-            print('TBI')
-            dist = np.array([np.abs(row.x - Xs).values, np.abs(row.y - Ys).values])
-            weights = dist / np.sum(dist, axis=0)
-            # see line 103 of topo_scale.py for weights
+            if method == 'idw':
+                dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
+                idw = 1/(dist**2)
+                weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
 
-
-# sample methods: nearest, inverse
-
-
-
-#return self.toposub.df_centroids
+            if method == 'linear':
+                dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
+                weights = dist / np.sum(dist)
+            #pdb.set_trace()
+            da_idw = xr.DataArray(data=weights,
+                                  coords={
+                                    "y": ds_param_pt.y.values,
+                                    "x": ds_param_pt.x.values,
+                              },
+                              dims=["y", "x"]
+                              )
+            dw = xr.core.weighted.DatasetWeighted(ds_param_pt, da_idw)
+            d_mini = dw.sum(['x', 'y'], keep_attrs=True)
+            df_pts.loc[i, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
+                                                                                                   d_mini.slope.values,
+                                                                                                   d_mini.aspect.values,
+                                                                                                   d_mini.aspect_cos,
+                                                                                                   d_mini.aspect_sin,
+                                                                                                 d_mini.svf.values))
+    else:
+        print('ERROR: Method not implemented. Only nearest, linear or idw available')
+    return df_pts
 
 def compute_dem_param(dem_file):
     '''
@@ -115,7 +135,7 @@ def compute_dem_param(dem_file):
                    author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale"),
         )
     ds.x.attrs = {'units':'m'}
-    ds.y.attr = {'units':'m'}
+    ds.y.attrs = {'units':'m'}
     ds.elevation.attrs = {'units':'m'}
     ds.slope.attrs = {'units':'rad'}
     ds.aspect.attrs = {'units':'rad'}
@@ -135,7 +155,7 @@ def compute_horizon(dem_file, azimuth_inc=30):
     :param azimuth_inc:
     :return: xarray dataset containing the
     '''
-
+    print('---> Computing horizons with {} degree increment'.format(azimuth_inc))
     with rasterio.open(dem_file) as rf:
         dem = rf.read()
         geot = rf.read_transform()

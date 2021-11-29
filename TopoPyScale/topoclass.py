@@ -6,7 +6,7 @@ project/
     config.ini
     -> input/
         -> dem/
-        -> met_forcing/
+        -> climate/
     -> output/
 
 '''
@@ -14,6 +14,7 @@ import os
 #import configparser
 import sys
 
+import pandas as pd
 from configobj import ConfigObj
 import matplotlib.pyplot as plt
 from TopoPyScale import fetch_era5 as fe
@@ -49,7 +50,7 @@ class Topoclass(object):
         if not self.check_extent_overlap():
             sys.exit()
 
-        if self.config.forcing_dataset.lower() == 'era5':
+        if self.config.climate_dataset.lower() == 'era5':
             self.get_era5()
 
     class Toposub:
@@ -86,18 +87,16 @@ class Topoclass(object):
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem_path)
 
-    def extract_pts_param(self, df, method=None):
+    def extract_pts_param(self, method='nearest', **kwargs):
         '''
         Function to use a list point as input rather than cluster centroids from DEM segmentation (topo_sub.py/self.clustering_dem()).
         :param df: pandas DataFrame
+        :param method: method of sampling
+        :param **kwargs: pd.read_csv() parameters
         :return:
         '''
-        if method is None:
-            method = self.config.pt_sampling_method
-
-        if method == 'nearest':
-            print('TBI')
-            # sample methods: nearest, inverse
+        self.toposub.df_centroids = pd.read_csv(self.config.project_dir + 'inputs/dem/' + self.config.pt_list_file, **kwargs)
+        self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param, method=method)
 
 
 
@@ -140,7 +139,7 @@ class Topoclass(object):
                                                                             method='nearest').values.flatten()
 
     def downscale_climate(self):
-        self.down_pts = ta.downscale_climate(self.config.forcing_path,
+        self.downscaled_pts = ta.downscale_climate(self.config.climate_path,
                                         self.toposub.df_centroids,
                                         self.solar_ds,
                                         self.horizon_da,
@@ -159,8 +158,8 @@ class Topoclass(object):
             # check if tree directory exists. If not create it
             if not os.path.exists('/'.join((self.project_dir, 'inputs/'))):
                 os.makedirs('/'.join((self.project_dir, 'inputs/')))
-            if not os.path.exists('/'.join((self.project_dir, 'inputs/forcings/'))):
-                os.makedirs('/'.join((self.project_dir, 'inputs/forcings')))
+            if not os.path.exists('/'.join((self.project_dir, 'inputs/climate/'))):
+                os.makedirs('/'.join((self.project_dir, 'inputs/climate')))
             if not os.path.exists('/'.join((self.project_dir, 'inputs/dem/'))):
                 os.makedirs('/'.join((self.project_dir, 'inputs/dem/')))
             if not os.path.exists('/'.join((self.project_dir, 'outputs/'))):
@@ -187,12 +186,12 @@ class Topoclass(object):
                            'lonW': conf['main'].as_float('lonW'),
                            'lonE': conf['main'].as_float('lonE')}
             
-            self.forcing_dataset = conf['forcing'].get('dataset')
-            if self.forcing_dataset.lower() == 'era5':
-                self.forcing_era5_product = conf['forcing']['era5_product']
-                self.forcing_n_threads = conf['forcing'].as_int('n_threads_download')
+            self.climate_dataset = conf['forcing'].get('dataset')
+            if self.climate_dataset.lower() == 'era5':
+                self.climate_era5_product = conf['forcing']['era5_product']
+                self.climate_n_threads = conf['forcing'].as_int('n_threads_download')
             self.n_cores = conf['forcing'].as_int('n_cores')
-            self.forcing_path = self.project_dir + 'inputs/forcings/'
+            self.climate_path = self.project_dir + 'inputs/climate/'
                 
             self.time_step = conf['forcing']['time_step']
             self.plevels = conf['forcing']['plevels']
@@ -206,6 +205,7 @@ class Topoclass(object):
             self.random_seed = conf['toposcale'].as_int('random_seed')
             self.clustering_method = conf['toposcale']['clustering_method']
             self.interp_method = conf['toposcale']['interpolation_method']
+            self.pt_list_file = conf['toposcale']['pt_list']
             self.pt_sampling_method = conf['toposcale']['pt_sampling_method']
             
     def get_era5(self):
@@ -221,24 +221,24 @@ class Topoclass(object):
 
         # retreive ERA5 surface data
         fe.retrieve_era5(
-            self.config.forcing_era5_product,
+            self.config.climate_era5_product,
             self.config.start_date,
             self.config.end_date,
-            self.config.forcing_path,
+            self.config.climate_path,
             latN, latS, lonE, lonW,
             self.config.time_step,
-            self.config.forcing_n_threads,
+            self.config.climate_n_threads,
             surf_plev='surf'
             )
         # retrieve era5 plevels
         fe.retrieve_era5(
-            self.config.forcing_era5_product,
+            self.config.climate_era5_product,
             self.config.start_date,
             self.config.end_date,
-            self.config.forcing_path,
+            self.config.climate_path,
             latN, latS, lonE, lonW, 
             self.config.time_step,
-            self.config.forcing_n_threads,
+            self.config.climate_n_threads,
             surf_plev='plev',
             plevels=self.config.plevels,
             )
@@ -270,4 +270,4 @@ class Topoclass(object):
         '''
         function to export toposcale output to generic netcdf format
         '''
-        self.down_pts.to_netcdf(file_out)
+        self.downscaled_pts.to_netcdf(file_out)

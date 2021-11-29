@@ -73,8 +73,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     '''
     start_time = time.time()
     # =========== Open dataset with Dask =================
-    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*')
-    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*')
+    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc')
+    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc')
 
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
@@ -131,17 +131,17 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
         surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
-        if row.elev < plev_interp.z.isel(level=-1).sum():
-            print("---> Point elevation ({}) lower than the 1000hPa geopotential\n=> Skip point_id {} ".format(row.elev, i))
+        if row.elevation < plev_interp.z.isel(level=-1).sum():
+            print("---> Point elevation ({}) lower than the 1000hPa geopotential\n=> Skip point_id {} ".format(row.elevation, i))
         else:
             # ========== Vertical interpolation at the DEM surface z  ===============
-            ind_z_bot = (plev_interp.where(plev_interp.z < row.elev).z - row.elev).argmin('level')
-            ind_z_top = (plev_interp.where(plev_interp.z > row.elev).z - row.elev).argmin('level')
+            ind_z_bot = (plev_interp.where(plev_interp.z < row.elevation).z - row.elevation).argmin('level')
+            ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
             bot = plev_interp.isel(level=ind_z_bot)
 
             # Preparing interpolation weights for linear interpolation =======================
-            dist = np.array([np.abs(bot.z - row.elev).values, np.abs(top.z - row.elev).values])
+            dist = np.array([np.abs(bot.z - row.elevation).values, np.abs(top.z - row.elevation).values])
             #idw = 1/dist**2
             #weights = idw / np.sum(idw, axis=0)
             weights = dist / np.sum(dist, axis=0)
@@ -160,7 +160,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
             down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
             down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
-            down_pt['p'] = top.level*(10**-3) * np.exp(-(row.elev-top.z) / (0.5 * (top.t + down_pt.t) * R / g) )  # Pressure in bar
+            down_pt['p'] = top.level*(10**-3) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g) )  # Pressure in bar
             down_pt['tp'] = surf_interp.tp
 
             # ======== Longwave downward radiation ===============
