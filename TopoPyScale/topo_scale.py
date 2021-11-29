@@ -3,7 +3,7 @@ Toposcale functionalities
 S. Filhol, Oct 2021
 
 ======= Organization of input data to Toposcale ======
-dem_descriton (nb_points)
+dem_description (nb_points)
     X
     Y,
     elev,
