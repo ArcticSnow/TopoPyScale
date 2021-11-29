@@ -73,6 +73,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     :param target_EPSG: EPSG code of the DEM
     :return: xarray dataset containing downscaled data organized with time, point_id, lat, long
     '''
+    print('\n---> Downscaling climate to list of points using TopoScale')
     start_time = time.time()
     # =========== Open dataset with Dask =================
     ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc')

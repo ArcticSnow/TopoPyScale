@@ -25,7 +25,7 @@ Contributors to the current version (2021) are:
     - [x] create project folder structure if not existing
     - [x] read config file
     - [x] get ERA5 data
-    - [ ] create possibility to provide a list of points by lat,long to run toposcale completely
+    - [x] create possibility to provide a list of points by lat,long to run toposcale completely
     - [ ] write save output in the various format version
     - [ ] fetch other dataset routines
     - [ ] implement routine to fecth DEM automatically from ArcticDEM/ASTER
@@ -44,14 +44,14 @@ Contributors to the current version (2021) are:
     
 - `fetch_era5.py`:
   - [x] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
-  - [ ] figure out in which case to use other function tpmm and other? how to integrate them?   
+  - [x] figure out in which case to use other function tpmm and other? how to integrate them?   
     
 - `topo_param.py`:
     - [x] add routine to sample dem or var at any given point. Do it for Horizons
     - [x] change aspect to have 0 as south. (same convention as in horizon)
 - **Documentation**:
   - [ ] Complete `README.md` file
-  - [ ] create small examples from a small dataset avail in the library
+  - [x] create small examples from a small dataset avail in the library
   - [ ] If readme is not enough, then make a ReadTheDoc 
   - [ ] make sure all functions and class have explicit docstring
 
@@ -143,9 +143,8 @@ mp.toposub.plot_clusters_map()
 mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
 
 # ------ Option 2:
-# provide a list of point coordinates for which extract the DEM parameters for
-df_pts = pd.read_csv('pts_list.csv') # a file with points pt_name, x, y columns 
-mp.extract_pts_param(df_pts)
+# inidicate in the config file the .csv file containing a list of point coordinates (!!! must same coordinate system as DEM !!!)
+mp.extract_pts_param(method='linear',index_col=0)
 
 # ========= STEP 3 ==========
 # compute solar geometry and horizon angles
@@ -157,16 +156,26 @@ mp.compute_horizon()
 mp.downscale_climate()
 
 # ========= STEP 5 ==========
+# explore the downscaled dataset. For instance the temperature difference between each point and the first one
+(mp.downscaled_pts.t-mp.downscaled_pts.t.isel(point_id=0)).plot()
+plt.show()
+
+# ========= STEP 6 ==========
 # Export output to desired format
 mp.to_netcdf()
 ```
 
-TopoClass will create a file structure in the project folder as follow:
+TopoClass will create a file structure in the project folder (see below). TopoPyScale assumes you have a DEM in GeoTiFF, and a set of climate data in netcdf (following ERA5 variable conventions). 
+TopoPyScale can easier segment the DEM using clustering (e.g. K-mean), or a list of predefined point coordinates in `pts_list.csv` can be provided. Make sure all parameters in `config.ini` are correct.
 ```
 my_project/
     ├── inputs/
         ├── dem/ 
+            ├── my_dem.tif
+            └── pts_list.csv  (optional)
         └── climate/
+            ├── PLEV*.nc
+            └── SURF*.nc
     ├── outputs/
     └── config.ini
 ```
