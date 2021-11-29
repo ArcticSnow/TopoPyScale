@@ -5,8 +5,6 @@ S. Filhol, Oct 2021
 TODO:
 - an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
 '''
-import pdb
-
 import rasterio
 from pyproj import Transformer
 import pandas as pd
@@ -45,6 +43,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     :param method: sampling method. Supported 'nearest', 'linear' interpolation, 'idw' interpolation (inverse-distance weighted)
     :return: df_pts updated with new columns ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']
     '''
+    print('\n---> Extracting DEM parameters for the given list of point coordinates')
     # delete columns in case they already exist
     df_pts = df_pts.drop(['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'], errors='ignore')
     # create columns, filled with 0
@@ -155,7 +154,7 @@ def compute_horizon(dem_file, azimuth_inc=30):
     :param azimuth_inc:
     :return: xarray dataset containing the
     '''
-    print('---> Computing horizons with {} degree increment'.format(azimuth_inc))
+    print('\n---> Computing horizons with {} degree increment'.format(azimuth_inc))
     with rasterio.open(dem_file) as rf:
         dem = rf.read()
         geot = rf.read_transform()

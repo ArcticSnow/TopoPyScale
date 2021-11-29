@@ -43,6 +43,8 @@ TODO:
     - method (2) concatenate 3*3 grid along an additional dimension to process all points in one go.
 
 '''
+import pdb
+
 import pandas as pd
 import xarray as xr
 from pyproj import Transformer
@@ -101,13 +103,12 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         # ====== Horizontal interpolation ====================
         interp_method = 'idw'
         Xs, Ys = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
+        dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
         if interp_method == 'idw':
-            dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
             idw = 1/(dist**2)
             weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
         elif interp_method == 'linear':
-            dist = np.array([np.abs(row.x - Xs).values, np.abs(row.y - Ys).values])
-            weights = dist / np.sum(dist, axis=0)
+            weights = dist / np.sum(dist)
         else:
             sys.exit('ERROR: interpolation method not available')
 
@@ -131,7 +132,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
         surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
-        if row.elevation < plev_interp.z.isel(level=-1).sum():
+        if (row.elevation < plev_interp.z.isel(level=-1)).sum():
             print("---> Point elevation ({}) lower than the 1000hPa geopotential\n=> Skip point_id {} ".format(row.elevation, i))
         else:
             # ========== Vertical interpolation at the DEM surface z  ===============
@@ -226,7 +227,11 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
             down_pt.SW_direct.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave direct radiations downward'}
             down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
+
+            # currently drop azimuth and level as they are coords. Could be passed to variables instead.
+            down_pt = down_pt.drop(['azimuth','level'])
             dataset.append(down_pt)
+
 
     down_pts = xr.concat(dataset, dim='point_id')
     # print timer to console
