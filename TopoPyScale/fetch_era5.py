@@ -69,7 +69,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
 	df['step'] = step
 	df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
-	df['bbox'] = bbox
+	df['bbox'] = df.step.apply(lambda x: bbox)
 	df['product_type'] = product
 
 	print("Start date = ", df.dates[0])
