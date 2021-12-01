@@ -40,12 +40,10 @@ Contributors to the current version (2021) are:
     - [ ] add metadata to the newly created dataset (variable name, units, etc)
     - [ ] try to rewrite function to skip for loop using the power of zarray
     - [ ] check against previous implementation of TopoScale
-    
-    
 - `fetch_era5.py`:
   - [x] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
-  - [x] figure out in which case to use other function tpmm and other? how to integrate them?   
-    
+  - [x] figure out in which case to use other function tpmm and other? how to integrate them?
+  - [ ] add routine to fetch ERA5 preliminary (1950 - 1979) for dates prior to 1980 
 - `topo_param.py`:
     - [x] add routine to sample dem or var at any given point. Do it for Horizons
     - [x] change aspect to have 0 as south. (same convention as in horizon)
@@ -54,17 +52,21 @@ Contributors to the current version (2021) are:
   - [x] create small examples from a small dataset avail in the library
   - [ ] If readme is not enough, then make a ReadTheDoc 
   - [ ] make sure all functions and class have explicit docstring
+  - [ ] describe `config.ini` variables
+  - [ ] short description of `topoclass` structure
+  - [ ] example of downscaling without `topoclass` 
+  - [ ] write about about available forcing datasets
 
 ## Design
 
 1. Inputs
     - Climate data from reanalysis (ERA5, etc)
-    - Climate data from future projections (CORDEX)
-    - DEM from local source, or fetch from public repository: SRTM, ArcticDEM
+    - Climate data from future projections (CORDEX) (not avail.)
+    - DEM from local source, or fetch from public repository: SRTM, ArcticDEM, ASTER
 2. Run TopoScale
     - compute derived values (from DEM)
     - toposcale (k-mean clustering)
-    - interpolation (bilinear, inverse square dist.) (interpolation optional only if output as gridded data)
+    - interpolation (bilinear, inverse square dist.)
 3. Output
     - Cryogrid format
     - FSM format
@@ -83,10 +85,9 @@ Validation (4) and Gap filling (4) are future implementation.
 ## Installation
 
 ```bash
-conda create -n downscaling
-conda activate downscaling
 conda install mamba -n base -c conda-forge
-mamba install ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio gdal
+mamba create -n downscaling ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio gdal pyproj
+conda activate downscaling
 pip install cdsapi
 pip install h5netcdf
 pip install topocalc
@@ -100,8 +101,7 @@ pip install -e TopoPyScale    #install a development version
 
 #----------------------------------------------------------
 #            OPTIONAL: if using jupyter lab
-
-# if you want to add this Python kernel to your jupyter lab
+# add this new Python kernel to your jupyter lab PATH
 python -m ipykernel install --user --name downscaling
 ```
 
@@ -166,7 +166,7 @@ mp.to_netcdf()
 ```
 
 TopoClass will create a file structure in the project folder (see below). TopoPyScale assumes you have a DEM in GeoTiFF, and a set of climate data in netcdf (following ERA5 variable conventions). 
-TopoPyScale can easier segment the DEM using clustering (e.g. K-mean), or use a list of predefined point coordinates in `pts_list.csv`. Make sure all parameters in `config.ini` are correct.
+TopoPyScale can easier segment the DEM using clustering (e.g. K-mean), or a list of predefined point coordinates in `pts_list.csv` can be provided. Make sure all parameters in `config.ini` are correct.
 ```
 my_project/
     ├── inputs/

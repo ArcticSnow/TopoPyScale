@@ -137,7 +137,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             print("---> Point elevation ({}) lower than the 1000hPa geopotential\n=> Skip point_id {} ".format(row.elevation, i))
         else:
             # ========== Vertical interpolation at the DEM surface z  ===============
-            ind_z_bot = (plev_interp.where(plev_interp.z < row.elevation).z - row.elevation).argmin('level')
+            ind_z_bot = (plev_interp.where(plev_interp.z < row.elevation).z - row.elevation).argmax('level')
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
             bot = plev_interp.isel(level=ind_z_bot)
@@ -162,24 +162,23 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
             down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
             down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
-            down_pt['p'] = top.level*(10**-3) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g) )  # Pressure in bar
+            down_pt['p'] = top.level*(10**-3) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
             down_pt['tp'] = surf_interp.tp
 
             # ======== Longwave downward radiation ===============
-            x1, x2 =0.43, 5.7
+            x1, x2 = 0.43, 5.7
             sbc = 5.67e-8
 
             down_pt = mu.mixing_ratio(down_pt, mu.var_era_plevel)
             down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
-
             surf_interp = mu.mixing_ratio(surf_interp, mu.var_era_surf)
             surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
 
             # ========= Compute clear sky emissivity ===============
             down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
             surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
-            # Calculate the "cloud" emissivity, CHECK UNIT OF SSRD (J/m2) or (W/m2)
-            surf_interp['cle'] = surf_interp.ssrd / (sbc * surf_interp.t2m**4) - surf_interp['cse']
+            # Calculate the "cloud" emissivity, UNIT OF SSRD (J/m2)
+            surf_interp['cle'] = (surf_interp.ssrd/pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m**4) - surf_interp['cse']
             # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
             surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
             down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
@@ -190,7 +189,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
 
             mu0 = np.cos(solar_ds.sel(point_id=row.name).zenith_avg) * (np.cos(solar_ds.sel(point_id=row.name).zenith_avg)>0)
-            S0=1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
+            S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
             solar_ds['SWtoa'] = S0 * mu0
             solar_ds['sunset'] = mu0 < np.cos(89*np.pi/180)
             solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
@@ -222,7 +221,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             shade = (horizon > solar_ds.sel(point_id=row.name).elevation)
 
             down_pt['SW_direct_tmp'] = solar_ds.sel(point_id=row.name).SWtoa * np.exp(-ka * down_pt.p / (g*mu0))
-            down_pt['SW_direct'] =down_pt.SW_direct_tmp * (down_pt.cos_illumination/mu0)*(1-shade)
+            down_pt['SW_direct'] = down_pt.SW_direct_tmp * (down_pt.cos_illumination/mu0)*(1-shade)
             down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
             down_pt = down_pt.drop(['SW_direct_tmp'])
 
@@ -230,7 +229,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
 
             # currently drop azimuth and level as they are coords. Could be passed to variables instead.
-            down_pt = down_pt.drop(['azimuth','level'])
+            down_pt = down_pt.drop(['azimuth','level']).round(2)
             dataset.append(down_pt)
 
 
