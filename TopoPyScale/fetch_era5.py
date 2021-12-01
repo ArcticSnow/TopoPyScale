@@ -40,7 +40,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	"""
 	print('\n')
 	print('---> Loading ERA5 {} climate forcing'.format(surf_plev))
-	bbox = (str(latN) + "/" + str(lonW) + "/" + str(latS) + "/" + str(lonE))
+	bbox = [str(latN), str(lonW), str(latS), str(lonE)]
 	time_step_dict = {'1H': ['00:00', '01:00', '02:00',
 							 '03:00', '04:00', '05:00',
 							 '06:00', '07:00', '08:00',
