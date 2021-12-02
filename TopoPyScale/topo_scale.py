@@ -62,7 +62,7 @@ g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
 
-def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG):
+def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG, lw_terrain_flag=True):
     '''
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -70,7 +70,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     :param df_centroids: pandas dataframe containing a list of point for which to downscale (includes all terrain data)
     :param solar_ds: xarray dataset containing solar geometry: sun zenith, azimuth, elevation
     :param horizon_da: xarray dataarray containing the horizon angles for a list of azimuth
-    :param target_EPSG: EPSG code of the DEM
+    :param target_EPSG: int, EPSG code of the DEM
+    :param lw_terrain_flag: boolean, flag to compute contribution of surrounding terrain to LW or ignore
     :return: xarray dataset containing downscaled data organized with time, point_id, lat, long
     '''
     print('\n---> Downscaling climate to list of points using TopoScale')
@@ -177,11 +178,16 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             # ========= Compute clear sky emissivity ===============
             down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
             surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
-            # Calculate the "cloud" emissivity, UNIT OF SSRD (J/m2)
-            surf_interp['cle'] = (surf_interp.ssrd/pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m**4) - surf_interp['cse']
+            # Calculate the "cloud" emissivity, UNIT OF STRD (J/m2)
+            surf_interp['cle'] = (surf_interp.strd/pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m**4) - surf_interp['cse']
             # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
             surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
-            down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
+            if lw_terrain_flag:
+                down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4 + \
+                                0.5 * (1 + np.cos(row.slope)) * (1 - row.svf) * 0.99 * 5.67e-8 * (273.15**4)
+            else:
+                down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
+            pdb.set_trace()
             down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
             surf_interp.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
             surf_interp.cle.attrs = {'units': 'xxx', 'standard_name': 'Cloud emissivity'}
