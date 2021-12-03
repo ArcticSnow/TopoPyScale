@@ -174,6 +174,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
             surf_interp = mu.mixing_ratio(surf_interp, mu.var_era_surf)
             surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
+            pdb.set_trace()
 
             # ========= Compute clear sky emissivity ===============
             down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
@@ -187,7 +188,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
                                 0.5 * (1 + np.cos(row.slope)) * (1 - row.svf) * 0.99 * 5.67e-8 * (273.15**4)
             else:
                 down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
-            pdb.set_trace()
+
             down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
             surf_interp.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
             surf_interp.cle.attrs = {'units': 'xxx', 'standard_name': 'Cloud emissivity'}

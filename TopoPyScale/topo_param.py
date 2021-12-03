@@ -5,6 +5,8 @@ S. Filhol, Oct 2021
 TODO:
 - an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
 '''
+
+import sys
 import rasterio
 from pyproj import Transformer
 import pandas as pd
@@ -73,7 +75,6 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
             if method == 'linear':
                 dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
                 weights = dist / np.sum(dist)
-            #pdb.set_trace()
             da_idw = xr.DataArray(data=weights,
                                   coords={
                                     "y": ds_param_pt.y.values,
@@ -100,50 +101,32 @@ def compute_dem_param(dem_file):
     :return:  xarray dataset containing x, y, elev, slope, aspect, svf
     '''
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
-    with rasterio.open(dem_file) as rf:
-        dem_arr = rf.read()
-        geot = rf.read_transform()
-        if dem_arr.shape.__len__() == 3:
-            dem_arr = dem_arr[0, :, :]
-        dx, dy = geot[1], -geot[-1]
-        x = np.linspace(rf.bounds.left + np.round(geot[1], 3), rf.bounds.right, rf.shape[1])
-        y = np.linspace(rf.bounds.bottom + np.round(geot[5], 3), rf.bounds.top, rf.shape[0])
-
-    dem_param = pd.DataFrame()
-    Xs, Ys = np.meshgrid(x, y)
-
+    ds = xr.open_rasterio(dem_file).to_dataset('band')
+    ds = ds.rename({1: 'elevation'})
+    dx = ds.x.diff('x').median().values
+    dy = ds.y.diff('y').median().values
+    dem_arr = ds.elevation.values
     slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
     print('---> Computing sky view factor')
     start_time = time.time()
     svf = viewf.viewf(np.double(dem_arr), dx)[0]
-    dem_param['svf'] = svf.flatten()
     print('---> Sky-view-factor finished in {}s'.format(np.round(time.time()-start_time), 0))
-    # Build an xarray dataset
-    ds = xr.Dataset(
-        data_vars=dict(
-            elevation=(["y", "x"], np.flip(dem_arr, 0)),
-            slope=(["y", "x"], np.flip(slope, 0)),
-            aspect=(["y", "x"], np.flip(np.deg2rad(aspect - 180), 0)),
-            aspect_cos=(["y", "x"], np.flip(np.cos(np.deg2rad(aspect)), 0)),
-            aspect_sin=(["y", "x"], np.flip(np.sin(np.deg2rad(aspect)), 0)),
-            svf=(["y", "x"], np.flip(svf, 0))
-        ),
-        coords={'x': x, 'y': y}
-        ,
-        attrs=dict(description="DEM input parameters to TopoSub",
-                   author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale"),
-        )
-    ds.x.attrs = {'units':'m'}
-    ds.y.attrs = {'units':'m'}
-    ds.elevation.attrs = {'units':'m'}
-    ds.slope.attrs = {'units':'rad'}
-    ds.aspect.attrs = {'units':'rad'}
-    ds.aspect_cos.attrs = {'units':'cosinus'}
-    ds.aspect_sin.attrs = {'units':'sinus'}
-    ds.svf.attrs = {'units':'ratio', 'standard_name':'svf', 'long_name':'Sky view factor'}
+    ds['slope'] = (["y", "x"], slope)
+    ds['aspect'] = (["y", "x"], np.deg2rad(aspect - 180))
+    ds['aspect_cos'] = (["y", "x"], np.cos(np.deg2rad(aspect)))
+    ds['aspect_sin'] = (["y", "x"], np.sin(np.deg2rad(aspect)))
+    ds['svf'] = (["y", "x"], svf)
+    ds.attrs = dict(description="DEM input parameters to TopoSub",
+                   author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale")
+    ds.x.attrs = {'units': 'm'}
+    ds.y.attrs = {'units': 'm'}
+    ds.elevation.attrs = {'units': 'm'}
+    ds.slope.attrs = {'units': 'rad'}
+    ds.aspect.attrs = {'units': 'rad'}
+    ds.aspect_cos.attrs = {'units': 'cosinus'}
+    ds.aspect_sin.attrs = {'units': 'sinus'}
+    ds.svf.attrs = {'units': 'ratio', 'standard_name': 'svf', 'long_name': 'Sky view factor'}
 
-    Xs, Ys, slope, aspect = None, None, None, None
-    dem_arr = None
     return ds
 
 
@@ -155,30 +138,23 @@ def compute_horizon(dem_file, azimuth_inc=30):
     :return: xarray dataset containing the
     '''
     print('\n---> Computing horizons with {} degree increment'.format(azimuth_inc))
-    with rasterio.open(dem_file) as rf:
-        dem = rf.read()
-        geot = rf.read_transform()
-        if dem.shape.__len__() == 3:
-            dem = dem[0, :, :]
-        dx = geot[1]
-        x = np.linspace(rf.bounds.left + np.round(geot[1], 3), rf.bounds.right, rf.shape[1])
-        y = np.linspace(rf.bounds.bottom + np.round(geot[5], 3), rf.bounds.top, rf.shape[0])
-    azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc) # center the azimuth in middle of the bin
-    arr = np.empty((azimuth.shape[0], dem.shape[0], dem.shape[1]))
-    #dem = np.flip(dem.astype(float))
-    dem = dem.astype(float)
-    for i, azi in enumerate(azimuth):
-        arr[i, :, :] = horizon.horizon(azi, dem, dx)
+    ds = xr.open_rasterio(dem_file).to_dataset('band')
+    ds = ds.rename({1: 'elevation'})
+    dx = ds.x.diff('x').median().values
 
-    da = xr.DataArray(data= np.flip(np.pi/2 - np.arccos(arr), 1),
+    azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc) # center the azimuth in middle of the bin
+    arr = np.empty((azimuth.shape[0], ds.elevation.shape[0], ds.elevation.shape[1]))
+    for i, azi in enumerate(azimuth):
+        arr[i, :, :] = horizon.horizon(azi, ds.elevation.values, dx)
+
+    da = xr.DataArray(data=np.pi/2 - np.arccos(arr),
                       coords={
-                          "y": y,
-                          "x": x,
+                          "y": ds.y.values,
+                          "x": ds.x.values,
                           "azimuth": azimuth
                       },
                       dims=["azimuth", "y", "x"]
                       )
-    arr, dem = None, None
     return da
 
 

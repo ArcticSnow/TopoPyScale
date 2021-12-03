@@ -98,10 +98,6 @@ class Topoclass(object):
         self.toposub.df_centroids = pd.read_csv(self.config.project_dir + 'inputs/dem/' + self.config.pt_list_file, **kwargs)
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param, method=method)
 
-
-
-            #return self.toposub.df_centroids
-
     def extract_dem_cluster_param(self):
         '''
         Function to segment a DEM in clusters and retain only the centroids of each cluster.
@@ -171,7 +167,7 @@ class Topoclass(object):
             Function to parse config file .ini into a python class
             '''
             try:
-                conf = ConfigObj(self.file_config)
+                conf = ConfigObj(self.file_config, raise_errors=False)
             except IOError:
                 print('ERROR: config file does not exist. Check path.')
 
@@ -208,7 +204,7 @@ class Topoclass(object):
             self.interp_method = conf['toposcale']['interpolation_method']
             self.pt_list_file = conf['toposcale']['pt_list']
             self.pt_sampling_method = conf['toposcale']['pt_sampling_method']
-            self.lw_contrib_flag = conf['toposcale'].as_bool('lw_terrain_contribution')
+            self.lw_terrain_contrib_flag = conf['toposcale'].as_bool('lw_terrain_contribution')
             
     def get_era5(self):
         '''
