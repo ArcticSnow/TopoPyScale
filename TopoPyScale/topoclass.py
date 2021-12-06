@@ -269,4 +269,4 @@ class Topoclass(object):
         '''
         function to export toposcale output to generic netcdf format
         '''
-        self.downscaled_pts.to_netcdf(file_out)
+        self.downscaled_pts.to_netcdf(file_out, encodings={"zlib": True, "complevel": 9})
