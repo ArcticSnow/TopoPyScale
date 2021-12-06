@@ -8,9 +8,9 @@ Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an ori
 ## Contribution Workflow
 **Please follow these simple rules:**
 1. a bug -> fix it! 
-2. an idea or a bug you cannot fix? -> create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) after checking an issue doesn't already exist. If so, add material to that existing issue.
+2. an idea or a bug you cannot fix? -> create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) if none doesn't already exist. If one exist, then add material to tit.
 3. wanna develop a new feature/idea? -> create a new branch. Do the development. Merge with main branch when accomplished.
-4. Create release version when significant improvements and bug fix has been done. Coordinate with others
+4. Create release version when significant improvements and bug fixes have been done. Coordinate with others
 
 And check out our Slack: tscaleworkspace.slack.com
 
@@ -27,7 +27,7 @@ Contributors to the current version (2021) are:
     - [x] get ERA5 data
     - [x] create possibility to provide a list of points by lat,long to run toposcale completely
     - [ ] write save output in the various format version
-    - [ ] fetch other dataset routines
+    - [x] fetch other dataset routines
     - [ ] implement routine to fecth DEM automatically from ArcticDEM/ASTER
     - [ ] add plotting routines.
 - `topo_sub.py`:
