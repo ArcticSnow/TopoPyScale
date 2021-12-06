@@ -62,7 +62,7 @@ g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
 
-def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG, lw_terrain_flag=True):
+def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG, lw_terrain_flag=True, tstep='1H'):
     '''
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -72,10 +72,12 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     :param horizon_da: xarray dataarray containing the horizon angles for a list of azimuth
     :param target_EPSG: int, EPSG code of the DEM
     :param lw_terrain_flag: boolean, flag to compute contribution of surrounding terrain to LW or ignore
+    :param tstep: timestep of the input data, default = 1H
     :return: xarray dataset containing downscaled data organized with time, point_id, lat, long
     '''
     print('\n---> Downscaling climate to list of points using TopoScale')
     start_time = time.time()
+    tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
     ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc')
     ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc')
@@ -164,7 +166,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
             down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
             down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
-            down_pt['tp'] = surf_interp.tp
+            down_pt['tp'] = surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
 
             # ======== Longwave downward radiation ===============
             x1, x2 = 0.43, 5.7
