@@ -28,6 +28,40 @@ eps0 = 0.622  # Ratio of molecular weight of water and dry air [-]
 S0 = 1370    # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
 
 
+def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15):
+    '''
+    Function to partition precipitation in between rain vs snow based on temperature threshold and mixing around freezing
+    :param precip: 1D array, precipitation in mm/hr
+    :param temp: 1S array, air temperature in K
+    :param tair_low_thresh: float, lower temperature threshold under which all precip is snow. degree K
+    :param tair_high_thresh: float, higher temperature threshold under which all precip is rain. degree K
+    :return: 1D array rain, 1D array snow
+    '''
+    snow = precip * ((temp <= tair_low_thresh) +
+                     ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
+                     (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
+
+    rain = precip * ((temp >= tair_high_thresh) +
+                     ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
+                     (1-(temp - tair_low_thresh)) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
+    return rain, snow
+
+def q_2_rh(temp, pressure, qair):
+    '''
+    Function to convert specific humidity (q) to relative humidity (RH) following Bolton (1980)
+    :param temp: temperature in degree C
+    :param pressure: aire pressure in hPa
+    :param qair: specific humidity in kg/kg
+    :return:
+    '''
+    es = 6.112 * np.exp((17.67 * temp)/(temp + 243.5))
+    e = qair * pressure / (0.378 * qair + 0.622)
+    rh = e / es
+    rh[rh > 1] = 1
+    rh[rh < 0] = 0
+    return rh
+
+
 def mixing_ratio(ds, var):
     '''
     Function to compute mixing ratio

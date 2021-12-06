@@ -9,33 +9,25 @@ import pandas as pd
 import datetime as dt
 import xarray as xr
 from scipy import io
+from TopoPyScale import meteo_util as mu
 
-def partition_snow(ds):
+
+
+def to_cryogrid():
+    return
+
+
+def to_micromet_single_station(ds, df_pts, fname_format='CROCUS_pt_*.csv', na_values=-9999, headers=False):
     '''
-    Function to partition precipitation in rain vs snow based on temperature threshold and mixing
-    :param ds:
+    Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_id
+    :param ds: TopoPyScale xarray dataset, downscaled product
+    :param df_pts: pandas dataframe with point list info (x,y,elevation,slope,aspect,svf,...)
+    :param fname_format: str, filename format. point_id is inserted where * is
+    :param na_values: int, na_value default
+    :param headers: bool, add headers to file
     :return:
 
-    TODO:
-    - all
-    '''
-    return rain, snow
-
-# Save data to micromet format
-def to_micromet_single_station(fname, stn_df, stn_east, stn_north, stn_elev, stn_id, na_values=-9999, headers=False):
-    '''
-    Function to write data into a format compatible with micromet of snowmodel Liston
-    :param fname: file name and path
-    :param stn_df: data frame containing the data. WARNING: columns names must be compatible
-    :param stn_east: East coordinate of the station [m]
-    :param stn_north: North coordinate of the station [m]
-    :param stn_elev: Elevation of the station [m]
-    :param stn_id: Station ID
-    :return: -
-
-    TODO: ADAPT everythong
-
-    Example of the compatible format for micromet:
+    Example of the compatible format for micromet (headers should be removed to run the model:
 
      year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip
     (yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)
@@ -45,23 +37,26 @@ def to_micromet_single_station(fname, stn_df, stn_east, stn_north, stn_elev, stn
      2002   10    8   12.00    101   426340.0  4411238.0  3598.0    -5.02    88.77 -9999.00 -9999.00 -9999.00
     '''
 
-    try:
+    n_digits = len(str(ds.point_id.values.max()))
+    for pt in ds.point_id.values:
+        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
-        df['year'] = stn_df.index.year
-        df['mo']  = stn_df.index.month
-        df['dy']  = stn_df.index.day
-        df['hr']  = stn_df.index.hour
-        df['stn_id'] = np.repeat(stn_id, df.shape[0])
-        df['easting'] = np.repeat(stn_east, df.shape[0])
-        df['northing'] = np.repeat(stn_north, df.shape[0])
-        df['elevation'] = np.repeat(stn_elev, df.shape[0])
-        df['Tair'] = stn_df.Tair.__array__()
-        df['RH'] = stn_df.RH.__array__()
-        df['speed'] = stn_df.speed.__array__()
-        df['dir'] = stn_df.dir.__array__()
-        df['precip'] = stn_df.precip.__array__()
+        df['year'] = pd.to_datetime(ds_pt.time.values).year
+        df['mo']  = pd.to_datetime(ds_pt.time.values).month
+        df['dy']  = pd.to_datetime(ds_pt.time.values).day
+        df['hr']  = pd.to_datetime(ds_pt.time.values).hour
+        df['stn_id'] = pt
+        df['easting'] = np.round(df_pts.x.iloc[pt], 2)
+        df['northing'] = np.round(df_pts.y.iloc[pt], 2)
+        df['elevation'] = np.round(df_pts.elevation.iloc[pt], 2)
+        df['Tair'] = np.round(ds_pt.t.values - 273.15, 2)
+        df['RH'] = mu.q_2_rh(ds_pt.t.values - 273.15, ds_pt.p.values*10**-2, ds_pt.q.values) * 100
+        df['speed'] = ds_pt.ws.values
+        df['dir'] = np.round(np.rad2deg(ds_pt.wd.values), 1)
+        df['precip'] = ds_pt.tp.values
 
-        df.to_csv(fname, index=False, header=False, sep=' ', na_rep=na_values)
+        df.to_csv(foutput, index=False, header=False, sep=' ', na_rep=na_values)
         if headers:
             header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
 
@@ -70,52 +65,51 @@ def to_micromet_single_station(fname, stn_df, stn_east, stn_north, stn_elev, stn
                 f.seek(0,0)
                 f.write(header + '\n' + f_data)
 
-        print(fname, ' Saved')
-    except:
-        print('something wrong')
+        print(foutput, ' Saved')
 
-def to_crocus(foutput, ds, scale_precip=1):
+
+def to_crocus(ds, df_pts, fname_format='CROCUS_pt_*.nc', scale_precip=1):
     '''
-    Function to
-    :param ds:
+    Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
+    :param ds: Toposcale downscaled dataset.
+    :param df_pts: pandas dataframe with point list info (x,y,elevation,slope,aspect,svf,...)
+    :param fname_format: str, filename format. point_id is inserted where * is
+    :param scale_precip: float, scaling factor to apply on precipitation. Default is 1
     :return:
-
-    TODO:
-    - partition precip in between snow and rain
-    - add point_id in file name (with sero padded)
     '''
     # create one file per point_id
+    n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
+        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
-        df['time'] = ds_pt.time.data
-        df['Tair'] = ds_pt.t.data.flatten()
-        df['DIR_SWdown'] = ds_pt.SW.data.flatten()
-        df['LWdown'] = ds_pt.LW.data.flatten()
-        df['PSurf'] = ds_pt.p.data.flatten()
-        #df['HUMREL'] = ds_pt.relative_humidity_2m.data.flatten()
-        df['xwind'] = ds_pt.u.data.flatten()
-        df['ywind'] = ds_pt.v.data.flatten()
-        df['precip'] = ds_pt.tp.data.flatten() / 3600 * scale_precip
-        #df['Snowf'] =ds_pt.Snowf.data.flatten() * scale_precip
-        #df['Rainf'] = df.precip - df.Snowf
+        df['time'] = ds_pt.time.values
+        df['Tair'] = ds_pt.t.values
+        df['DIR_SWdown'] = ds_pt.SW.values
+        df['LWdown'] = ds_pt.LW.values
+        df['PSurf'] = ds_pt.p.values
+        df['HUMREL'] = mu.q_2_rh(ds_pt.t.values - 273.15, ds_pt.p.values*10**-2, ds_pt.q.values) * 100
+        df['xwind'] = ds_pt.u.values
+        df['ywind'] = ds_pt.v.values
+        df['precip'] = ds_pt.tp.values / 3600 * scale_precip
+        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values)
 
-            # Derive variables: Q- humidity, WD - wind direction (deg), and WS
-        df['Qair'] = ds_pt.q.data.flatten()
-        df['Wind'], df['Wind_DIR'] = ds_pt.ws.values, np.rad2deg(ds.wd.values)
+        # Derive variables: Q- humidity, WD - wind direction (deg), and WS
+        df['Qair'] = ds_pt.q.values
+        df['Wind'], df['Wind_DIR'] = ds_pt.ws.values, np.rad2deg(ds_pt.wd.values)
         df['NEB'] = np.zeros(df.shape[0])
         df['CO2air'] = np.zeros(df.shape[0])
         df['SCA_SWdown'] = np.zeros(df.shape[0])
         ds_pt.close()
 
-        df = df.loc[(df.time>=pd.Timestamp(start)) & (df.time<pd.Timestamp(end)+pd.Timedelta('1D'))]
+        #df = df.loc[(df.time>=pd.Timestamp(start)) & (df.time<pd.Timestamp(end)+pd.Timedelta('1D'))]
 
         # Build netcdf forcing file for CROCUS
         fo = xr.Dataset.from_dataframe(df.set_index('time'))
         fo = df.set_index(['time']).to_xarray()
         fo.Tair.attrs = {'units':'K', 'standard_name':'Tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
         fo.Qair.attrs = {'units':'kg/kg', 'standard_name':'Qair', 'long_name':'Near Surface Specific Humidity', '_FillValue': -9999999.0}
-        #fo.HUMREL.attrs = {'units':'%', 'standard_name':'HUMREL', 'long_name':'Relative Humidity', '_FillValue': -9999999.0}
+        fo.HUMREL.attrs = {'units':'%', 'standard_name':'HUMREL', 'long_name':'Relative Humidity', '_FillValue': -9999999.0}
         fo.Wind.attrs = {'units':'m/s', 'standard_name':'Wind', 'long_name':'Wind Speed', '_FillValue': -9999999.0}
         fo.Wind_DIR.attrs = {'units':'deg', 'standard_name':'Wind_DIR', 'long_name':'Wind Direction', '_FillValue': -9999999.0}
         fo.Rainf.attrs = {'units':'kg/m2/s', 'standard_name':'Rainf', 'long_name':'Rainfall Rate', '_FillValue': -9999999.0}

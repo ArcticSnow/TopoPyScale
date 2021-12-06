@@ -23,7 +23,7 @@ from TopoPyScale import topo_sub as ts
 from TopoPyScale import fetch_dem as fd
 from TopoPyScale import solar_geom as sg
 from TopoPyScale import topo_scale as ta
-
+from TopoPyScale import topo_export as te
 
 class Topoclass(object):
     '''
@@ -243,7 +243,6 @@ class Topoclass(object):
             )
             
 
-    
     def to_cryogrid(self):
         '''
         function to export toposcale output to cryosgrid format .mat
@@ -254,19 +253,26 @@ class Topoclass(object):
         function to export toposcale output to FSM format
         '''
         
-    def to_crocus(self):
+    def to_crocus(self, fname_format='./outputs/CROCUS_pt_*.nc', scale_precip=1):
         '''
-        function to export toposcale output to crocus format .nc
+        function to export toposcale output to crocus format .nc. This functions saves one file per point_id
+
+        :param fout_format: str, filename format. point_id is inserted where * is
+        :param scale_precip: float, scaling factor to apply on precipitation. Default is 1
         '''
+        te.to_crocus(self.downscaled_pts, self.toposub.df_centroids, fname_format=fname_format, scale_precip=scale_precip)
 
     
-    def to_snowmodel(self):
+    def to_snowmodel(self, fname_format='./outputs/Snowmodel_stn_*.csv'):
         '''
         function to export toposcale output to snowmodel format .ascii, for single station standard
+
+        :param fout_format: str, filename format. point_id is inserted where * is
         '''
+        te.to_micromet_single_station(self.downscaled_pts, self.toposub.df_centroids, fname_format=fname_format, na_values=-9999, headers=False)
     
     def to_netcdf(self, file_out='./outputs/output.nc'):
         '''
-        function to export toposcale output to generic netcdf format
+        function to export toposcale output to one single generic netcdf format, compressed
         '''
         self.downscaled_pts.to_netcdf(file_out, encodings={"zlib": True, "complevel": 9})

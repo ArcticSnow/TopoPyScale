@@ -246,7 +246,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
     down_pts = xr.concat(dataset, dim='point_id')
     # print timer to console
-    print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 0))
+    print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
     return down_pts
 
 
