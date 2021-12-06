@@ -163,7 +163,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
             down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
             down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
-            down_pt['p'] = top.level*(10**-3) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
+            down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
             down_pt['tp'] = surf_interp.tp
 
             # ======== Longwave downward radiation ===============
@@ -174,7 +174,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
             surf_interp = mu.mixing_ratio(surf_interp, mu.var_era_surf)
             surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
-            pdb.set_trace()
+
 
             # ========= Compute clear sky emissivity ===============
             down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
@@ -202,7 +202,9 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
             solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
-            kt = (surf_interp.ssrd/pd.Timedelta('1H').seconds) / solar_ds.sel(point_id=row.name).SWtoa     # clearness index
+            kt = surf_interp.ssrd * 0
+            kt[~solar_ds.sunset] = (surf_interp.ssrd[~solar_ds.sunset]/pd.Timedelta('1H').seconds) / \
+                                   solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset]     # clearness index
             kd = np.max(0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt)), 0)    # Diffuse index
 
             surf_interp['SW'] = surf_interp.ssrd/pd.Timedelta('1H').seconds
@@ -215,8 +217,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             surf_interp.SW_direct.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave direct radiations downward'}
 
             # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
-            ka = (g*mu0/down_pt.p)*np.log(solar_ds.sel(point_id=row.name).SWtoa/surf_interp.SW_direct)
-
+            ka = surf_interp.ssrd * 0
+            ka[~solar_ds.sunset] = (g*mu0[~solar_ds.sunset]/down_pt.p)*np.log(solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset]/surf_interp.SW_direct[~solar_ds.sunset])
             # Illumination angle
             down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(solar_ds.sel(point_id=row.name).zenith_avg) *\
                                               np.sin(row.slope) * np.cos(solar_ds.sel(point_id=row.name).azimuth_avg - row.aspect)
@@ -226,17 +228,17 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             # Binary shadow masks.
             horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth_avg.isel(point_id=row.name)), method='nearest')
             shade = (horizon > solar_ds.sel(point_id=row.name).elevation)
-
-            down_pt['SW_direct_tmp'] = solar_ds.sel(point_id=row.name).SWtoa * np.exp(-ka * down_pt.p / (g*mu0))
-            down_pt['SW_direct'] = down_pt.SW_direct_tmp * (down_pt.cos_illumination/mu0)*(1-shade)
+            down_pt['SW_direct_tmp'] = down_pt.t * 0
+            down_pt['SW_direct_tmp'][~solar_ds.sunset] = solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset] * np.exp(-ka[~solar_ds.sunset] * down_pt.p[~solar_ds.sunset] / (g*mu0[~solar_ds.sunset]))
+            down_pt['SW_direct'] = down_pt.t * 0
+            down_pt['SW_direct'][~solar_ds.sunset] = down_pt.SW_direct_tmp[~solar_ds.sunset] * (down_pt.cos_illumination[~solar_ds.sunset]/mu0[~solar_ds.sunset])*(1-shade)
             down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
             down_pt = down_pt.drop(['SW_direct_tmp'])
-
             down_pt.SW_direct.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave direct radiations downward'}
             down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
 
             # currently drop azimuth and level as they are coords. Could be passed to variables instead.
-            down_pt = down_pt.drop(['azimuth','level']).round(2)
+            down_pt = down_pt.drop(['level']).round(2)
             dataset.append(down_pt)
 
 

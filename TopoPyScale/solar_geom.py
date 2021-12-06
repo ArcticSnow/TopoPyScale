@@ -32,8 +32,8 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x.values, df_position.y.values)
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
 
-    times = pd.date_range(start_date, end_date, freq='1H', tz='UTC')
-    tstep_vec = pd.date_range(start_date, end_date, freq=tstep, tz='UTC')
+    times = pd.date_range(start_date, end_date, freq='1H', tz='UTC', closed='left')
+    tstep_vec = pd.date_range(start_date, end_date, freq=tstep, tz='UTC', closed='left')
     arr_val = np.empty((df_position.shape[0], 3, tstep_vec.shape[0]))
     arr_avg = np.empty((df_position.shape[0], 4, tstep_vec.shape[0]))
 
@@ -62,7 +62,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
         },
         coords={
             "point_id": df_position.index,
-            "time": pd.date_range(start_date, end_date, freq=tstep),
+            "time": pd.date_range(start_date, end_date, freq=tstep, closed='left'),
             "reference_time": pd.Timestamp(start_date),
         },
     )
