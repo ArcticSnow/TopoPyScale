@@ -245,20 +245,26 @@ class Topoclass(object):
             )
             
 
-    def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', path=self.config.project_dir+'outputs/'):
+    def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
         '''
-        function to export toposcale output to cryosgrid format.
+        wrapper function to export toposcale output to cryosgrid format from TopoClass
         :param fname_format: str, filename format. point_id is inserted where * is
         '''
+        path = self.config.project_dir+'outputs/'
         if 'cluster:labels' in self.toposub.ds_param.keys():
             label_map = True
             da_label = self.toposub.ds_param.cluster_labels
         else:
             label_map = False
             da_label = None
-        te.to_cryogrid(self.downscaled_pts, self.toposub.df_centroids,
-                       fname_format=fname_format, path=path,
-                       label_map=label_map, da_label=da_label)
+        te.to_cryogrid(self.downscaled_pts,
+                       self.toposub.df_centroids,
+                       fname_format=fname_format,
+                       path=path,
+                       label_map=label_map,
+                       da_label=da_label,
+                       climate_dataset_name=self.config.climate_dataset,
+                       project_author=self.config.project_author)
         
     def to_fsm(self):
         '''
@@ -272,7 +278,12 @@ class Topoclass(object):
         :param fout_format: str, filename format. point_id is inserted where * is
         :param scale_precip: float, scaling factor to apply on precipitation. Default is 1
         '''
-        te.to_crocus(self.downscaled_pts, self.toposub.df_centroids, fname_format=fname_format, scale_precip=scale_precip)
+        te.to_crocus(self.downscaled_pts,
+                     self.toposub.df_centroids,
+                     fname_format=fname_format,
+                     scale_precip=scale_precip,
+                     climate_dataset_name=self.config.climate_dataset,
+                     project_author=self.config.project_author)
 
     
     def to_snowmodel(self, fname_format='./outputs/Snowmodel_stn_*.csv'):
@@ -287,4 +298,13 @@ class Topoclass(object):
         '''
         function to export toposcale output to one single generic netcdf format, compressed
         '''
-        self.downscaled_pts.to_netcdf(file_out, encoding={"zlib": True, "complevel": 9})
+        encod_dict = {}
+        for var in list(self.downscaled_pts.keys()):
+            scale_factor, add_offset = te.compute_scaling_and_offset(fo[var], n=10)
+            encod_dict.update({var:{"zlib": True,
+                                   "complevel": 9,
+                                   'dtype':'int16',
+                                   'scale_factor':scale_factor,
+                                   'add_offset':add_offset}})
+        self.downscaled_pts.to_netcdf(file_out, encoding=encod_dict)
+        print('---> File {} saved'.format(file_out))

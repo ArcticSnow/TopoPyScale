@@ -14,27 +14,31 @@ import xarray as xr
 from scipy import io
 from TopoPyScale import meteo_util as mu
 
-def compute_scale_and_offset(da, n=16):
+def compute_scaling_and_offset(da, n=16):
     """
     Compute offset and scale factor for int conversion
     :param da: dataarray of a given variable
     :param n: number of digits to account for
     """
-
     vmin = float(da.min().values)
     vmax = float(da.max().values)
 
     # stretch/compress data to the available packed range
     scale_factor = (vmax - vmin) / (2 ** n - 1)
-
     # translate the range to be symmetric about zero
     add_offset = vmin + 2 ** (n - 1) * scale_factor
 
     return scale_factor, add_offset
 
 
-
-def to_cryogrid(ds, df_pts, fname_format='Cryogrid_pt_*.nc', path='outputs/', label_map=False, da_label=None):
+def to_cryogrid(ds,
+                df_pts,
+                fname_format='Cryogrid_pt_*.nc',
+                path='outputs/',
+                label_map=False,
+                da_label=None,
+                climate_dataset_name='ERA5',
+                project_author='S. Filhol'):
     '''
     Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogird-community model
     :param ds:  xarray dataset with downscaled values from topo_scale
@@ -79,15 +83,12 @@ def to_cryogrid(ds, df_pts, fname_format='Cryogrid_pt_*.nc', path='outputs/', la
         fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
 
         fo.attrs = {'title':'Forcing for Cryogrid Community model',
-                    'source': 'data from ERA5 downscaled with TopoPyScale',
-                    'creator_name':'TopoPyScale, Simon Filhol',
-                    'creator_email':'simon.filhol@geo.uio.no',
-                    'creator_url':'https://www.mn.uio.no/geo/english/people/aca/geohyd/simonfi/index.html',
-                    'institution': 'Department of Geosciences, University of Oslo, Norway',
+                    'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
+                    'creator_name':'Dataset created by {}'.format(project_author),
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
         encod_dict = {}
         for var in list(fo.keys()):
-            scale_factor, add_offset = compute_scale_and_offset(fo[var], n=10)
+            scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
             encod_dict.update({var:{"zlib": True,
                                    "complevel": 9,
                                    'dtype':'int16',
@@ -100,10 +101,14 @@ def to_cryogrid(ds, df_pts, fname_format='Cryogrid_pt_*.nc', path='outputs/', la
         fo.longitude.attrs = {'units':'deg', 'standard_name':'longitude'}
         fo.elevation.attrs = {'units':'m', 'standard_name':'elevation'}
         fo.to_netcdf(foutput, encoding=encod_dict)
-        print('File {} saved'.format(foutput))
+        print('---> File {} saved'.format(foutput))
 
 
-def to_micromet_single_station(ds, df_pts, fname_format='CROCUS_pt_*.csv', na_values=-9999, headers=False):
+def to_micromet_single_station(ds,
+                               df_pts,
+                               fname_format='CROCUS_pt_*.csv',
+                               na_values=-9999,
+                               headers=False):
     '''
     Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_id
     :param ds: TopoPyScale xarray dataset, downscaled product
@@ -145,16 +150,19 @@ def to_micromet_single_station(ds, df_pts, fname_format='CROCUS_pt_*.csv', na_va
         df.to_csv(foutput, index=False, header=False, sep=' ', na_rep=na_values)
         if headers:
             header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
-
-            with open(fname, 'r+') as f:
+            with open(foutput, 'r+') as f:
                 f_data = f.read()
                 f.seek(0,0)
                 f.write(header + '\n' + f_data)
+        print('---> File {} saved'.format(foutput))
 
-        print(foutput, ' Saved')
 
-
-def to_crocus(ds, df_pts, fname_format='CROCUS_pt_*.nc', scale_precip=1):
+def to_crocus(ds,
+              df_pts,
+              fname_format='CROCUS_pt_*.nc',
+              scale_precip=1,
+              climate_dataset_name='ERA5',
+              project_author='S. Filhol'):
     '''
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
     :param ds: Toposcale downscaled dataset.
@@ -208,12 +216,9 @@ def to_crocus(ds, df_pts, fname_format='CROCUS_pt_*.nc', scale_precip=1):
         fo.NEB.attrs = {'units':'between 0 and 1', 'standard_name':'NEB', 'long_name':'Nebulosity', '_FillValue': -9999999.0}
 
 
-        fo.attrs = {'title':'Forcing for SURFEX crocus',
-                    'source': 'data from AROME MEPS, ready for CROCUS forcing',
-                    'creator_name':'Simon Filhol',
-                    'creator_email':'simon.filhol@geo.uio.no',
-                    'creator_url':'https://www.mn.uio.no/geo/english/people/aca/geohyd/simonfi/index.html',
-                    'institution': 'Department of Geosciences, University of Oslo, Norway',
+        fo.attrs = {'title':'Forcing for SURFEX CROCUS',
+                    'source': 'data from {} downscaled with TopoPyScale ready for CROCUS'.format(climate_dataset_name),
+                    'creator_name':'Dataset created by {}'.format(project_author),
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         fo['ZS'] = np.float64(df_pts.iloc[pt].elevation)
@@ -262,4 +267,5 @@ def to_crocus(ds, df_pts, fname_format='CROCUS_pt_*.nc', scale_precip=1):
                      'SCA_SWdown': {'dtype': 'float64'},
                      'ZREF': {'dtype': 'float64'},
                      'UREF': {'dtype': 'float64'}})
+        print('---> File {} saved'.format(foutput))
 

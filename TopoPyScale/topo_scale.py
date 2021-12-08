@@ -137,8 +137,9 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
-            print("---> WARNING: Point {} has an elevation ({}m) lower than the 1000hPa geopotential\n=> "
-                  "Values sampled from Psurf and lowest Plevel. No vertical interpolatino".format(i, np.round(row.elevation,0)))
+            print("---> WARNING: Point {} is {} m lower than the 1000hPa geopotential\n=> "
+                  "Values sampled from Psurf and lowest Plevel. No vertical interpolatino".
+                  format(i, np.round(np.min(row.elevation - plev_interp.z.isel(level=-1)),0)))
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
             down_pt = (top['t']).to_dataset()
