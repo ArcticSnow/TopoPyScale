@@ -57,8 +57,10 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	df['month'] = df.dates.dt.month
 	df['year'] = df.dates.dt.year
 	if surf_plev == 'surf':
+		df['dataset'] = df.dates.apply(lambda x: 'reanalysis-era5-single-levels' if x.year >= 1979 else 'reanalysis-era5-single-levels-preliminary-back-extension')
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
 	elif surf_plev == 'plev':
+		df['dataset'] = df.dates.apply(lambda x: 'reanalysis-era5-pressure-levels' if x.year >= 1979 else 'reanalysis-era5-pressure-levels-preliminary-back-extension')
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
 		loc_list = []
 		loc_list.extend([plevels]*df.shape[0])
@@ -92,7 +94,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		if (ans.lower() == 'y') or (ans == '1'):
 			if surf_plev == 'surf':
 				pool = ThreadPool(num_threads)
-				pool.starmap(era5_request_surf, zip(list(download.year),
+				pool.starmap(era5_request_surf, zip(list(download.dataset),
+													list(download.year),
 													list(download.month),
 													list(download.bbox),
 													list(download.target_file),
@@ -102,7 +105,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 				pool.join()
 			elif surf_plev == 'plev':
 				pool = ThreadPool(num_threads)
-				pool.starmap(era5_request_plev, zip(list(download.year),
+				pool.starmap(era5_request_plev, zip(list(download.dataset),
+													list(download.year),
 													list(download.month),
 													list(download.bbox),
 													list(download.target_file),
@@ -116,11 +120,11 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		else:
 			sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
 
-def era5_request_surf(year, month, bbox, target, product, time):
+def era5_request_surf(dataset, year, month, bbox, target, product, time):
 	"""CDS surface api call"""
 	c = cdsapi.Client()
 	c.retrieve(
-		'reanalysis-era5-single-levels',
+		dataset,
 		{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
 					  'surface_solar_radiation_downwards','surface_pressure',
 					  'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
@@ -149,11 +153,11 @@ def era5_request_surf(year, month, bbox, target, product, time):
 		target)
 	print(target + " complete")
 
-def era5_request_plev(year, month, bbox, target, product, time, plevels):
+def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels):
 	"""CDS plevel api call"""
 	c = cdsapi.Client()
 	c.retrieve(
-		'reanalysis-era5-pressure-levels',
+		dataset,
 		{
 			'product_type': product,
 			'format': 'netcdf',
