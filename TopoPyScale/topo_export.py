@@ -2,7 +2,10 @@
 Functions to export topo_scale output to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...)
 S. Filhol, December 2021
 
+TOSO;
+- export compressed netcdf ERROR!! syntax is not correct
 '''
+import sys
 
 import numpy as np
 import pandas as pd
@@ -11,10 +14,93 @@ import xarray as xr
 from scipy import io
 from TopoPyScale import meteo_util as mu
 
+def compute_scale_and_offset(da, n=16):
+    """
+    Compute offset and scale factor for int conversion
+    :param da: dataarray of a given variable
+    :param n: number of digits to account for
+    """
+
+    vmin = float(da.min().values)
+    vmax = float(da.max().values)
+
+    # stretch/compress data to the available packed range
+    scale_factor = (vmax - vmin) / (2 ** n - 1)
+
+    # translate the range to be symmetric about zero
+    add_offset = vmin + 2 ** (n - 1) * scale_factor
+
+    return scale_factor, add_offset
 
 
-def to_cryogrid():
-    return
+
+def to_cryogrid(ds, df_pts, fname_format='Cryogrid_pt_*.nc', path='outputs/', label_map=False, da_label=None):
+    '''
+    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogird-community model
+    :param ds:  xarray dataset with downscaled values from topo_scale
+    :param df_pts: pd dataframe with metadata of all point of downscaling
+    :param fname_format: str, file name for output
+    :param path: str, path where to export files
+    :param label_map: bool, export cluster_label map
+    :param da_label: (optional) dataarray containing label value for each pixel of the DEM
+    :return:
+    '''
+    # Add logic to save maps of cluster labels in case of usage of topo_sub
+    if label_map:
+        if da_label is None:
+            print('ERROR: no cluster label (da_label) provided')
+            sys.exit()
+        else:
+            da_label.to_netcdf(path + 'cluster_labels_map.nc')
+
+
+    n_digits = len(str(ds.point_id.values.max()))
+    for pt in ds.point_id.values:
+        foutput = path + fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_id=pt).copy()
+        fo = xr.Dataset()
+        fo['time'] = ds_pt.time
+        fo['Tair'] = ('time', ds_pt.t.values - 273.15)
+        fo['q'] = ('time', ds_pt.q.values)
+        fo['wind'] = ('time', ds_pt.ws.values)
+        fo['Sin'] = ('time', ds_pt.SW.values)
+        fo['Lin'] = ('time', ds_pt.LW.values)
+        fo['p'] = ('time', ds_pt.p.values)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
+        fo['rainfall'], fo['snowfall'] = ('time', rain / 24), ('time', snow / 24)  # convert from mm/hr to mm/day
+
+        fo.Tair.attrs = {'units':'C', 'standard_name':'Tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
+        fo.q.attrs = {'units':'kg/kg', 'standard_name':'q', 'long_name':'Near Surface Specific Humidity', '_FillValue': -9999999.0}
+        fo.wind.attrs = {'units':'m/s', 'standard_name':'wind', 'long_name':'Wind Speed', '_FillValue': -9999999.0}
+        fo.rainfall.attrs = {'units':'mm/day', 'standard_name':'rainfall', 'long_name':'Rainfall Rate', '_FillValue': -9999999.0}
+        fo.snowfall.attrs = {'units':'mm/day', 'standard_name':'snowfall', 'long_name':'Snowfall Rate', '_FillValue': -9999999.0}
+        fo.Sin.attrs = {'units':'W/m2', 'standard_name':'Sin', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+        fo.Lin.attrs = {'units':'W/m2', 'standard_name':'Lin', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+        fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
+
+        fo.attrs = {'title':'Forcing for Cryogrid Community model',
+                    'source': 'data from ERA5 downscaled with TopoPyScale',
+                    'creator_name':'TopoPyScale, Simon Filhol',
+                    'creator_email':'simon.filhol@geo.uio.no',
+                    'creator_url':'https://www.mn.uio.no/geo/english/people/aca/geohyd/simonfi/index.html',
+                    'institution': 'Department of Geosciences, University of Oslo, Norway',
+                    'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+        encod_dict = {}
+        for var in list(fo.keys()):
+            scale_factor, add_offset = compute_scale_and_offset(fo[var], n=10)
+            encod_dict.update({var:{"zlib": True,
+                                   "complevel": 9,
+                                   'dtype':'int16',
+                                   'scale_factor':scale_factor,
+                                   'add_offset':add_offset}})
+        fo['latitude'] = df_pts.latitude.iloc[pt]
+        fo['longitude'] = df_pts.longitude.iloc[pt]
+        fo['elevation'] = df_pts.elevation.iloc[pt]
+        fo.latitude.attrs = {'units':'deg', 'standard_name':'latitude'}
+        fo.longitude.attrs = {'units':'deg', 'standard_name':'longitude'}
+        fo.elevation.attrs = {'units':'m', 'standard_name':'elevation'}
+        fo.to_netcdf(foutput, encoding=encod_dict)
+        print('File {} saved'.format(foutput))
 
 
 def to_micromet_single_station(ds, df_pts, fname_format='CROCUS_pt_*.csv', na_values=-9999, headers=False):

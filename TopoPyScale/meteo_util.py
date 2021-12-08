@@ -41,9 +41,8 @@ def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15
                      ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
                      (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
 
-    rain = precip * ((temp >= tair_high_thresh) +
-                     ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
-                     (1-(temp - tair_low_thresh)) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
+    rain = precip - snow
+
     return rain, snow
 
 def q_2_rh(temp, pressure, qair):

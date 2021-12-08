@@ -15,6 +15,7 @@ import os
 import sys
 
 import pandas as pd
+import numpy as np
 from configobj import ConfigObj
 import matplotlib.pyplot as plt
 from TopoPyScale import fetch_era5 as fe
@@ -112,6 +113,7 @@ class Topoclass(object):
         else:
             print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
+        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
     def compute_solar_geometry(self):
         self.solar_ds = sg.get_solar_geom(self.toposub.df_centroids,
@@ -243,10 +245,20 @@ class Topoclass(object):
             )
             
 
-    def to_cryogrid(self):
+    def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', path=self.config.project_dir+'outputs/'):
         '''
-        function to export toposcale output to cryosgrid format .mat
+        function to export toposcale output to cryosgrid format.
+        :param fname_format: str, filename format. point_id is inserted where * is
         '''
+        if 'cluster:labels' in self.toposub.ds_param.keys():
+            label_map = True
+            da_label = self.toposub.ds_param.cluster_labels
+        else:
+            label_map = False
+            da_label = None
+        te.to_cryogrid(self.downscaled_pts, self.toposub.df_centroids,
+                       fname_format=fname_format, path=path,
+                       label_map=label_map, da_label=da_label)
         
     def to_fsm(self):
         '''
@@ -275,4 +287,4 @@ class Topoclass(object):
         '''
         function to export toposcale output to one single generic netcdf format, compressed
         '''
-        self.downscaled_pts.to_netcdf(file_out, encodings={"zlib": True, "complevel": 9})
+        self.downscaled_pts.to_netcdf(file_out, encoding={"zlib": True, "complevel": 9})
