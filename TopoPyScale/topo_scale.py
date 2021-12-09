@@ -138,8 +138,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
             print("---> WARNING: Point {} is {} m lower than the 1000hPa geopotential\n=> "
-                  "Values sampled from Psurf and lowest Plevel. No vertical interpolatino".
-                  format(i, np.round(np.min(row.elevation - plev_interp.z.isel(level=-1)),0)))
+                  "Values sampled from Psurf and lowest Plevel. No vertical interpolation".
+                  format(i, np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values),0)))
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
             down_pt = (top['t']).to_dataset()
@@ -187,7 +187,6 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
         surf_interp = mu.mixing_ratio(surf_interp, mu.var_era_surf)
         surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
-
 
         # ========= Compute clear sky emissivity ===============
         down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)

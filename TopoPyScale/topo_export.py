@@ -106,7 +106,7 @@ def to_cryogrid(ds,
 
 def to_micromet_single_station(ds,
                                df_pts,
-                               fname_format='CROCUS_pt_*.csv',
+                               fname_format='Snowmodel_pt_*.csv',
                                na_values=-9999,
                                headers=False):
     '''
@@ -142,7 +142,7 @@ def to_micromet_single_station(ds,
         df['northing'] = np.round(df_pts.y.iloc[pt], 2)
         df['elevation'] = np.round(df_pts.elevation.iloc[pt], 2)
         df['Tair'] = np.round(ds_pt.t.values - 273.15, 2)
-        df['RH'] = mu.q_2_rh(ds_pt.t.values - 273.15, ds_pt.p.values*10**-2, ds_pt.q.values) * 100
+        df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
         df['speed'] = ds_pt.ws.values
         df['dir'] = np.round(np.rad2deg(ds_pt.wd.values), 1)
         df['precip'] = ds_pt.tp.values

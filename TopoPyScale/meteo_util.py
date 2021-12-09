@@ -48,13 +48,15 @@ def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15
 def q_2_rh(temp, pressure, qair):
     '''
     Function to convert specific humidity (q) to relative humidity (RH) following Bolton (1980)
-    :param temp: temperature in degree C
-    :param pressure: aire pressure in hPa
+    :param temp: temperature in degree K
+    :param pressure: aire pressure in Pa
     :param qair: specific humidity in kg/kg
-    :return:
+    :return: rh [0-1]
     '''
-    es = 6.112 * np.exp((17.67 * temp)/(temp + 243.5))
-    e = qair * pressure / (0.378 * qair + 0.622)
+    mr = qair / (1-qair)
+    e = mr * pressure / (0.62197 + mr)
+    # convert temperature to saturated vapor pressure
+    es = 611.2 * np.exp(17.67 * (temp - 273.15) / (temp - 29.65))
     rh = e / es
     rh[rh > 1] = 1
     rh[rh < 0] = 0
