@@ -142,6 +142,8 @@ class Topoclass(object):
                                         self.solar_ds,
                                         self.horizon_da,
                                         self.config.dem_epsg,
+                                        self.config.start_date,
+                                        self.config.end_date,
                                         self.config.lw_terrain_contrib_flag,
                                         self.config.time_step)
 

@@ -62,7 +62,7 @@ g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
 
-def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG, lw_terrain_flag=True, tstep='1H'):
+def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG, start_date, end_date, lw_terrain_flag=True, tstep='1H'):
     '''
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -79,8 +79,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
-    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc')
-    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc')
+    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc').sel(time=slice(start_date, end_date))
+    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc').sel(time=slice(start_date, end_date))
 
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
