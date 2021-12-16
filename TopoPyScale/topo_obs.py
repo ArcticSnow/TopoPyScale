@@ -21,7 +21,11 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
     
     
     List of variable: https://frost.met.no/element table
+    Find out about stations: https://seklima.met.no/
 	WARNING: Download max one year at the time to not reach max limit of data to download.
+
+    TODO:
+    - convert df to xarray dataset with stn_id, time as coordinates
     '''
     endpoint = 'https://frost.met.no/observations/v0.jsonld'
     
@@ -60,6 +64,13 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
                 print('---> {} for {} skipped'.format(var, source))
     
     return df_out
+
+def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
+    df_obs = pd.concat(map(pd.read_pickle, glob.glob(os.path.join('', path + fnames))))
+    df = pd.pivot_table(df_obs, columns=['elementId'],values=['value'], index=['sourceId', 'referenceTime'])
+    ds = df.xs('value', axis=1, level=0).to_xarray()
+    return ds
+
 
 if __name__ == "__main__":
 	#=================== code ========================

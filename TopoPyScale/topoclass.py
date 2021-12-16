@@ -80,6 +80,10 @@ class Topoclass(object):
                 (dem_extent.get('lonW') < self.config.extent.get('lonW')) or \
                 (dem_extent.get('lonE') > self.config.extent.get('lonE')):
             print('ERROR: DEM extent falls outside of the climate data extent. \nVerify lat/lon in config file')
+            print('Current DEM extent: {}N {}S {}W {}E'.format(dem_extent.get('latN'),
+                                                          dem_extent.get('latS'),
+                                                          dem_extent.get('lonW'),
+                                                          dem_extent.get('lonE'))
             return False
         else:
             print('OK')
