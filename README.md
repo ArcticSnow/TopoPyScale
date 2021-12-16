@@ -28,12 +28,12 @@ Contributors to the current version (2021) are:
     - [x] read config file
     - [x] get ERA5 data
     - [x] create possibility to provide a list of points by lat,long to run toposcale completely
-    - [ ] write save output in the various format version
+    - [x] write save output in the various format version
     - [x] fetch other dataset routines
     - [ ] implement routine to fecth DEM automatically from ArcticDEM/ASTER
     - [ ] add plotting routines.
 - `topo_sub.py`:
-  - [ ]look into alternative clustering method DBscan
+  - [ ] look into alternative clustering method DBscan
   - [x] implement minibatch kmean for large DEM
   - [x] simplify `fetch_era5.py` routines. Code seems over complex
   - [ ] write download routine for CORDEX climate projection
@@ -45,7 +45,7 @@ Contributors to the current version (2021) are:
 - `fetch_era5.py`:
   - [x] swap `parallel` for [`from multiprocessing import Pool`](https://docs.python.org/3/library/multiprocessing.html)  when launch downloads simulstaneously
   - [x] figure out in which case to use other function tpmm and other? how to integrate them?
-  - [ ] add routine to fetch ERA5 preliminary (1950 - 1979) for dates prior to 1980 
+  - [x] add routine to fetch ERA5 preliminary (1950 - 1979) for dates prior to 1980 
 - `topo_param.py`:
     - [x] add routine to sample dem or var at any given point. Do it for Horizons
     - [x] change aspect to have 0 as south. (same convention as in horizon)
@@ -118,7 +118,7 @@ key: {uid}:{api-key}
 
 1. Setup your Python environment
 2. Create your project directory
-3. Configure the file `config.ini` to fit your problem
+3. Configure the file `config.ini` to fit your problem (see [`config.ini`](https://github.com/ArcticSnow/TopoPyScale/blob/main/TopoPyScale/config.ini) for an example)
 4. Run TopoPyScale
 
 ```python

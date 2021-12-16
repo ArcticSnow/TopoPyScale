@@ -47,7 +47,7 @@ class Topoclass(object):
             print('\n---> DEM file found')
             self.toposub.dem_path = self.config.dem_path
 
-        # little routine checking that the DEM extent is within the climate extent
+        # little routine extracting lat/lon extent from DEM
         self.config.extent = tp.get_extent_latlon(self.config.dem_path, self.config.dem_epsg)
         print('Project lat/lon extent:')
         print('\t----------------------------')
