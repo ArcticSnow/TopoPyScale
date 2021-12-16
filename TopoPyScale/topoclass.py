@@ -75,10 +75,10 @@ class Topoclass(object):
         '''
         dem_extent = tp.get_extent_latlon(self.config.dem_path, self.config.dem_epsg)
         print('---> Checking DEM and Climate data extent compatibilities')
-        if (dem_extent.get('latN') > self.config.extent.get('latN')) or\
-                (dem_extent.get('latS') < self.config.extent.get('latS')) or \
-                (dem_extent.get('lonW') < self.config.extent.get('lonW')) or \
-                (dem_extent.get('lonE') > self.config.extent.get('lonE')):
+        if (dem_extent.get('latN') < self.config.extent.get('latN')) or\
+                (dem_extent.get('latS') > self.config.extent.get('latS')) or \
+                (dem_extent.get('lonW') > self.config.extent.get('lonW')) or \
+                (dem_extent.get('lonE') < self.config.extent.get('lonE')):
             print('ERROR: DEM extent falls outside of the climate data extent. \nVerify lat/lon in config file')
             print('Current DEM extent: {}N {}S {}W {}E'.format(dem_extent.get('latN'),
                                                           dem_extent.get('latS'),
