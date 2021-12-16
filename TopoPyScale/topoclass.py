@@ -83,7 +83,7 @@ class Topoclass(object):
             print('Current DEM extent: {}N {}S {}W {}E'.format(dem_extent.get('latN'),
                                                           dem_extent.get('latS'),
                                                           dem_extent.get('lonW'),
-                                                          dem_extent.get('lonE'))
+                                                          dem_extent.get('lonE')))
             return False
         else:
             print('OK')
