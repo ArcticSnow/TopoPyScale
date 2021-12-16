@@ -48,8 +48,14 @@ class Topoclass(object):
             self.toposub.dem_path = self.config.dem_path
 
         # little routine checking that the DEM extent is within the climate extent
-        if not self.check_extent_overlap():
-            sys.exit()
+        self.config.extent = tp.get_extent_latlon(self.config.dem_path, self.config.dem_epsg)
+        print('Project lat/lon extent:')
+        print('\t----------------------------')
+        print('\t|      North:{}          |\n\t|West:{}          East:{}|\n\t|      South:{}          |'.format(np.round(self.config.extent.get('latN'),1),
+                                                          np.round(self.config.extent.get('lonW'),1),
+                                                          np.round(self.config.extent.get('lonE'),1),
+                                                          np.round(self.config.extent.get('latS'),1)))
+        print('\t----------------------------')
 
         if self.config.climate_dataset.lower() == 'era5':
             self.get_era5()
@@ -67,27 +73,6 @@ class Topoclass(object):
 
         def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14, 10)):
             ts.plot_center_clusters(self.dem_path, self.ds_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
-
-    def check_extent_overlap(self):
-        '''
-        Function to check if the DEM spatial extent is within the climate data spatial extent
-        :return: boolean, True if DEM is included within climate data
-        '''
-        dem_extent = tp.get_extent_latlon(self.config.dem_path, self.config.dem_epsg)
-        print('---> Checking DEM and Climate data extent compatibilities')
-        if (dem_extent.get('latN') < self.config.extent.get('latN')) or\
-                (dem_extent.get('latS') > self.config.extent.get('latS')) or \
-                (dem_extent.get('lonW') > self.config.extent.get('lonW')) or \
-                (dem_extent.get('lonE') < self.config.extent.get('lonE')):
-            print('ERROR: DEM extent falls outside of the climate data extent. \nVerify lat/lon in config file')
-            print('Current DEM extent: {}N {}S {}W {}E'.format(dem_extent.get('latN'),
-                                                          dem_extent.get('latS'),
-                                                          dem_extent.get('lonW'),
-                                                          dem_extent.get('lonE')))
-            return False
-        else:
-            print('OK')
-            return True
 
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem_path)
@@ -187,10 +172,6 @@ class Topoclass(object):
             
             self.start_date = conf['main']['start_date']
             self.end_date = conf['main']['end_date']
-            self.extent = {'latN': conf['main'].as_float('latN'),
-                           'latS': conf['main'].as_float('latS'),
-                           'lonW': conf['main'].as_float('lonW'),
-                           'lonE': conf['main'].as_float('lonE')}
             
             self.climate_dataset = conf['forcing'].get('dataset')
             if self.climate_dataset.lower() == 'era5':
