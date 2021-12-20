@@ -288,7 +288,7 @@ class Topoclass(object):
         '''
         encod_dict = {}
         for var in list(self.downscaled_pts.keys()):
-            scale_factor, add_offset = te.compute_scaling_and_offset(fo[var], n=10)
+            scale_factor, add_offset = te.compute_scaling_and_offset(self.downscaled_pts[var], n=10)
             encod_dict.update({var:{"zlib": True,
                                    "complevel": 9,
                                    'dtype':'int16',
