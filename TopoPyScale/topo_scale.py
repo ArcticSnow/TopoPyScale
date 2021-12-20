@@ -207,7 +207,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp.aef.attrs = {'units': 'xxx', 'standard_name': 'All sky emissivity'}
         down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
 
-        mu0 = np.cos(solar_ds.sel(point_id=row.name).zenith_avg) * (np.cos(solar_ds.sel(point_id=row.name).zenith_avg)>0)
+        mu0 = np.cos(solar_ds.sel(point_id=row.name).zenith) * (np.cos(solar_ds.sel(point_id=row.name).zenith)>0)
         S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
         solar_ds['SWtoa'] = S0 * mu0
         solar_ds['sunset'] = mu0 < np.cos(89*np.pi/180)
@@ -232,13 +232,13 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         ka = surf_interp.ssrd * 0
         ka[~solar_ds.sunset] = (g*mu0[~solar_ds.sunset]/down_pt.p)*np.log(solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset]/surf_interp.SW_direct[~solar_ds.sunset])
         # Illumination angle
-        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(solar_ds.sel(point_id=row.name).zenith_avg) *\
-                                          np.sin(row.slope) * np.cos(solar_ds.sel(point_id=row.name).azimuth_avg - row.aspect)
+        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(solar_ds.sel(point_id=row.name).zenith) *\
+                                          np.sin(row.slope) * np.cos(solar_ds.sel(point_id=row.name).azimuth - row.aspect)
         down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (down_pt.cos_illumination_tmp < 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
         down_pt = down_pt.drop(['cos_illumination_tmp'])
 
         # Binary shadow masks.
-        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth_avg.isel(point_id=row.name)), method='nearest')
+        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth.isel(point_id=row.name)), method='nearest')
         shade = (horizon > solar_ds.sel(point_id=row.name).elevation)
         down_pt['SW_direct_tmp'] = down_pt.t * 0
         down_pt['SW_direct_tmp'][~solar_ds.sunset] = solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset] * np.exp(-ka[~solar_ds.sunset] * down_pt.p[~solar_ds.sunset] / (g*mu0[~solar_ds.sunset]))

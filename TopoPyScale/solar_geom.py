@@ -11,10 +11,10 @@ import numpy as np
 from pyproj import Transformer
 from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
+import multiprocessing as mproc
 
 
-
-def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
+def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None):
     '''
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
@@ -23,11 +23,13 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     :param end_date: end date in string     "2015-05-10"
     :param tstep: time step to use (str)    '6H'
     :param sr_epsg: source EPSG code for the input coordinate
+    :param num_threads: int, number of threads to parallelize computation on. default is number of core -2
     :return: xarray dataset of   solar angles in degrees
 
     TODO:
         - [ ] implement pooling instead of the for loop to compute simultaneously multiple points
-        - [ ] remove avg computation by doubling the computation of
+        - [ ] remove avg computation by doubling the computation of.
+        - [ ] assume 1H timestep only
     '''
     print('\n---> Computing solar geometry')
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
@@ -36,37 +38,37 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
 
     times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq='1H', tz='UTC', closed='left')
-    tstep_vec = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, tz='UTC', closed='left')
-    arr_avg = np.empty((df_position.shape[0], 4, tstep_vec.shape[0]))
-
-    num_threads=4
-    pool = ThreadPool(num_threads)
-
-    def compute_solar_geom(arr_avg, times,  ):
-        df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']]
-        df['cos_az'] = np.cos((df.azimuth - 180) * np.pi / 180)
-        df['sin_az'] = np.sin((df.azimuth - 180) * np.pi / 180)
-        arr_avg[i, :, :] = df[['zenith', 'cos_az', 'sin_az', 'elevation']].resample(tstep).mean().values.T
 
 
-    for i, row in tqdm(df_position.iterrows(), total=df_position.shape[0]):
+    df_pool = pd.DataFrame()
+    df_pool[['latitude', 'longitude', 'elevation']] = df_position[['latitude', 'longitude', 'elevation']]
+    df_pool['times'] = df_pool.latitude.apply(lambda x: times)
 
-        # compute cos and sin of azimuth to get avg (to avoid discontinuity at North)
-        df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']]
-        df['cos_az'] = np.cos((df.azimuth - 180) * np.pi / 180)
-        df['sin_az'] = np.sin((df.azimuth - 180) * np.pi / 180)
-        arr_avg[i, :, :] = df[['zenith', 'cos_az', 'sin_az', 'elevation']].resample(tstep).mean().values.T
+    def compute_solar_geom(time_step, latitude, longitude, elevation):
+        arr = pvlib.solarposition.get_solarposition(time_step, latitude, longitude, elevation)[['zenith', 'azimuth', 'elevation']].values.T
+        return arr
 
+    if num_threads is None:
+        pool = ThreadPool(mproc.cpu_count() - 2)
+    else:
+        pool = ThreadPool(num_threads)
 
+    arr = pool.starmap(compute_solar_geom, zip(list(df_pool.times),
+                                                   list(df_pool.latitude),
+                                                   list(df_pool.longitude),
+                                                   list(df_pool.elevation)))
+    pool.close()
+    pool.join()
 
-    # add buffer start date by tstep that later aeraging does not produce NaNs
-    #start_date = pd.Timestamp(start_date) - pd.Timedelta(tstep)
+    arr_val = np.empty((df_position.shape[0], 3, times.shape[0]))
+    for i, a in enumerate(arr):
+        arr_val[i,:,:]=a
 
     ds = xr.Dataset(
         {
-            "zenith_avg": (["point_id", "time"], np.deg2rad(arr_avg[:, 0, :])),
-            "azimuth_avg": (["point_id", "time"], np.arctan2(arr_avg[:, 1, :], arr_avg[:, 2, :])),
-            "elevation_avg": (["point_id", "time"], np.deg2rad(arr_avg[:, 3, :])),
+            "zenith": (["point_id", "time"], np.deg2rad(arr_val[:, 0, :])),
+            "azimuth": (["point_id", "time"], np.deg2rad(arr_val[:,1,:] - 180)),
+            "elevation": (["point_id", "time"], np.deg2rad(arr_val[:, 2, :])),
         },
         coords={
             "point_id": df_position.index,
