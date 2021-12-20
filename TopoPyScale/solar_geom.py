@@ -10,6 +10,8 @@ import xarray as xr
 import numpy as np
 from pyproj import Transformer
 from tqdm import tqdm
+from multiprocessing.dummy import Pool as ThreadPool
+
 
 
 def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
@@ -24,8 +26,8 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
     :return: xarray dataset of   solar angles in degrees
 
     TODO:
-        - check if degrees is the correct unit
-        - implement pooling instead of the for loop to compute simultaneously multiple points
+        - [ ] implement pooling instead of the for loop to compute simultaneously multiple points
+        - [ ] remove avg computation by doubling the computation of
     '''
     print('\n---> Computing solar geometry')
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
@@ -35,11 +37,19 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
 
     times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq='1H', tz='UTC', closed='left')
     tstep_vec = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, tz='UTC', closed='left')
-    arr_val = np.empty((df_position.shape[0], 3, tstep_vec.shape[0]))
     arr_avg = np.empty((df_position.shape[0], 4, tstep_vec.shape[0]))
 
+    num_threads=4
+    pool = ThreadPool(num_threads)
+
+    def compute_solar_geom(arr_avg, times,  ):
+        df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']]
+        df['cos_az'] = np.cos((df.azimuth - 180) * np.pi / 180)
+        df['sin_az'] = np.sin((df.azimuth - 180) * np.pi / 180)
+        arr_avg[i, :, :] = df[['zenith', 'cos_az', 'sin_az', 'elevation']].resample(tstep).mean().values.T
+
+
     for i, row in tqdm(df_position.iterrows(), total=df_position.shape[0]):
-        arr_val[i, :, :] = pvlib.solarposition.get_solarposition(tstep_vec, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']].values.T
 
         # compute cos and sin of azimuth to get avg (to avoid discontinuity at North)
         df = pvlib.solarposition.get_solarposition(times, row.latitude, row.longitude, row.elevation)[['zenith', 'azimuth', 'elevation']]
@@ -54,9 +64,6 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
 
     ds = xr.Dataset(
         {
-            "zenith": (["point_id", "time"], np.deg2rad(arr_val[:, 0, :])),
-            "azimuth": (["point_id", "time"], np.deg2rad(arr_val[:, 1, :])),
-            "elevation": (["point_id", "time"], np.deg2rad(arr_val[:, 2, :])),
             "zenith_avg": (["point_id", "time"], np.deg2rad(arr_avg[:, 0, :])),
             "azimuth_avg": (["point_id", "time"], np.arctan2(arr_avg[:, 1, :], arr_avg[:, 2, :])),
             "elevation_avg": (["point_id", "time"], np.deg2rad(arr_avg[:, 3, :])),
