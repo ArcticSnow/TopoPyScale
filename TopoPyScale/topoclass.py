@@ -109,14 +109,15 @@ class Topoclass(object):
                                           self.config.start_date,
                                           self.config.end_date,
                                           self.config.time_step,
-                                          self.config.dem_epsg)
+                                          self.config.dem_epsg,
+                                          self.config.n_cores)
 
     def compute_horizon(self):
         '''
         Function to compute horizon angle and sample values for list of points
         :return:
         '''
-        self.horizon_da = tp.compute_horizon(self.config.dem_path, self.config.horizon_az_inc)
+        self.horizon_da = tp.compute_horizon(self.config.dem_path, self.config.horizon_az_inc, self.config.n_cores)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
         for az in self.horizon_da.azimuth.values:

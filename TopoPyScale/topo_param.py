@@ -16,6 +16,8 @@ from topocalc import gradient
 from topocalc import viewf
 from topocalc import horizon
 import time
+from multiprocessing.dummy import Pool as ThreadPool
+import multiprocessing as mproc
 
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
     '''
@@ -145,11 +147,12 @@ def compute_dem_param(dem_file):
     return ds
 
 
-def compute_horizon(dem_file, azimuth_inc=30):
+def compute_horizon(dem_file, azimuth_inc=30, num_threads=None):
     '''
     Function to compute horizon angles for
     :param dem_file:
     :param azimuth_inc:
+    :param num_threads: int, number of threads to parallize on
     :return: xarray dataset containing the
     '''
     print('\n---> Computing horizons with {} degree increment'.format(azimuth_inc))
@@ -158,11 +161,29 @@ def compute_horizon(dem_file, azimuth_inc=30):
     dx = ds.x.diff('x').median().values
 
     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc) # center the azimuth in middle of the bin
-    arr = np.empty((azimuth.shape[0], ds.elevation.shape[0], ds.elevation.shape[1]))
-    for i, azi in enumerate(azimuth):
-        arr[i, :, :] = horizon.horizon(azi, ds.elevation.values, dx)
+    arr_val = np.empty((azimuth.shape[0], ds.elevation.shape[0], ds.elevation.shape[1]))
 
-    da = xr.DataArray(data=np.pi/2 - np.arccos(arr),
+    if num_threads is None:
+        pool = ThreadPool(mproc.cpu_count() - 2)
+    else:
+        pool = ThreadPool(num_threads)
+
+    elev = []
+    dxs = []
+    for azi in azimuth:
+        elev.append(ds.elevation.values)
+        dxs.append(dx)
+
+    arr = pool.starmap(horizon.horizon, zip(list(azimuth),
+                                                   elev,
+                                                   dxs))
+    pool.close()
+    pool.join()
+
+    for i, a in enumerate(arr):
+        arr_val[i,:,:] = a
+
+    da = xr.DataArray(data=np.pi/2 - np.arccos(arr_val),
                       coords={
                           "y": ds.y.values,
                           "x": ds.x.values,
