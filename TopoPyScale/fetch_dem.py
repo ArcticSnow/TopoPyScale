@@ -52,6 +52,8 @@ def fetch_dem(project_dir, extent, dem_file):
                                                                                                project_dir + 'inputs/dem/dem_SRTM3.tif',
                                                                                                project_dir + 'inputs/dem/dem_SRTM3_proj.tif',)
         print(cmd_2)
+        print('\n>========== Another option =======<')
+        print('Download manually tiles from: https://dwtkns.com/srtm30m/')
         sys.exit('---> EXIT: run those commands and update dem_file in config.ini')
 
     elif ans == '3':

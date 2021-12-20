@@ -17,6 +17,21 @@ from topocalc import viewf
 from topocalc import horizon
 import time
 
+def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
+    '''
+    Simple function to convert a list fo poitn from one projection to another oen using PyProj
+    :param xs: 1D array with X-coordinate expressed in the source EPSG
+    :param ys: 1D array with Y-coordinate expressed in the source EPSG
+    :param epsg_src: source projection EPSG code
+    :param epsg_tgt: target projection EPSG code
+    :return: Xs, Ys 1D arrays of the point coordinates expressed in the target projection
+    '''
+    print('Convert coordinates from EPSG:{} to EPSG:{}'.format(epsg_src, epsg_tgt))
+    trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:{}".format(epsg_tgt), always_xy=True)
+    Xs, Ys = trans.transform(xs, ys)
+    return Xs, Ys
+
+
 def get_extent_latlon(dem_file, epsg_src):
     '''
     Function to extract DEM extent in Lat/Lon

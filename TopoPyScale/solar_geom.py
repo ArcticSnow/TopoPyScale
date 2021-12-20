@@ -25,6 +25,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326"):
 
     TODO:
         - check if degrees is the correct unit
+        - implement pooling instead of the for loop to compute simultaneously multiple points
     '''
     print('\n---> Computing solar geometry')
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
