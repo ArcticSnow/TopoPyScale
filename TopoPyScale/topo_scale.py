@@ -98,6 +98,13 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     # ============ Loop over each point ======================================
     # Loop over each points (lat,lon) for which to downscale climate variable using Toposcale method
 
+    solar_ds['mu0'] = np.cos(solar_ds.zenith) * (np.cos(solar_ds.zenith)>0)
+    S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
+    solar_ds['SWtoa'] = S0 * solar_ds.mu0
+    solar_ds['sunset'] = solar_ds.mu0 < np.cos(89 * np.pi/180)
+
+
+
     surf_pt_list = []
     plev_pt_list = []
     solar_ds_list = []
@@ -110,7 +117,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
         surf_pt_list.append(ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
         plev_pt_list.append(ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
-        solar_ds_list.append(solar_ds)
+        solar_ds_list.append(solar_ds.sel(point_id=row.name))
         horizon_da_list.append(horizon_da)
         row_list.append(row)
 
@@ -186,11 +193,11 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
-        down_pt['theta_neg'] = (down_pt.theta < 0)*(down_pt.theta + 2*np.pi)
-        down_pt['theta_pos'] = (down_pt.theta >= 0)*down_pt.theta
+        down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
+        down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
         down_pt = down_pt.drop('theta')
         down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
-        down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
+        down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v ** 2)
         down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
 
         # ======== Longwave downward radiation ===============
@@ -221,16 +228,13 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp.aef.attrs = {'units': 'xxx', 'standard_name': 'All sky emissivity'}
         down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
 
-        mu0 = np.cos(solar_ds.sel(point_id=row.name).zenith) * (np.cos(solar_ds.sel(point_id=row.name).zenith)>0)
-        S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
-        solar_ds['SWtoa'] = S0 * mu0
-        solar_ds['sunset'] = mu0 < np.cos(89*np.pi/180)
+
         #solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
         #solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
         kt = surf_interp.ssrd * 0
-        kt[~solar_ds.sunset] = (surf_interp.ssrd[~solar_ds.sunset]/pd.Timedelta('1H').seconds) / \
-                               solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset]     # clearness index
+        sunset = solar_ds.sunset.values
+        kt[~sunset] = (surf_interp.ssrd[~sunset]/pd.Timedelta('1H').seconds) / solar_ds.SWtoa[~sunset]     # clearness index
         kd = np.max(0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt)), 0)    # Diffuse index
 
         surf_interp['SW'] = surf_interp.ssrd/pd.Timedelta('1H').seconds
@@ -244,20 +248,20 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
         # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
         ka = surf_interp.ssrd * 0
-        ka[~solar_ds.sunset] = (g*mu0[~solar_ds.sunset]/down_pt.p)*np.log(solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset]/surf_interp.SW_direct[~solar_ds.sunset])
+        ka[~sunset] = (g * solar_ds.mu0[~sunset] / down_pt.p) * np.log(solar_ds.SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
         # Illumination angle
-        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(solar_ds.sel(point_id=row.name).zenith) *\
-                                          np.sin(row.slope) * np.cos(solar_ds.sel(point_id=row.name).azimuth - row.aspect)
+        down_pt['cos_illumination_tmp'] = solar_ds.mu0 * np.cos(row.slope) + np.sin(solar_ds.zenith) *\
+                                          np.sin(row.slope) * np.cos(solar_ds.azimuth - row.aspect)
         down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (down_pt.cos_illumination_tmp < 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
         down_pt = down_pt.drop(['cos_illumination_tmp'])
 
         # Binary shadow masks.
-        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth.isel(point_id=row.name)), method='nearest')
-        shade = (horizon > solar_ds.sel(point_id=row.name).elevation)
+        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth), method='nearest')
+        shade = (horizon > solar_ds.elevation)
         down_pt['SW_direct_tmp'] = down_pt.t * 0
-        down_pt['SW_direct_tmp'][~solar_ds.sunset] = solar_ds.sel(point_id=row.name).SWtoa[~solar_ds.sunset] * np.exp(-ka[~solar_ds.sunset] * down_pt.p[~solar_ds.sunset] / (g*mu0[~solar_ds.sunset]))
+        down_pt['SW_direct_tmp'][~solar_ds.sunset] = solar_ds.SWtoa[~sunset] * np.exp(-ka[~sunset] * down_pt.p[~sunset] / (g * solar_ds.mu0[~sunset]))
         down_pt['SW_direct'] = down_pt.t * 0
-        down_pt['SW_direct'][~solar_ds.sunset] = down_pt.SW_direct_tmp[~solar_ds.sunset] * (down_pt.cos_illumination[~solar_ds.sunset]/mu0[~solar_ds.sunset])*(1-shade)
+        down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (down_pt.cos_illumination[~sunset] / solar_ds.mu0[~sunset]) * (1 - shade)
         down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
         down_pt = down_pt.drop(['SW_direct_tmp'])
         down_pt.SW_direct.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave direct radiations downward'}

@@ -40,7 +40,7 @@ def to_cryogrid(ds,
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
     '''
-    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogird-community model
+    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model
     :param ds:  xarray dataset with downscaled values from topo_scale
     :param df_pts: pd dataframe with metadata of all point of downscaling
     :param fname_format: str, file name for output
