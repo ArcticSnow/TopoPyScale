@@ -95,6 +95,20 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
     # ============ Loop over each point ======================================
     # Loop over each points (lat,lon) for which to downscale climate variable using Toposcale method
+
+    surf_pt_list = []
+    plev_pt_list = []
+    for i, row in df_centroids.iterrows():
+        print('Downscaling point: {} out of {}'.format(row.name, df_centroids.index.max()))
+        # =========== Extract the 3*3 cells centered on a given point ============
+        ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
+        ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
+        surf_pt_list.append(ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
+        plev_pt_list.appen(ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
+
+
+    def pt_downscale(df_centroids, solar_ds, horizon_da, ds_surf, ds_plev, lw_terrain_flag=True, tstep='1H'):
+
     dataset = []
     for i, row in df_centroids.iterrows():
         print('Downscaling point: {} out of {}'.format(row.name, df_centroids.index.max()))
@@ -252,6 +266,17 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
         down_pt = down_pt.drop(['level']).round(2)
         dataset.append(down_pt)
+
+    if num_threads is None:
+        pool = ThreadPool(mproc.cpu_count() - 2)
+    else:
+        pool = ThreadPool(num_threads)
+
+    arr = pool.starmap(horizon.horizon, zip(list(azimuth),
+                                                   elev,
+                                                   dxs))
+    pool.close()
+    pool.join()
 
 
     down_pts = xr.concat(dataset, dim='point_id')
