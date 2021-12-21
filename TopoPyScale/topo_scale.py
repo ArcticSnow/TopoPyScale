@@ -104,7 +104,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     horizon_da_list = []
     row_list = []
     for i, row in df_centroids.iterrows():
-        print('Downscaling point: {} out of {}'.format(row.name, df_centroids.index.max()))
+        print('Preparing point {}'.format(row.name))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
         ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
@@ -117,6 +117,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
 
     def pt_downscale(row, ds_surf_pt, ds_plev_pt,
                      solar_ds, horizon_da, lw_terrain_flag=True, tstep='1H'):
+        print('Downscaling point\t{}'.format(row.name))
         # ====== Horizontal interpolation ====================
         interp_method = 'idw'
         Xs, Ys = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
@@ -224,8 +225,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
         solar_ds['SWtoa'] = S0 * mu0
         solar_ds['sunset'] = mu0 < np.cos(89*np.pi/180)
-        solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
-        solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
+        #solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
+        #solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
         kt = surf_interp.ssrd * 0
         kt[~solar_ds.sunset] = (surf_interp.ssrd[~solar_ds.sunset]/pd.Timedelta('1H').seconds) / \

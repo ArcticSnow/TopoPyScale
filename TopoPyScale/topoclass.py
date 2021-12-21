@@ -234,7 +234,7 @@ class Topoclass(object):
             )
             
 
-    def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
+    def to_cryogrid(self, fname_format='Cryogrid_{}_{}_pt_*.nc'.format()):
         '''
         wrapper function to export toposcale output to cryosgrid format from TopoClass
         :param fname_format: str, filename format. point_id is inserted where * is
