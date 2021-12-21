@@ -135,7 +135,8 @@ class Topoclass(object):
                                         self.config.start_date,
                                         self.config.end_date,
                                         self.config.lw_terrain_contrib_flag,
-                                        self.config.time_step)
+                                        self.config.time_step,
+                                        self.config.n_cores)
 
     class Config:
         '''
