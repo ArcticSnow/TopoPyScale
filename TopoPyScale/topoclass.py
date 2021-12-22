@@ -134,6 +134,7 @@ class Topoclass(object):
                                         self.config.dem_epsg,
                                         self.config.start_date,
                                         self.config.end_date,
+                                        self.config.interp_method,
                                         self.config.lw_terrain_contrib_flag,
                                         self.config.time_step,
                                         self.config.n_cores)
@@ -237,7 +238,9 @@ class Topoclass(object):
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
         '''
         wrapper function to export toposcale output to cryosgrid format from TopoClass
+
         :param fname_format: str, filename format. point_id is inserted where * is
+
         '''
         path = self.config.project_dir+'outputs/'
         if 'cluster:labels' in self.toposub.ds_param.keys():
@@ -253,7 +256,8 @@ class Topoclass(object):
                        label_map=label_map,
                        da_label=da_label,
                        climate_dataset_name=self.config.climate_dataset,
-                       project_author=self.config.project_author)
+                       project_author=self.config.project_author,
+                       num_threads=self.config.n_cores)
         
     def to_fsm(self):
         '''

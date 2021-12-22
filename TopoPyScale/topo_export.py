@@ -13,6 +13,9 @@ import datetime as dt
 import xarray as xr
 from scipy import io
 from TopoPyScale import meteo_util as mu
+from multiprocessing.dummy import Pool as ThreadPool
+import multiprocessing as mproc
+
 
 def compute_scaling_and_offset(da, n=16):
     """
@@ -38,7 +41,8 @@ def to_cryogrid(ds,
                 label_map=False,
                 da_label=None,
                 climate_dataset_name='ERA5',
-                project_author='S. Filhol'):
+                project_author='S. Filhol',
+                num_threads=None):
     '''
     Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model
     :param ds:  xarray dataset with downscaled values from topo_scale
@@ -47,7 +51,11 @@ def to_cryogrid(ds,
     :param path: str, path where to export files
     :param label_map: bool, export cluster_label map
     :param da_label: (optional) dataarray containing label value for each pixel of the DEM
+    :param num_threads: int, number of core to use
     :return:
+
+    TODO:
+    - can add parallelized export to accelerate compression bottle neck
     '''
     # Add logic to save maps of cluster labels in case of usage of topo_sub
     if label_map:
@@ -57,11 +65,27 @@ def to_cryogrid(ds,
         else:
             da_label.to_netcdf(path + 'cluster_labels_map.nc')
 
+    if num_threads is None:
+        pool = ThreadPool(mproc.cpu_count() - 2)
+    else:
+        pool = ThreadPool(num_threads)
+
+    pt_ds_list = []
+    n_digits_list = []
+    filename_list = []
+    meta_list = []
 
     n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
-        foutput = path + fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+        pt_ds_list.append(ds.sel(point_id=pt))
+        n_digits_list.append(n_digits)
+        filename_list.append(path + fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1])
+        meta_list.append({'climate_dataset_name':climate_dataset_name,
+                          'project_author':project_author,
+                          'point_id':pt})
+
+    def pt_to_cryogrid(ds, n_digits, foutput, meta):
+        ds_pt = ds.copy()
         fo = xr.Dataset()
         fo['time'] = ds_pt.time
         fo['Tair'] = ('time', ds_pt.t.values - 273.15)
@@ -83,10 +107,11 @@ def to_cryogrid(ds,
         fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
 
         fo.attrs = {'title':'Forcing for Cryogrid Community model',
-                    'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
-                    'creator_name':'Dataset created by {}'.format(project_author),
+                    'source': 'Data from {} downscaled with TopoPyScale'.format(meta.get('climate_dataset_name')),
+                    'creator_name':'Dataset created by {}'.format(meta.get('project_author')),
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
         encod_dict = {}
+        print('---> Compressing variables for point_id {}'.format(meta.get('point_id')))
         for var in list(fo.keys()):
             scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
             encod_dict.update({var:{"zlib": True,
@@ -103,6 +128,13 @@ def to_cryogrid(ds,
         fo.to_netcdf(foutput, encoding=encod_dict)
         print('---> File {} saved'.format(foutput))
 
+    pool.starmap(pt_to_cryogrid, zip(pt_ds_list,
+                                     n_digits_list,
+                                     filename_list,
+                                     meta_list))
+    pool.close()
+    pool.join()
+    print('===> Done')
 
 def to_micromet_single_station(ds,
                                df_pts,

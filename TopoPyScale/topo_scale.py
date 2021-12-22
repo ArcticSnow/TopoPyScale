@@ -54,17 +54,21 @@ from TopoPyScale import meteo_util as mu
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 
-# to get from Topo_class
-#df_centroids = mp.toposub.df_centroids
-#solar_ds = mp.solar_ds
-#horizon_da = mp.horizon_da
-#target_EPSG = mp.config.dem_epsg
 # Physical constants
 g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
-
-def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_EPSG, start_date, end_date, lw_terrain_flag=True, tstep='1H', num_threads=None):
+def downscale_climate(path_forcing,
+                      df_centroids,
+                      solar_ds,
+                      horizon_da,
+                      target_EPSG,
+                      start_date,
+                      end_date,
+                      interp_method='idw',
+                      lw_terrain_flag=True,
+                      tstep='1H',
+                      num_threads=None):
     '''
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -73,6 +77,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     :param solar_ds: xarray dataset containing solar geometry: sun zenith, azimuth, elevation
     :param horizon_da: xarray dataarray containing the horizon angles for a list of azimuth
     :param target_EPSG: int, EPSG code of the DEM
+    :param interp_method: str, interpolation method for horizontal interp. 'idw' or 'linear'
     :param lw_terrain_flag: boolean, flag to compute contribution of surrounding terrain to LW or ignore
     :param tstep: timestep of the input data, default = 1H
     :return: xarray dataset containing downscaled data organized with time, point_id, lat, long
@@ -103,13 +108,15 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
     solar_ds['SWtoa'] = S0 * solar_ds.mu0
     solar_ds['sunset'] = solar_ds.mu0 < np.cos(89 * np.pi/180)
 
-
-
+    # Preparing list to feed into Pooling
     surf_pt_list = []
     plev_pt_list = []
     solar_ds_list = []
     horizon_da_list = []
     row_list = []
+    meta_list = []
+    interp_method_list = []
+    lw_terrain_flag_list = []
     for i, row in df_centroids.iterrows():
         print('Preparing point {}'.format(row.name))
         # =========== Extract the 3*3 cells centered on a given point ============
@@ -120,13 +127,22 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         solar_ds_list.append(solar_ds.sel(point_id=row.name))
         horizon_da_list.append(horizon_da)
         row_list.append(row)
+        meta_list.append({'interp_method':interp_method,
+                         'lw_terrain_flag':lw_terrain_flag,
+                         'tstep':tstep})
 
-
-    def pt_downscale(row, ds_surf_pt, ds_plev_pt,
-                     solar_ds, horizon_da, lw_terrain_flag=True, tstep='1H'):
+    # Function multithread with pooling
+    def pt_downscale(row, ds_surf_pt,
+                     ds_plev_pt,
+                     solar_ds,
+                     horizon_da,
+                     meta):
         print('Downscaling point\t{}'.format(row.name))
+
+        interp_method = meta.get('interp_method')
+        lw_terrain_flag = meta.get('lw_terrain_flag')
+        tstep = meta.get('tstep')
         # ====== Horizontal interpolation ====================
-        interp_method = 'idw'
         Xs, Ys = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
         dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
         if interp_method == 'idw':
@@ -188,7 +204,7 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
             down_pt['u'] = bot.u * weights[0] + top.u * weights[1]
             down_pt['v'] = bot.v * weights[0] + top.v * weights[1]
             down_pt['q'] = bot.q * weights[0] + top.q * weights[1]
-            down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
+            down_pt['p'] = top.level * (10**2) * np.exp(-(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
             down_pt['tp'] = surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
 
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
@@ -227,10 +243,6 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
         surf_interp.cle.attrs = {'units': 'xxx', 'standard_name': 'Cloud emissivity'}
         surf_interp.aef.attrs = {'units': 'xxx', 'standard_name': 'All sky emissivity'}
         down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
-
-
-        #solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
-        #solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
         kt = surf_interp.ssrd * 0
         sunset = solar_ds.sunset.values
@@ -280,7 +292,8 @@ def downscale_climate(path_forcing, df_centroids, solar_ds, horizon_da, target_E
                                              surf_pt_list,
                                              plev_pt_list,
                                              solar_ds_list,
-                                             horizon_da_list))
+                                             horizon_da_list,
+                                             meta_list))
     pool.close()
     pool.join()
 
