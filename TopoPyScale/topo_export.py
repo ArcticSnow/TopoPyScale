@@ -17,6 +17,8 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 
 
+
+
 def compute_scaling_and_offset(da, n=16):
     """
     Compute offset and scale factor for int conversion
@@ -135,6 +137,50 @@ def to_cryogrid(ds,
     pool.close()
     pool.join()
     print('===> Done')
+
+
+def to_fsm(ds,
+            df_pts, 
+            fname_format='FSM_pt_*.tx'):
+    '''
+    Function to export data for FSM. 
+
+    format is a text file with the following columns
+    year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps
+    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH) (m/s) (Pa)
+
+    See README.md file from FSM source code for further details
+
+    TODO: 
+    - Check unit
+    - Check format is compatible with compiled model
+    '''
+
+    n_digits = len(str(ds.point_id.values.max()))
+    for pt in ds.point_id.values:
+        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_id=pt).copy()
+        df = pd.DataFrame()
+        df['year'] = pd.to_datetime(ds_pt.time.values).year
+        df['month']  = pd.to_datetime(ds_pt.time.values).month
+        df['day']  = pd.to_datetime(ds_pt.time.values).day
+        df['hr']  = pd.to_datetime(ds_pt.time.values).hour
+        df['SW'] = ds_pt.SW.values
+        df['LW'] = ds_pt.LW.values
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
+        df['snowfall'] = snow
+        df['rainfall'] = rain
+        df['Tair'] = np.round(ds_pt.t.values, 2)
+        df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
+        df['speed'] = ds_pt.ws.values
+        df['p'] = ds_pt.p.values
+
+        df.to_csv(foutput, index=False, header=False, sep=' ')
+        print('---> File {} saved'.format(foutput))
+
+
+
+
 
 def to_micromet_single_station(ds,
                                df_pts,

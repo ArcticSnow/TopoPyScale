@@ -86,8 +86,8 @@ def downscale_climate(path_forcing,
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
-    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc').sel(time=slice(start_date, end_date))
-    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc').sel(time=slice(start_date, end_date))
+    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=slice(start_date, end_date))
+    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=slice(start_date, end_date))
 
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
