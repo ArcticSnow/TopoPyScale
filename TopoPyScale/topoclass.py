@@ -74,6 +74,9 @@ class Topoclass(object):
         def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14, 10)):
             ts.plot_center_clusters(self.dem_path, self.ds_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
 
+        def write_landform(self):
+            ts.write_landform(self.dem_path, self.ds_param)
+
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem_path)
 
@@ -256,11 +259,13 @@ class Topoclass(object):
                        climate_dataset_name=self.config.climate_dataset,
                        project_author=self.config.project_author)
         
-    def to_fsm(self):
+    def to_fsm(self, fname_format='./outputs/FSM_pt_*.txt'):
         '''
         function to export toposcale output to FSM format
         '''
-        
+        te.to_fsm(self.downscaled_pts, self.toposub.df_centroids, fname_format)
+
+
     def to_crocus(self, fname_format='./outputs/CROCUS_pt_*.nc', scale_precip=1):
         '''
         function to export toposcale output to crocus format .nc. This functions saves one file per point_id
