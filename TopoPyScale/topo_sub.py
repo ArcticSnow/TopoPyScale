@@ -177,7 +177,7 @@ def write_landform(dem_file, df_param):
             nodata= -999,
             compress='lzw')
 
-        with rasterio.open('example.tif', 'w', **profile) as dst:
+        with rasterio.open('landform.tif', 'w', **profile) as dst:
             dst.write(myarray.astype(rasterio.int16), 1)
 
     # At the end of the ``with rasterio.Env()`` block, context
