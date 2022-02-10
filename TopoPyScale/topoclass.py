@@ -42,7 +42,7 @@ class Topoclass(object):
         # add here a little routinr doing chek on start and end date in config.ini compare to forcing in case
 
         if not os.path.isfile(self.config.dem_path):
-            fd.fetch_dem(self.config.project_dir, self.config.extent, self.config.dem_file)
+            fd.fetch_dem(self.config.project_dir, self.config.extentNSWE,self.config.dem_epsg,  self.config.dem_file)
         else:
             print('\n---> DEM file found')
             self.toposub.dem_path = self.config.dem_path
@@ -52,7 +52,7 @@ class Topoclass(object):
         print('Project lat/lon extent:')
         print('\t----------------------------')
         print('\t|      North:{}          |\n\t|West:{}          East:{}|\n\t|      South:{}          |'.format(np.round(self.config.extent.get('latN'),1),
-                                                          np.round(self.config.extent.get('lonW'),1),
+                                                        np.round(self.config.extent.get('lonW'),1),
                                                           np.round(self.config.extent.get('lonE'),1),
                                                           np.round(self.config.extent.get('latS'),1)))
         print('\t----------------------------')
@@ -73,6 +73,9 @@ class Topoclass(object):
 
         def plot_clusters_map(self, var='cluster_labels', cmap=plt.cm.hsv, figsize=(14, 10)):
             ts.plot_center_clusters(self.dem_path, self.ds_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
+
+        def write_landform(self):
+            ts.write_landform(self.dem_path, self.ds_param)
 
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem_path)
@@ -144,7 +147,8 @@ class Topoclass(object):
         Class to contain all config.ini parameters
         '''
         def __init__(self, config_file):
-            self.file_config = config_file 
+
+            self.file_config = config_file
             
             # parse configuration file into config class
             self._parse_config_file()
@@ -175,6 +179,7 @@ class Topoclass(object):
             
             self.start_date = conf['main']['start_date']
             self.end_date = conf['main']['end_date']
+            self.extentNSWE = conf['main']['extentNSWE']
             
             self.climate_dataset = conf['forcing'].get('dataset')
             if self.climate_dataset.lower() == 'era5':
@@ -203,12 +208,12 @@ class Topoclass(object):
         '''
         Funtion to call fetching of ERA5 data
         TODO:
-        - merge monthly data into one file (cdo?)
+        - merge monthly data into one file (cdo?)- this creates massive slow down!
         '''
-        lonW = self.config.extent.get('lonW') - 0.25
-        lonE = self.config.extent.get('lonE') + 0.25
-        latN = self.config.extent.get('latN') + 0.25
-        latS = self.config.extent.get('latS') - 0.25
+        lonW = self.config.extent.get('lonW') - 0.4
+        lonE = self.config.extent.get('lonE') + 0.4
+        latN = self.config.extent.get('latN') + 0.4
+        latS = self.config.extent.get('latS') - 0.4
 
         # retreive ERA5 surface data
         fe.retrieve_era5(
@@ -259,11 +264,13 @@ class Topoclass(object):
                        project_author=self.config.project_author,
                        num_threads=self.config.n_cores)
         
-    def to_fsm(self):
+    def to_fsm(self, fname_format='./outputs/FSM_pt_*.txt'):
         '''
         function to export toposcale output to FSM format
         '''
-        
+        te.to_fsm(self.downscaled_pts, self.toposub.df_centroids, fname_format)
+
+
     def to_crocus(self, fname_format='./outputs/CROCUS_pt_*.nc', scale_precip=1):
         '''
         function to export toposcale output to crocus format .nc. This functions saves one file per point_id

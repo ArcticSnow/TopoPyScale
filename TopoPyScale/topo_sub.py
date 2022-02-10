@@ -155,3 +155,31 @@ def plot_pca_clusters(dem_file, df_param, df_centroids, scaler, n_components, su
     ax[1].imshow(np.reshape(df_param.cluster_labels.values, shape), extent=extent, cmap=plt.cm.hsv)
     plt.show()
 
+def write_landform(dem_file, df_param):
+    """
+    Function to write a landform file which maps cluster ids to dem pixels
+
+    :param dem_file: path to dem raster file
+    :param ds_param: xarray dataset containing topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
+    :return:
+    """
+    with rasterio.open(dem_file) as dem:
+        shape = dem.shape
+        profile = dem.profile
+    myarray = np.reshape(df_param.cluster_labels.values, shape)
+
+    # Register GDAL format drivers and configuration options with a
+    # context manager.
+    with rasterio.Env():
+        # Write an array as a raster band to a new 8-bit file. For
+        profile.update(
+            dtype=rasterio.int16,
+            count=1,
+            nodata= -999,
+            compress='lzw')
+
+        with rasterio.open('landform.tif', 'w', **profile) as dst:
+            dst.write(myarray.astype(rasterio.int16), 1)
+
+    # At the end of the ``with rasterio.Env()`` block, context
+    # manager exits and all drivers are de-registered.

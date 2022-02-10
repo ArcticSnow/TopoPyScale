@@ -2,8 +2,9 @@
 Functions to export topo_scale output to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...)
 S. Filhol, December 2021
 
-TOSO;
+TODO;
 - export compressed netcdf ERROR!! syntax is not correct
+- SPHY forcing (grids)
 '''
 import sys
 
@@ -130,6 +131,7 @@ def to_cryogrid(ds,
         fo.to_netcdf(foutput, encoding=encod_dict)
         print('---> File {} saved'.format(foutput))
 
+
     pool.starmap(pt_to_cryogrid, zip(pt_ds_list,
                                      n_digits_list,
                                      filename_list,
@@ -177,9 +179,6 @@ def to_fsm(ds,
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print('---> File {} saved'.format(foutput))
-
-
-
 
 
 def to_micromet_single_station(ds,
