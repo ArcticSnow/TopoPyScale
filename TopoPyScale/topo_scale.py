@@ -460,6 +460,7 @@ def downscale_climate(path_forcing,
         down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
 
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
+        # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
         down_pt = down_pt.drop(['level']).round(5)
         dataset.append(down_pt)
 
