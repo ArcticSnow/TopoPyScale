@@ -196,8 +196,8 @@ def downscale_climate(path_forcing,
 
             # Preparing interpolation weights for linear interpolation =======================
             dist = np.array([np.abs(bot.z - row.elevation).values, np.abs(top.z - row.elevation).values])
-            #idw = 1/dist**2
-            #weights = idw / np.sum(idw, axis=0)
+            # idw = 1/dist**2
+            # weights = idw / np.sum(idw, axis=0)
             weights = dist / np.sum(dist, axis=0)
 
             # ============ Creating a dataset containing the downscaled timeseries ========================
@@ -285,28 +285,25 @@ def downscale_climate(path_forcing,
 
         return down_pt
 
-    if num_threads is None:
-        pool = ThreadPool(mproc.cpu_count() - 2)
-    else:
-        pool = ThreadPool(num_threads)
-    dataset = pool.starmap(pt_downscale, zip(row_list,
-                                             surf_pt_list,
-                                             plev_pt_list,
-                                             solar_ds_list,
-                                             horizon_da_list,
-                                             meta_list))
-    pool.close()
-    pool.join()
-
-    down_pts = xr.concat(dataset, dim='point_id')
-    # print timer to console
-    print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
-    return down_pts
+    # if num_threads is None:
+    #     pool = ThreadPool(mproc.cpu_count() - 2)
+    # else:
+    #     pool = ThreadPool(num_threads)
+    # dataset = pool.starmap(pt_downscale, zip(row_list,
+    #                                          surf_pt_list,
+    #                                          plev_pt_list,
+    #                                          solar_ds_list,
+    #                                          horizon_da_list,
+    #                                          meta_list))
+    # pool.close()
+    # pool.join()
+    #
 
 
 
 
-'''
+
+
 
     dataset = []
     for i, row in df_centroids.iterrows():
@@ -376,7 +373,7 @@ def downscale_climate(path_forcing,
             weights = dist / np.sum(dist, axis=0)
 
             # ============ Creating a dataset containing the downscaled timeseries ========================
-            down_pt = (bot.t * weights[0] + top.t * weights[1]).to_dataset()
+            down_pt = (bot.t * weights[1] + top.t * weights[0]).to_dataset()
             down_pt['u'] = bot.u * weights[0] + top.u * weights[1]
             down_pt['v'] = bot.v * weights[0] + top.v * weights[1]
             down_pt['q'] = bot.q * weights[0] + top.q * weights[1]
@@ -463,10 +460,17 @@ def downscale_climate(path_forcing,
         down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
 
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
-        down_pt = down_pt.drop(['level']).round(2)
+        down_pt = down_pt.drop(['level']).round(5)
         dataset.append(down_pt)
 
-'''
+    down_pts = xr.concat(dataset, dim='point_id')
+    # print timer to console
+    print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
+    return down_pts
+
+
+
+
 
 
 
