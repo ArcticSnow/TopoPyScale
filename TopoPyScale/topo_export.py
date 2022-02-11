@@ -145,17 +145,20 @@ def to_fsm(ds,
             df_pts, 
             fname_format='FSM_pt_*.tx'):
     '''
-    Function to export data for FSM. 
+    Function to export data for FSM.
+    :param ds: downscaled_pts,
+    :param df_pts: toposub.df_centroids,
+    :param fname_format: output format of filename
 
     format is a text file with the following columns
     year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps
-    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH) (m/s) (Pa)
+    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa)
 
     See README.md file from FSM source code for further details
 
     TODO: 
-    - Check unit
-    - Check format is compatible with compiled model
+    - Check unit DONE jf
+    - Check format is compatible with compiled model DONE jf
     '''
 
     n_digits = len(str(ds.point_id.values.max()))
