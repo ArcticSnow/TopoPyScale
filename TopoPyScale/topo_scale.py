@@ -108,29 +108,29 @@ def downscale_climate(path_forcing,
     S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
     solar_ds['SWtoa'] = S0 * solar_ds.mu0
     solar_ds['sunset'] = solar_ds.mu0 < np.cos(89 * np.pi/180)
-
-    # Preparing list to feed into Pooling
-    surf_pt_list = []
-    plev_pt_list = []
-    solar_ds_list = []
-    horizon_da_list = []
-    row_list = []
-    meta_list = []
-    interp_method_list = []
-    lw_terrain_flag_list = []
-    for i, row in df_centroids.iterrows():
-        print('Preparing point {}'.format(row.name))
-        # =========== Extract the 3*3 cells centered on a given point ============
-        ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
-        ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
-        surf_pt_list.append(ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
-        plev_pt_list.append(ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
-        solar_ds_list.append(solar_ds.sel(point_id=row.name))
-        horizon_da_list.append(horizon_da)
-        row_list.append(row)
-        meta_list.append({'interp_method':interp_method,
-                         'lw_terrain_flag':lw_terrain_flag,
-                         'tstep':tstep})
+    #
+    # # Preparing list to feed into Pooling
+    # surf_pt_list = []
+    # plev_pt_list = []
+    # solar_ds_list = []
+    # horizon_da_list = []
+    # row_list = []
+    # meta_list = []
+    # interp_method_list = []
+    # lw_terrain_flag_list = []
+    # for i, row in df_centroids.iterrows():
+    #     print('Preparing point {}'.format(row.name))
+    #     # =========== Extract the 3*3 cells centered on a given point ============
+    #     ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
+    #     ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
+    #     surf_pt_list.append(ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
+    #     plev_pt_list.append(ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
+    #     solar_ds_list.append(solar_ds.sel(point_id=row.name))
+    #     horizon_da_list.append(horizon_da)
+    #     row_list.append(row)
+    #     meta_list.append({'interp_method':interp_method,
+    #                      'lw_terrain_flag':lw_terrain_flag,
+    #                      'tstep':tstep})
 
     # Function multithread with pooling
     def pt_downscale(row, ds_surf_pt,
@@ -374,12 +374,13 @@ def downscale_climate(path_forcing,
 
             # ============ Creating a dataset containing the downscaled timeseries ========================
             down_pt = (bot.t * weights[1] + top.t * weights[0]).to_dataset()
-            down_pt['u'] = bot.u * weights[0] + top.u * weights[1]
-            down_pt['v'] = bot.v * weights[0] + top.v * weights[1]
-            down_pt['q'] = bot.q * weights[0] + top.q * weights[1]
+            down_pt['u'] = bot.u * weights[1] + top.u * weights[0]
+            down_pt['v'] = bot.v * weights[1] + top.v * weights[0]
+            down_pt['q'] = bot.q * weights[1] + top.q * weights[0]
             down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
             down_pt['tp'] = surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
 
+        #pdb.set_trace()
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0)*(down_pt.theta + 2*np.pi)

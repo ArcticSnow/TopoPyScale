@@ -42,7 +42,7 @@ class Topoclass(object):
         # add here a little routinr doing chek on start and end date in config.ini compare to forcing in case
 
         if not os.path.isfile(self.config.dem_path):
-            fd.fetch_dem(self.config.project_dir, self.config.extentNSWE,self.config.dem_epsg,  self.config.dem_file)
+            fd.fetch_dem(self.config.project_dir, self.config.extent,self.config.dem_epsg,  self.config.dem_file)
         else:
             print('\n---> DEM file found')
             self.toposub.dem_path = self.config.dem_path
@@ -179,7 +179,10 @@ class Topoclass(object):
             
             self.start_date = conf['main']['start_date']
             self.end_date = conf['main']['end_date']
-            self.extentNSWE = conf['main']['extentNSWE']
+
+            if 'extent_NSWE' in conf['main']:
+                extent_NSWE = conf['main']['extent_NSWE']
+                self.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], extent_NSWE))
             
             self.climate_dataset = conf['forcing'].get('dataset')
             if self.climate_dataset.lower() == 'era5':

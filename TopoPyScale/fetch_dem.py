@@ -12,12 +12,12 @@ TODO:
 import sys
 import os
 
-def fetch_dem(project_dir, extentNSWE, dem_epsg, dem_file):
+def fetch_dem(project_dir, extent, dem_epsg, dem_file):
 
-    ymax = extentNSWE[0]
-    ymin = extentNSWE[1]
-    xmin = extentNSWE[2]
-    xmax = extentNSWE[3]
+    ymax = extent.get('latN')
+    ymin = extent.get('latS')
+    xmin = extent.get('lonW')
+    xmax = extent.get('lonE')
 
     ans = input("\n---> Do you want to downlaod DEM from a repository?\n\t(1) SRTM1,\n\t(2) SRTM3,\n\t(3) ArcticDEM,\n\t(4) ASTER,\n\t(5) Exit\n")
 

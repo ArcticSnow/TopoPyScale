@@ -5,6 +5,7 @@ S. Filhol, December 2021
 '''
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.RdBu_r):
     '''
