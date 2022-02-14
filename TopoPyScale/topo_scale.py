@@ -89,7 +89,6 @@ def downscale_climate(path_forcing,
     ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=slice(start_date, end_date))
     ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=slice(start_date, end_date))
 
-
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
     nxv,  nyv = np.meshgrid(ds_surf.longitude.values, ds_surf.latitude.values)
@@ -258,8 +257,8 @@ def downscale_climate(path_forcing,
 
     # adding metadata
     down_pts.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
-    down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
-    down_pts = down_pt.drop(['SW_direct_tmp'])
+    down_pts.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+    down_pts = down_pts.drop(['SW_direct_tmp'])
     down_pts.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
     down_pts.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
     # print timer to console
