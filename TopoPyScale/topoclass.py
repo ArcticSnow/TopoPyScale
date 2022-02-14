@@ -204,7 +204,6 @@ class Topoclass(object):
             self.clustering_method = conf['toposcale']['clustering_method']
             self.interp_method = conf['toposcale']['interpolation_method']
             self.pt_list_file = conf['toposcale']['pt_list']
-            self.pt_sampling_method = conf['toposcale']['pt_sampling_method']
             self.lw_terrain_contrib_flag = conf['toposcale'].as_bool('lw_terrain_contribution')
             
     def get_era5(self):
