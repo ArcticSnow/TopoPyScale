@@ -76,5 +76,15 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
             "reference_time": pd.Timestamp(start_date),
         },
     )
+
+    ds['mu0'] = np.cos(ds.zenith) * (np.cos(ds.zenith)>0)
+    S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
+    ds['SWtoa'] = S0 * ds.mu0
+    ds['sunset'] = ds.mu0 < np.cos(89 * np.pi/180)
+    ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
+    ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
+
+    ds.to_netcdf('outputs/solar_ds.nc', engine='h5netcdf')
+
     return ds
 

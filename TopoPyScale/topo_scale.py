@@ -86,8 +86,9 @@ def downscale_climate(path_forcing,
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
-    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=slice(start_date, end_date))
-    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=slice(start_date, end_date))
+    tvec = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, closed='left')
+    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=tvec.values)
+    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=tvec.values)
 
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
@@ -103,16 +104,11 @@ def downscale_climate(path_forcing,
     # ============ Loop over each point ======================================
     # Loop over each points (lat,lon) for which to downscale climate variable using Toposcale method
 
-    solar_ds['mu0'] = np.cos(solar_ds.zenith) * (np.cos(solar_ds.zenith)>0)
-    S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
-    solar_ds['SWtoa'] = S0 * solar_ds.mu0
-    solar_ds['sunset'] = solar_ds.mu0 < np.cos(89 * np.pi/180)
-    solar_ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
-    solar_ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
+    solar_ds = xr.open_dataset('outputs/solar_ds.nc', chunks='auto', engine='h5netcdf')
 
     dataset = []
     for i, row in df_centroids.iterrows():
-        print('Downscaling point: {} out of {}'.format(row.name, df_centroids.index.max()))
+        print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(row.name, df_centroids.index.max()))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
         ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
@@ -194,6 +190,18 @@ def downscale_climate(path_forcing,
         down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
         down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
 
+        down_pt.to_netcdf('outputs/tmp/down_pt_{}.nc'.format(row.name), engine='h5netcdf')
+        surf_interp.to_netcdf('outputs/tmp/surf_interp_{}.nc'.format(row.name), engine='h5netcdf')
+
+        down_pt = None
+        surf_interp = None
+
+    for i, row in df_centroids.iterrows():
+        print('Downscaling LW, SW for point: {} out of {}'.format(row.name, df_centroids.index.max()))
+
+        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(row.name), chunks='auto', engine='h5netcdf')
+        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(row.name), chunks='auto', engine='h5netcdf')
+
         # ======== Longwave downward radiation ===============
         x1, x2 = 0.43, 5.7
         sbc = 5.67e-8
@@ -221,6 +229,8 @@ def downscale_climate(path_forcing,
         mu0 = solar_ds.sel(point_id=row.name).mu0
         SWtoa = solar_ds.sel(point_id=row.name).SWtoa
 
+
+        #pdb.set_trace()
         kt[~sunset] = (surf_interp.ssrd[~sunset]/pd.Timedelta('1H').seconds) / SWtoa[~sunset]     # clearness index
         kd = np.max(0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt)), 0)    # Diffuse index
 
@@ -251,18 +261,23 @@ def downscale_climate(path_forcing,
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
         # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
         down_pt = down_pt.drop(['level']).round(5)
-        dataset.append(down_pt)
 
-    down_pts = xr.concat(dataset, dim='point_id')
+        # adding metadata
+        down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
+        down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+        down_pt = down_pt.drop(['SW_direct_tmp'])
+        down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
+        down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
 
-    # adding metadata
-    down_pts.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
-    down_pts.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
-    down_pts = down_pts.drop(['SW_direct_tmp'])
-    down_pts.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
-    down_pts.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
+        down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(row.name))
+        #dataset.append(down_pt)
+
     # print timer to console
     print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
+
+
+def read_downscaled():
+    down_pts = xr.open_mfdataset('outputs/down_pt*.nc', concat_dim='point_id', combine='nested', parallel=True)
     return down_pts
 
 

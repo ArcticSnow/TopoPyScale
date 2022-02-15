@@ -14,9 +14,9 @@ import os
 #import configparser
 import sys
 
+from munch import DefaultMunch
 import pandas as pd
 import numpy as np
-from configobj import ConfigObj
 import matplotlib.pyplot as plt
 from TopoPyScale import fetch_era5 as fe
 from TopoPyScale import topo_param as tp
@@ -33,32 +33,75 @@ class Topoclass(object):
 
     def __init__(self, config_file):
         
-        self.config = self.Config(config_file)
+        try:
+            with open(config_file, 'r') as f:
+                self.config = DefaultMunch.fromYAML(f)
+        except IOError:
+                print('ERROR: config file does not exist. Check path.')
+
+        # check if tree directory exists. If not create it
+        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/'))):
+            os.makedirs('/'.join((self.config.project.directory, 'inputs/')))
+        if not os.path.exists('/'.join((self.config.project.directory, 'outputs/'))):
+            os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
+        
+        self.config.climate.path = self.config.project.directory + 'inputs/climate/'
+        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/climate/'))):
+            os.makedirs('/'.join((self.config.project.directory, 'inputs/climate')))
+
+        self.config.dem.path = self.config.project.directory + 'inputs/dem/'
+        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/dem/'))):
+            os.makedirs('/'.join((self.config.project.directory, 'inputs/dem')))
+
+        self.config.dem.filepath = self.config.dem.path + self.config.dem.file
+        if not os.path.isfile(self.config.dem.filepath):
+            
+            if self.config.project.extent is not None:
+                self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))
+            else:
+                print('ERROR: no extent provided. Must follow this format: [latN, latS, lonW, lonE]')
+                sys.exit()
+
+            fd.fetch_dem(self.config.dem.path, self.config.project.extent, self.config.dem.epsg, self.config.dem.file)            
+        else:
+            print('\n---> DEM file found')
+
+
+        if self.config.project.extent is not None:
+            extent_NSWE = self.config.project.extent
+            self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], extent_NSWE))
+        else:
+            # little routine extracting lat/lon extent from DEM
+            self.config.project.extent = tp.get_extent_latlon(self.config.dem.filepath, self.config.dem.epsg)
+
+        print(self.config.project.extent)
+        print('Project lat/lon extent:')
+        print('\t----------------------------')
+        print('\t|      North:{}          |\n\t|West:{}          East:{}|\n\t|      South:{}          |'.format(np.round(self.config.project.extent.get('latN'),1),
+                                                        np.round(self.config.project.extent.get('lonW'),1),
+                                                          np.round(self.config.project.extent.get('lonE'),1),
+                                                          np.round(self.config.project.extent.get('latS'),1)))
+        print('\t----------------------------')
+
+
+        
+
+
         self.toposub = self.Toposub()
 
         self.solar_ds = None
         self.horizon_da = None
 
-        # add here a little routinr doing chek on start and end date in config.ini compare to forcing in case
+        # add here a little routinr doing chek on start and end date in config.yml compare to forcing in case
 
-        if not os.path.isfile(self.config.dem_path):
-            fd.fetch_dem(self.config.project_dir, self.config.extent,self.config.dem_epsg,  self.config.dem_file)
-        else:
-            print('\n---> DEM file found')
-            self.toposub.dem_path = self.config.dem_path
+        
+        self.toposub.dem_path = self.config.dem.filepath
 
-        # little routine extracting lat/lon extent from DEM
-        self.config.extent = tp.get_extent_latlon(self.config.dem_path, self.config.dem_epsg)
-        print('Project lat/lon extent:')
-        print('\t----------------------------')
-        print('\t|      North:{}          |\n\t|West:{}          East:{}|\n\t|      South:{}          |'.format(np.round(self.config.extent.get('latN'),1),
-                                                        np.round(self.config.extent.get('lonW'),1),
-                                                          np.round(self.config.extent.get('lonE'),1),
-                                                          np.round(self.config.extent.get('latS'),1)))
-        print('\t----------------------------')
+        
 
-        if self.config.climate_dataset.lower() == 'era5':
+        if self.config.project.climate.lower() == 'era5':
             self.get_era5()
+
 
     class Toposub:
         '''
@@ -78,7 +121,8 @@ class Topoclass(object):
             ts.write_landform(self.dem_path, self.ds_param)
 
     def compute_dem_param(self):
-        self.toposub.ds_param = tp.compute_dem_param(self.config.dem_path)
+        self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath)
+
 
     def extract_pts_param(self, method='nearest', **kwargs):
         '''
@@ -88,8 +132,9 @@ class Topoclass(object):
         :param **kwargs: pd.read_csv() parameters
         :return:
         '''
-        self.toposub.df_centroids = pd.read_csv(self.config.project_dir + 'inputs/dem/' + self.config.pt_list_file, **kwargs)
+        self.toposub.df_centroids = pd.read_csv(self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file, **kwargs)
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param, method=method)
+
 
     def extract_dem_cluster_param(self):
         '''
@@ -98,29 +143,44 @@ class Topoclass(object):
         '''
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
-        if self.config.clustering_method.lower() == 'kmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.kmeans_clustering(df_scaled, self.config.n_clusters, seed=self.config.random_seed)
-        elif self.config.clustering_method.lower() == 'minibatchkmean':
-            self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(df_scaled, self.config.n_clusters, self.config.n_cores,  seed=self.config.random_seed)
+        if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
+            self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.kmeans_clustering(
+                df_scaled, 
+                self.config.sampling.toposub.n_clusters, 
+                seed=self.config.sampling.toposub.random_seed)
+        elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
+            self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(
+                df_scaled, 
+                self.config.sampling.toposub.n_clusters, 
+                self.config.project.CPU_cores,  
+                seed=self.config.sampling.toposub.random_seed)
         else:
-            print('ERROR: {} clustering method not available'.format(self.config.clustering_method))
+            print('ERROR: {} clustering method not available'.format(self.config.sampling.toposub.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
+    def extract_topo_param(self):
+        if self.config.sampling.method == 'points':
+            self.extract_pts_param()
+        elif self.config.sampling.method == 'toposub':
+            self.extract_dem_cluster_param()
+        else:
+            print('ERROR: Extraction method not available')
+
     def compute_solar_geometry(self):
         self.solar_ds = sg.get_solar_geom(self.toposub.df_centroids,
-                                          self.config.start_date,
-                                          self.config.end_date,
-                                          self.config.time_step,
-                                          self.config.dem_epsg,
-                                          self.config.n_cores)
+                                          self.config.project.start,
+                                          self.config.project.end,
+                                          self.config.climate[self.config.project.climate].timestep,
+                                          str(self.config.dem.epsg),
+                                          self.config.project.CPU_cores)
 
     def compute_horizon(self):
         '''
         Function to compute horizon angle and sample values for list of points
         :return:
         '''
-        self.horizon_da = tp.compute_horizon(self.config.dem_path, self.config.horizon_az_inc, self.config.n_cores)
+        self.horizon_da = tp.compute_horizon(self.config.dem.filepath, self.config.dem.horizon_increments, self.config.project.CPU_cores)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
         for az in self.horizon_da.azimuth.values:
@@ -130,81 +190,20 @@ class Topoclass(object):
                                                                             method='nearest').values.flatten()
 
     def downscale_climate(self):
-        self.downscaled_pts = ta.downscale_climate(self.config.climate_path,
+        ta.downscale_climate(self.config.climate.path,
                                         self.toposub.df_centroids,
                                         self.solar_ds,
                                         self.horizon_da,
-                                        self.config.dem_epsg,
-                                        self.config.start_date,
-                                        self.config.end_date,
-                                        self.config.interp_method,
-                                        self.config.lw_terrain_contrib_flag,
-                                        self.config.time_step,
-                                        self.config.n_cores)
+                                        self.config.dem.epsg,
+                                        self.config.project.start,
+                                        self.config.project.end,
+                                        self.config.toposcale.interpolation_method,
+                                        self.config.toposcale.LW_terrain_contribution,
+                                        self.config.climate[self.config.project.climate].timestep,
+                                        self.config.project.CPU_cores)
+        self.downscaled_pts = ta.read_downscaled()
 
-    class Config:
-        '''
-        Class to contain all config.ini parameters
-        '''
-        def __init__(self, config_file):
 
-            self.file_config = config_file
-            
-            # parse configuration file into config class
-            self._parse_config_file()
-            
-            # check if tree directory exists. If not create it
-            if not os.path.exists('/'.join((self.project_dir, 'inputs/'))):
-                os.makedirs('/'.join((self.project_dir, 'inputs/')))
-            if not os.path.exists('/'.join((self.project_dir, 'inputs/climate/'))):
-                os.makedirs('/'.join((self.project_dir, 'inputs/climate')))
-            if not os.path.exists('/'.join((self.project_dir, 'inputs/dem/'))):
-                os.makedirs('/'.join((self.project_dir, 'inputs/dem/')))
-            if not os.path.exists('/'.join((self.project_dir, 'outputs/'))):
-                os.makedirs('/'.join((self.project_dir, 'outputs/')))
-                
-        def _parse_config_file(self):
-            '''
-            Function to parse config file .ini into a python class
-            '''
-            try:
-                conf = ConfigObj(self.file_config, raise_errors=False)
-            except IOError:
-                print('ERROR: config file does not exist. Check path.')
-
-            self.project_dir = conf['main']['project_dir']
-            self.project_description = conf['main']['project_description']
-            self.project_name = conf['main']['project_name']
-            self.project_author = conf['main']['project_authors']
-            
-            self.start_date = conf['main']['start_date']
-            self.end_date = conf['main']['end_date']
-
-            if 'extent_NSWE' in conf['main']:
-                extent_NSWE = conf['main']['extent_NSWE']
-                self.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], extent_NSWE))
-            
-            self.climate_dataset = conf['forcing'].get('dataset')
-            if self.climate_dataset.lower() == 'era5':
-                self.climate_era5_product = conf['forcing']['era5_product']
-                self.climate_n_threads = conf['forcing'].as_int('n_threads_download')
-            self.n_cores = conf['forcing'].as_int('n_cores')
-            self.climate_path = self.project_dir + 'inputs/climate/'
-                
-            self.time_step = conf['forcing']['time_step']
-            self.plevels = conf['forcing']['plevels']
-            
-            self.dem_file = conf['forcing'].get('dem_file')
-            self.dem_epsg = conf['forcing'].get('dem_epsg')
-            self.dem_path = self.project_dir + 'inputs/dem/' + self.dem_file
-            self.horizon_az_inc = conf['forcing'].as_int('horizon_az_inc')
-
-            self.n_clusters = conf['toposcale'].as_int('n_clusters')
-            self.random_seed = conf['toposcale'].as_int('random_seed')
-            self.clustering_method = conf['toposcale']['clustering_method']
-            self.interp_method = conf['toposcale']['interpolation_method']
-            self.pt_list_file = conf['toposcale']['pt_list']
-            self.lw_terrain_contrib_flag = conf['toposcale'].as_bool('lw_terrain_contribution')
             
     def get_era5(self):
         '''
@@ -212,33 +211,33 @@ class Topoclass(object):
         TODO:
         - merge monthly data into one file (cdo?)- this creates massive slow down!
         '''
-        lonW = self.config.extent.get('lonW') - 0.4
-        lonE = self.config.extent.get('lonE') + 0.4
-        latN = self.config.extent.get('latN') + 0.4
-        latS = self.config.extent.get('latS') - 0.4
+        lonW = self.config.project.extent.get('lonW') - 0.4
+        lonE = self.config.project.extent.get('lonE') + 0.4
+        latN = self.config.project.extent.get('latN') + 0.4
+        latS = self.config.project.extent.get('latS') - 0.4
 
         # retreive ERA5 surface data
         fe.retrieve_era5(
-            self.config.climate_era5_product,
-            self.config.start_date,
-            self.config.end_date,
-            self.config.climate_path,
+            self.config.climate[self.config.project.climate].product,
+            self.config.project.start,
+            self.config.project.end,
+            self.config.climate.path,
             latN, latS, lonE, lonW,
-            self.config.time_step,
-            self.config.climate_n_threads,
+            self.config.climate[self.config.project.climate].timestep,
+            self.config.climate[self.config.project.climate].download_threads,
             surf_plev='surf'
             )
         # retrieve era5 plevels
         fe.retrieve_era5(
-            self.config.climate_era5_product,
-            self.config.start_date,
-            self.config.end_date,
-            self.config.climate_path,
+            self.config.climate[self.config.project.climate].product,
+            self.config.project.start,
+            self.config.project.end,
+            self.config.climate.path,
             latN, latS, lonE, lonW, 
-            self.config.time_step,
-            self.config.climate_n_threads,
+            self.config.climate[self.config.project.climate].timestep,
+            self.config.climate[self.config.project.climate].download_threads,
             surf_plev='plev',
-            plevels=self.config.plevels,
+            plevels=self.config.climate[self.config.project.climate].plevels,
             )
             
 
@@ -249,7 +248,7 @@ class Topoclass(object):
         :param fname_format: str, filename format. point_id is inserted where * is
 
         '''
-        path = self.config.project_dir+'outputs/'
+        path = self.config.project.directory + 'outputs/'
         if 'cluster:labels' in self.toposub.ds_param.keys():
             label_map = True
             da_label = self.toposub.ds_param.cluster_labels
@@ -262,9 +261,9 @@ class Topoclass(object):
                        path=path,
                        label_map=label_map,
                        da_label=da_label,
-                       climate_dataset_name=self.config.climate_dataset,
-                       project_author=self.config.project_author,
-                       num_threads=self.config.n_cores)
+                       climate_dataset_name=self.config.project.climate,
+                       project_author=self.config.project.authors,
+                       num_threads=self.config.project.CPU_cores)
         
     def to_fsm(self, fname_format='./outputs/FSM_pt_*.txt'):
         '''
@@ -284,8 +283,8 @@ class Topoclass(object):
                      self.toposub.df_centroids,
                      fname_format=fname_format,
                      scale_precip=scale_precip,
-                     climate_dataset_name=self.config.climate_dataset,
-                     project_author=self.config.project_author)
+                     climate_dataset_name=self.config.project.climate,
+                     project_author=self.config.project.authors)
 
     
     def to_snowmodel(self, fname_format='./outputs/Snowmodel_stn_*.csv'):

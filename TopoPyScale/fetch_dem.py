@@ -12,7 +12,7 @@ TODO:
 import sys
 import os
 
-def fetch_dem(project_dir, extent, dem_epsg, dem_file):
+def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
 
     ymax = extent.get('latN')
     ymin = extent.get('latS')
@@ -26,7 +26,7 @@ def fetch_dem(project_dir, extent, dem_epsg, dem_file):
 
 
         # use STRM DEM for extent of interest, buffer arg "margin" enbles us to crop projected DEM back to a rectangle defined by extentNSWE (projected)
-        cmd_1 = 'eio --product SRTM1 clip -o {} --bounds {} {} {} {} --margin {}'.format(project_dir + 'inputs/dem/dem_SRTM1.tif',
+        cmd_1 = 'eio --product SRTM1 clip -o {} --bounds {} {} {} {} --margin {}'.format(dem_dir + 'dem_SRTM1.tif',
                                                                                          xmin,
                                                                                          ymin,
                                                                                          xmax,
@@ -48,13 +48,13 @@ def fetch_dem(project_dir, extent, dem_epsg, dem_file):
                                                                                                                  ymin,
                                                                                                                  xmax,
                                                                                                                  ymax,
-                                                                                               project_dir + 'inputs/dem/dem_SRTM1.tif',
-                                                                                               project_dir + 'inputs/dem/' + dem_file,
+                                                                                               dem_dir + 'dem_SRTM1.tif',
+                                                                                               dem_dir  + dem_file,
                                                                                                                )
         # as cmd-2 but without crop
         # cmd_3 = 'gdalwarp -tr 30 30 -r bilinear -s_srs epsg:4326 -t_srs epsg:{} {} {}'.format(dem_epsg,
-        #                                                                                        project_dir + 'inputs/dem/dem_SRTM1.tif',
-        #                                                                                        project_dir + 'inputs/dem/dem_SRTM1_proj.tif'
+        #                                                                                        dem_dir + 'inputs/dem/dem_SRTM1.tif',
+        #                                                                                        dem_dir + 'inputs/dem/dem_SRTM1_proj.tif'
         #                                                                                                        )
         print(cmd_2)
         os.system(cmd_2)
@@ -65,7 +65,7 @@ def fetch_dem(project_dir, extent, dem_epsg, dem_file):
     elif ans == '2':
         # use STRM DEM for extent of interest
 
-        cmd_1 = 'eio --product SRTM3 clip -o {} --bounds {} {} {} {} --margin {}'.format(project_dir + 'inputs/dem/dem_SRTM3.tif' ,
+        cmd_1 = 'eio --product SRTM3 clip -o {} --bounds {} {} {} {} --margin {}'.format(dem_dir + 'dem_SRTM3.tif' ,
                                                                                          xmin,
                                                                                          ymin,
                                                                                          xmax,
@@ -83,8 +83,8 @@ def fetch_dem(project_dir, extent, dem_epsg, dem_file):
                                                                                                                  ymin,
                                                                                                                  xmax,
                                                                                                                  ymax,
-                                                                                               project_dir + 'inputs/dem/dem_SRTM3.tif',
-                                                                                               project_dir + 'inputs/dem/' + dem_file,
+                                                                                               dem_dir + 'dem_SRTM3.tif',
+                                                                                               dem_dir + dem_file,
                                                                                                                )
 
         os.system(cmd_2)
