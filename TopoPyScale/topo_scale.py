@@ -97,10 +97,6 @@ def downscale_climate(path_forcing,
     ds_surf = ds_surf.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
     ds_plev = ds_plev.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
 
-    # ============ Extract specific humidity (q) for both dataset ============
-    ds_surf = mu.dewT_2_q_magnus(ds_surf, mu.var_era_surf)
-    ds_plev = mu.t_rh_2_dewT(ds_plev, mu.var_era_plevel)
-
     # ============ Loop over each point ======================================
     # Loop over each points (lat,lon) for which to downscale climate variable using Toposcale method
 
@@ -147,6 +143,10 @@ def downscale_climate(path_forcing,
         surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
         surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
+        # ============ Extract specific humidity (q) for both dataset ============
+        surf_interp = mu.dewT_2_q_magnus(surf_interp, mu.var_era_surf)
+        plev_interp = mu.t_rh_2_dewT(plev_interp, mu.var_era_plevel)
+
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
             print("---> WARNING: Point {} is {} m lower than the 1000hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation".
@@ -189,6 +189,8 @@ def downscale_climate(path_forcing,
         down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
         down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
         down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
+
+
 
         down_pt.to_netcdf('outputs/tmp/down_pt_{}.nc'.format(row.name), engine='h5netcdf')
         surf_interp.to_netcdf('outputs/tmp/surf_interp_{}.nc'.format(row.name), engine='h5netcdf')
