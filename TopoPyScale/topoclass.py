@@ -83,21 +83,13 @@ class Topoclass(object):
                                                           np.round(self.config.project.extent.get('latS'),1)))
         print('\t----------------------------')
 
-
-        
-
-
         self.toposub = self.Toposub()
-
         self.solar_ds = None
         self.horizon_da = None
 
         # add here a little routinr doing chek on start and end date in config.yml compare to forcing in case
 
-        
         self.toposub.dem_path = self.config.dem.filepath
-
-        
 
         if self.config.project.climate.lower() == 'era5':
             self.get_era5()
@@ -160,10 +152,18 @@ class Topoclass(object):
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
     def extract_topo_param(self):
+        '''
+        Function to select which 
+        '''
         if self.config.sampling.method == 'points':
             self.extract_pts_param()
         elif self.config.sampling.method == 'toposub':
             self.extract_dem_cluster_param()
+        elif self.config.sampling.method == 'both':
+
+            # implement the case one wann run both toposub and a list of points
+            print('ERROR: method not yet implemented')
+            
         else:
             print('ERROR: Extraction method not available')
 
@@ -262,8 +262,7 @@ class Topoclass(object):
                        label_map=label_map,
                        da_label=da_label,
                        climate_dataset_name=self.config.project.climate,
-                       project_author=self.config.project.authors,
-                       num_threads=self.config.project.CPU_cores)
+                       project_author=self.config.project.authors)
         
     def to_fsm(self, fname_format='./outputs/FSM_pt_*.txt'):
         '''

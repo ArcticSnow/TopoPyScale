@@ -103,6 +103,11 @@ def downscale_climate(path_forcing,
     solar_ds = xr.open_dataset('outputs/solar_ds.nc', chunks='auto', engine='h5netcdf')
 
     dataset = []
+    dpt_list = []
+    dpt_paths = []
+    surf_paths  = []
+    surf_list = []
+
     for i, row in df_centroids.iterrows():
         print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(row.name, df_centroids.index.max()))
         # =========== Extract the 3*3 cells centered on a given point ============
@@ -191,13 +196,23 @@ def downscale_climate(path_forcing,
         down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
 
 
-
-        down_pt.to_netcdf('outputs/tmp/down_pt_{}.nc'.format(row.name), engine='h5netcdf')
-        surf_interp.to_netcdf('outputs/tmp/surf_interp_{}.nc'.format(row.name), engine='h5netcdf')
+        dpt_list.append(down_pt)
+        dpt_paths.append('outputs/tmp/down_pt_{}.nc'.format(row.name))
+        surf_list.append(surf_interp)
+        surf_paths.append('outputs/tmp/surf_interp_{}.nc'.format(row.name))
 
         down_pt = None
         surf_interp = None
 
+
+    xr.save_mfdataset(dpt_list, dpt_paths, engine='h5netcdf')
+    xr.save_mfdataset(surf_list, surf_paths, engine='h5netcdf')
+        #down_pt.to_netcdf('outputs/tmp/down_pt_{}.nc'.format(row.name), engine='h5netcdf')
+        #surf_interp.to_netcdf('outputs/tmp/surf_interp_{}.nc'.format(row.name), engine='h5netcdf')
+
+        
+    ds_list = []
+    ds_paths = []
     for i, row in df_centroids.iterrows():
         print('Downscaling LW, SW for point: {} out of {}'.format(row.name, df_centroids.index.max()))
 
@@ -271,7 +286,15 @@ def downscale_climate(path_forcing,
         down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
 
-        down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(row.name))
+        ds_list.append(down_pt)
+        ds_paths.append('outputs/down_pt_{}.nc'.format(row.name))
+
+        down_pt = None
+        surf_interp = None
+    xr.save_mfdataset(ds_list, ds_paths, engine='h5netcdf')
+
+
+        #down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(row.name))
         #dataset.append(down_pt)
 
     # print timer to console
