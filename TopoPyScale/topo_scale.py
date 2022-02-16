@@ -206,6 +206,10 @@ def downscale_climate(path_forcing,
 
     xr.save_mfdataset(dpt_list, dpt_paths, engine='h5netcdf')
     xr.save_mfdataset(surf_list, surf_paths, engine='h5netcdf')
+    dpt_list = None
+    dpt_paths = None
+    surf_list = None
+    surf_paths = None
 
         
     ds_list = []
@@ -289,6 +293,8 @@ def downscale_climate(path_forcing,
         down_pt = None
         surf_interp = None
     xr.save_mfdataset(ds_list, ds_paths, engine='h5netcdf')
+    ds_list = None
+    ds_paths = None
 
 
         #down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(row.name))
