@@ -108,6 +108,8 @@ def downscale_climate(path_forcing,
     surf_paths  = []
     surf_list = []
 
+    n_digits = len(str(df_centroids.index.max()))
+
     for i, row in df_centroids.iterrows():
         print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(row.name, df_centroids.index.max()))
         # =========== Extract the 3*3 cells centered on a given point ============
@@ -197,15 +199,19 @@ def downscale_climate(path_forcing,
 
 
         dpt_list.append(down_pt)
-        dpt_paths.append('outputs/tmp/down_pt_{}.nc'.format(row.name))
+        dpt_paths.append('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)))
         surf_list.append(surf_interp)
-        surf_paths.append('outputs/tmp/surf_interp_{}.nc'.format(row.name))
+        surf_paths.append('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)))
 
         down_pt = None
         surf_interp = None
 
     xr.save_mfdataset(dpt_list, dpt_paths, engine='h5netcdf')
+    dpt_list = None
+    dpt_paths = None
     xr.save_mfdataset(surf_list, surf_paths, engine='h5netcdf')
+    surf_list = None
+    surf_paths = None
 
         
     ds_list = []
@@ -213,8 +219,8 @@ def downscale_climate(path_forcing,
     for i, row in df_centroids.iterrows():
         print('Downscaling LW, SW for point: {} out of {}'.format(row.name, df_centroids.index.max()))
 
-        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(row.name), chunks='auto', engine='h5netcdf')
-        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(row.name), chunks='auto', engine='h5netcdf')
+        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
+        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
 
         # ======== Longwave downward radiation ===============
         x1, x2 = 0.43, 5.7
@@ -284,11 +290,13 @@ def downscale_climate(path_forcing,
         down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
 
         ds_list.append(down_pt)
-        ds_paths.append('outputs/down_pt_{}.nc'.format(row.name))
+        ds_paths.append('outputs/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)))
 
         down_pt = None
         surf_interp = None
     xr.save_mfdataset(ds_list, ds_paths, engine='h5netcdf')
+    ds_list = None
+    ds_paths = None
 
 
         #down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(row.name))
