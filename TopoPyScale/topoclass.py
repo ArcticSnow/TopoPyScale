@@ -194,7 +194,6 @@ class Topoclass(object):
     def downscale_climate(self):
         ta.downscale_climate(self.config.climate.path,
                                         self.toposub.df_centroids,
-                                        self.solar_ds,
                                         self.horizon_da,
                                         self.config.dem.epsg,
                                         self.config.project.start,

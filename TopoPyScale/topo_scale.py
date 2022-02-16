@@ -60,15 +60,13 @@ R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
 def downscale_climate(path_forcing,
                       df_centroids,
-                      solar_ds,
                       horizon_da,
                       target_EPSG,
                       start_date,
                       end_date,
                       interp_method='idw',
                       lw_terrain_flag=True,
-                      tstep='1H',
-                      num_threads=None):
+                      tstep='1H'):
     '''
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
