@@ -50,6 +50,8 @@ class Topoclass(object):
             os.makedirs('/'.join((self.config.project.directory, 'inputs/climate')))
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/climate/tmp/'))):
             os.makedirs('/'.join((self.config.project.directory, 'inputs/climate/tmp')))
+        if not os.path.exists('/'.join((self.config.project.directory, 'outputs/tmp/'))):
+            os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')))
 
         self.config.dem.path = self.config.project.directory + 'inputs/dem/'
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/dem/'))):
