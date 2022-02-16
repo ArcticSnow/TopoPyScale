@@ -219,8 +219,8 @@ def downscale_climate(path_forcing,
     for i, row in df_centroids.iterrows():
         print('Downscaling LW, SW for point: {} out of {}'.format(row.name, df_centroids.index.max()))
 
-        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits))), chunks='auto', engine='h5netcdf')
-        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits))), chunks='auto', engine='h5netcdf')
+        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
+        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
 
         # ======== Longwave downward radiation ===============
         x1, x2 = 0.43, 5.7
