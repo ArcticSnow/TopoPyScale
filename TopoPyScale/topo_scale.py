@@ -204,11 +204,8 @@ def downscale_climate(path_forcing,
         down_pt = None
         surf_interp = None
 
-
     xr.save_mfdataset(dpt_list, dpt_paths, engine='h5netcdf')
     xr.save_mfdataset(surf_list, surf_paths, engine='h5netcdf')
-        #down_pt.to_netcdf('outputs/tmp/down_pt_{}.nc'.format(row.name), engine='h5netcdf')
-        #surf_interp.to_netcdf('outputs/tmp/surf_interp_{}.nc'.format(row.name), engine='h5netcdf')
 
         
     ds_list = []
@@ -272,7 +269,7 @@ def downscale_climate(path_forcing,
         down_pt['SW_direct_tmp'] = down_pt.t * 0
         down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(-ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
         down_pt['SW_direct'] = down_pt.t * 0
-        down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (down_pt.cos_illumination[~sunset] / mu0[~sunset])*(1-shade)
+        down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
         down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
 
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
