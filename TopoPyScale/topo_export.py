@@ -142,8 +142,8 @@ def to_fsm(ds,
         df['SW'] = ds_pt.SW.values
         df['LW'] = ds_pt.LW.values
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
-        df['snowfall'] = snow
-        df['rainfall'] = rain
+        df['snowfall'] = snow / 3600
+        df['rainfall'] = rain / 3600
         df['Tair'] = np.round(ds_pt.t.values, 2)
         df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
         df['speed'] = ds_pt.ws.values
