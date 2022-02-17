@@ -47,6 +47,6 @@ setup(
     keywords=['climate','downscaling', 'meteorology'],
     packages=find_packages(),
     install_requires=['matplotlib', 'scikit-learn', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi',
-                      'rasterio', 'pyproj', 'dask', 'configobj'],
+                      'rasterio', 'pyproj', 'dask', 'configobj', 'munch'],
     include_package_data=True
 )
