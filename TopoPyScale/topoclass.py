@@ -13,6 +13,7 @@ project/
 import os
 #import configparser
 import sys
+import shutil
 
 from munch import DefaultMunch
 import pandas as pd
@@ -38,6 +39,12 @@ class Topoclass(object):
                 self.config = DefaultMunch.fromYAML(f)
         except IOError:
                 print('ERROR: config file does not exist. Check path.')
+
+        # remove outputs directory because if results already exist this causes concat of netcdf files
+        try:
+            shutil.rmtree(self.config.project.directory + '/outputs/')
+        except:
+            os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
 
         # check if tree directory exists. If not create it
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/'))):
