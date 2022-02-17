@@ -72,7 +72,6 @@ def downscale_climate(path_forcing,
 
     :param path_forcing: path to forcing data [SURF*, PLEV*]
     :param df_centroids: pandas dataframe containing a list of point for which to downscale (includes all terrain data)
-    :param solar_ds: xarray dataset containing solar geometry: sun zenith, azimuth, elevation
     :param horizon_da: xarray dataarray containing the horizon angles for a list of azimuth
     :param target_EPSG: int, EPSG code of the DEM
     :param interp_method: str, interpolation method for horizontal interp. 'idw' or 'linear'

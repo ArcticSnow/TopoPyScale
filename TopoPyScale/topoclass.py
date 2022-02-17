@@ -202,8 +202,7 @@ class Topoclass(object):
                                         self.config.project.end,
                                         self.config.toposcale.interpolation_method,
                                         self.config.toposcale.LW_terrain_contribution,
-                                        self.config.climate[self.config.project.climate].timestep,
-                                        self.config.project.CPU_cores)
+                                        self.config.climate[self.config.project.climate].timestep)
         self.downscaled_pts = ta.read_downscaled()
 
 
