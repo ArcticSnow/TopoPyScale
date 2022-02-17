@@ -1,10 +1,10 @@
-'''
+"""
 Set of functions to work with DEMs
 S. Filhol, Oct 2021
 
 TODO:
 - an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
-'''
+"""
 
 import sys
 import rasterio
@@ -20,14 +20,19 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
-    '''
+    """
     Simple function to convert a list fo poitn from one projection to another oen using PyProj
-    :param xs: 1D array with X-coordinate expressed in the source EPSG
-    :param ys: 1D array with Y-coordinate expressed in the source EPSG
-    :param epsg_src: source projection EPSG code
-    :param epsg_tgt: target projection EPSG code
-    :return: Xs, Ys 1D arrays of the point coordinates expressed in the target projection
-    '''
+
+    Args:
+        xs (array): 1D array with X-coordinate expressed in the source EPSG
+        ys (array): 1D array with Y-coordinate expressed in the source EPSG
+        epsg_src (int): source projection EPSG code
+        epsg_tgt (int): target projection EPSG code
+
+    Returns: 
+        array: Xs 1D arrays of the point coordinates expressed in the target projection
+        array: Ys 1D arrays of the point coordinates expressed in the target projection
+    """
     print('Convert coordinates from EPSG:{} to EPSG:{}'.format(epsg_src, epsg_tgt))
     trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:{}".format(epsg_tgt), always_xy=True)
     Xs, Ys = trans.transform(xs, ys)
@@ -35,12 +40,16 @@ def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
 
 
 def get_extent_latlon(dem_file, epsg_src):
-    '''
+    """
     Function to extract DEM extent in Lat/Lon
-    :param dem_file: path to DEM file (GeoTiFF)
-    :param epsg_src: int, EPSG projection code
-    :return: dict, extent in lat/lon, {latN, latS, lonW, lonE}
-    '''
+
+    Args:
+        dem_file (str): path to DEM file (GeoTiFF)
+        epsg_src (int): EPSG projection code
+
+    Returns: 
+        dict: extent in lat/lon, {latN, latS, lonW, lonE}
+    """
     with rasterio.open(dem_file) as rf:
         xs, ys = [rf.bounds.left, rf.bounds.right], [rf.bounds.bottom, rf.bounds.top]
     trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:4326", always_xy=True)
@@ -53,15 +62,18 @@ def get_extent_latlon(dem_file, epsg_src):
 
 
 def extract_pts_param(df_pts, ds_param, method='nearest'):
-    '''
+    """
     Function to sample DEM parameters for a list point. This is used as an alternative the the TopoSub method, to perform downscaling at selected locations (x,y)
     WARNING: the projection and coordiante system of the EDM and point coordinates MUST be the same!
 
-    :param df_pts: pandas DataFrame containing a list of points coordinates with coordiantes in (x,y).
-    :param ds_param: xarray dataset of dem parameters
-    :param method: sampling method. Supported 'nearest', 'linear' interpolation, 'idw' interpolation (inverse-distance weighted)
-    :return: df_pts updated with new columns ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']
-    '''
+    Args:
+        df_pts (dataframe): list of points coordinates with coordiantes in (x,y).
+        ds_param (dataset): dem parameters
+        method (str): sampling method. Supported 'nearest', 'linear' interpolation, 'idw' interpolation (inverse-distance weighted)
+
+    Returns: 
+        dataframe: df_pts updated with new columns ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']
+    """
     print('\n---> Extracting DEM parameters for the given list of point coordinates')
     # delete columns in case they already exist
     df_pts = df_pts.drop(['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'], errors='ignore')
@@ -112,11 +124,16 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     return df_pts
 
 def compute_dem_param(dem_file):
-    '''
+    """
     Function to compute and derive DEM parameters: slope, aspect, sky view factor
-    :param dem_file: path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
-    :return:  xarray dataset containing x, y, elev, slope, aspect, svf
-    '''
+
+    Args:
+        dem_file (str): path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
+
+    Returns:  
+        dataset: x, y, elev, slope, aspect, svf
+
+    """
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
     ds = xr.open_rasterio(dem_file).to_dataset('band')
     ds = ds.rename({1: 'elevation'})
@@ -148,13 +165,18 @@ def compute_dem_param(dem_file):
 
 
 def compute_horizon(dem_file, azimuth_inc=30, num_threads=None):
-    '''
+    """
     Function to compute horizon angles for
-    :param dem_file:
-    :param azimuth_inc:
-    :param num_threads: int, number of threads to parallize on
-    :return: xarray dataset containing the
-    '''
+
+    Args:
+        dem_file (str): path and filename of the dem
+        azimuth_inc (int): angle increment to compute horizons at, in Degrees [0-359]
+        num_threads (int): number of threads to parallize on
+
+    Returns: 
+        dataarray: all horizon angles for x,y,azimuth coordinates
+         
+    """
     print('\n---> Computing horizons with {} degree increment'.format(azimuth_inc))
     ds = xr.open_rasterio(dem_file).to_dataset('band')
     ds = ds.rename({1: 'elevation'})

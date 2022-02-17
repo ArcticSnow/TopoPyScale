@@ -1,9 +1,10 @@
-''''
+"""
 Retrieve ecmwf data with cdsapi.
-J. Fiddes, Origin implementation
-S. Filhol adapted in 2021
 
-'''
+- J. Fiddes, Origin implementation
+- S. Filhol adapted in 2021
+
+"""
 # !/usr/bin/env python
 import pandas as pd
 from datetime import datetime
@@ -35,7 +36,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		surf_plev: download surface single level or pressure level product: 'surf' or 'plev'
 
 	Returns:
-		Monthly era surface files.		 
+		Monthly era surface files stored in disk.		 
 
 	"""
 	print('\n')
@@ -121,7 +122,21 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 			sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
 
 def era5_request_surf(dataset, year, month, bbox, target, product, time):
-	"""CDS surface api call"""
+	"""CDS surface api call
+
+	Args:
+		dataset (str): copernicus dataset (era5)
+		year (str or list): year of interest
+		month (str or list): month of interest
+		bbox (list): bonding box in lat-lon
+		target (str): filename
+		product (str): type of model run. defaul: reanalysis
+		time (str or list): hours for which to download data 
+
+	Returns:
+		Store to disk dataset as indicated
+
+	"""
 	c = cdsapi.Client()
 	c.retrieve(
 		dataset,
@@ -154,7 +169,22 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time):
 	print(target + " complete")
 
 def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels):
-	"""CDS plevel api call"""
+	"""CDS plevel api call
+	
+	Args:
+		dataset (str): copernicus dataset (era5)
+		year (str or list): year of interest
+		month (str or list): month of interest
+		bbox (list): bonding box in lat-lon
+		target (str): filename
+		product (str): type of model run. defaul: reanalysis
+		time (str or list): hours to query
+		plevels (str or list): pressure levels to query
+
+	Returns:
+		Store to disk dataset as indicated
+
+	"""
 	c = cdsapi.Client()
 	c.retrieve(
 		dataset,

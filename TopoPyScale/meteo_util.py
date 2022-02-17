@@ -29,14 +29,19 @@ S0 = 1370    # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF'
 
 
 def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15):
-    '''
+    """
     Function to partition precipitation in between rain vs snow based on temperature threshold and mixing around freezing
-    :param precip: 1D array, precipitation in mm/hr
-    :param temp: 1S array, air temperature in K
-    :param tair_low_thresh: float, lower temperature threshold under which all precip is snow. degree K
-    :param tair_high_thresh: float, higher temperature threshold under which all precip is rain. degree K
-    :return: 1D array rain, 1D array snow
-    '''
+
+    Args:
+        precip (array): 1D array, precipitation in mm/hr
+        temp (arrray): 1S array, air temperature in K
+        tair_low_thresh (float): lower temperature threshold under which all precip is snow. degree K
+        tair_high_thresh (float): higher temperature threshold under which all precip is rain. degree K
+
+    Returns: 
+        array: 1D array rain
+        array: 1D array snow
+    """
     snow = precip * ((temp <= tair_low_thresh) +
                      ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
                      (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
@@ -46,13 +51,16 @@ def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15
     return rain, snow
 
 def q_2_rh(temp, pressure, qair):
-    '''
+    """
     Function to convert specific humidity (q) to relative humidity (RH) following Bolton (1980)
-    :param temp: temperature in degree K
-    :param pressure: aire pressure in Pa
-    :param qair: specific humidity in kg/kg
-    :return: rh [0-1]
-    '''
+
+    Args:
+        temp (array): temperature in degree K
+        pressure (array): aire pressure in Pa
+        qair (array): specific humidity in kg/kg
+    Returns: 
+        array: relative humidity in the range of [0-1]
+    """
     mr = qair / (1-qair)
     e = mr * pressure / (0.62197 + mr)
     # convert temperature to saturated vapor pressure
@@ -64,35 +72,43 @@ def q_2_rh(temp, pressure, qair):
 
 
 def mixing_ratio(ds, var):
-    '''
+    """
     Function to compute mixing ratio
-    :param ds: dataset (following ERA5 variable convention) q-specific humidity in kg/kg
-    :param var: dictionnary of variable name (for ERA surf / ERA plevel)
-    :return: dataset with new variable 'w'
-    '''
+
+    Args:
+        ds: dataset (following ERA5 variable convention) q-specific humidity in kg/kg
+        var: dictionnary of variable name (for ERA surf / ERA plevel)
+    Returns: dataset with new variable 'w'
+    """
     ds[var['mix_ratio']] = 0.5 * (1 - np.sqrt(1 - 4 * ds[var['spec_h']]))
     return ds
 
 
 def t_rh_2_dewT(ds, var):
-    '''
+    """
     Function to compute dea temperature from air temperature and relative humidity
-    :param ds: dataset with temperature ('t') and relative humidity ('r') variables
-    :param var: dictionnary of variable name (for ERA surf / ERA plevel)
-    :return: dataset with added variable
-    '''
+
+    Args:
+        ds: dataset with temperature ('t') and relative humidity ('r') variables
+        var: dictionnary of variable name (for ERA surf / ERA plevel)
+    Returns: 
+        dataset: with added variable
+    """
     ds['dew'] = 243.04 * (np.log(ds[var['rh']] / 100) + ((17.625 * ds[var['temp']]) / (243.04 + ds[var['temp']])))/\
                 (17.625-np.log(ds[var['rh']] / 100) - ((17.625 * ds[var['temp']]) / (243.04 + ds[var['temp']])))
     return ds
 
 def dewT_2_q_magnus(ds, var):
-    '''
+    """
     A version of the Magnus formula with the AERK parameters. AERK from Alduchov and Eskridge (1996)
     Note, e=Magnus(tdc) and es=Magnus(tc)
-    :param ds: dataset with
-    :param var: dictionnary of variable name (for ERA surf / ERA plevel)
-    :return: specific humidity in kg/kg
-    '''
+
+    Args:
+        ds: dataset with
+        var: dictionnary of variable name (for ERA surf / ERA plevel)
+    Returns: 
+        array: specific humidity in kg/kg
+    """
     A1, B1, C1 = 17.625, 243.04, 610.94
     vpsl = C1 * np.exp(A1 * (ds[var['dew']] - 273.15) / (B1 + (ds[var['dew']] - 273.15)))
     wsl = eps0 * vpsl / (ds[var['pressure']] - vpsl)
@@ -100,12 +116,15 @@ def dewT_2_q_magnus(ds, var):
     return ds
 
 def vapor_pressure(ds, var):
-    '''
+    """
     Function to compute Vapor pressure from mixing ratio based on 2nd order Taylor series expansion
-    :param ds:
-    :param var:
-    :return:
-    '''
+
+    Args:
+        ds (dataset): dataset with pressure and mix_ratio variables
+        var (dict): variable name correspondance 
+    Returns:
+        dataset: input dataset with new `vp` columns
+    """
     eps0 = 0.622  # Ratio of molecular weight of water and dry air [-]
     ds['vp'] = 0.5 * ds[var['pressure']] * (-1 + np.sqrt(1 + 4 * ds[var['mix_ratio']] / eps0))
     return ds

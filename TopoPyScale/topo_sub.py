@@ -1,11 +1,12 @@
-'''
+"""
 Clustering routines for TopoSUB
+
 S. Filhol, Oct 2021
 
 TODO:
 - explore other clustering methods available in scikit-learn: https://scikit-learn.org/stable/modules/clustering.html
 - look into DBSCAN and its relative
-'''
+"""
 
 import rasterio
 from rasterio import plot
@@ -20,54 +21,70 @@ import time
 
 
 def ds_to_indexed_dataframe(ds):
-    '''
+    """
     Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
     WARNING: this only works if the variable of the dataset have all the same dimensions!
 
     By default the ds.to_dataframe() returns a multi-index dataframe. Here the coordinates are transfered as columns in the dataframe
-    :param ds: xarray dataset with all variable of same number of dimensions
-    :return: pandas dataframe
-    '''
+    
+    Args:
+        ds (dataset): xarray dataset with all variable of same number of dimensions
+    
+    Returns:
+        pandas dataframe: 
+    """
     df = ds.to_dataframe()
     n_levels = df.index.names.__len__()
     return df.reset_index(level=list(range(0, n_levels)))
 
 def scale_df(df_param, scaler=StandardScaler()):
-    '''
+    """
     Function to scale features of a pandas dataframe
 
-    :param df_param: pandas dataframe with features to scale
-    :param scaler: scikit learn scaler. Default is StandardScaler()
-    :return: scaled pandas dataframe
-    '''
+    Args:
+        df_param (dataframe): features to scale
+        scaler (scaler object): Default is StandardScaler()
+
+    Returns:
+        dataframe: scaled data
+    """
     print('---> Scaling data prior to clustering')
     df_scaled = pd.DataFrame(scaler.fit_transform(df_param.values),
                              columns=df_param.columns, index=df_param.index)
     return df_scaled, scaler
 
 def inverse_scale_df(df_scaled, scaler):
-    '''
+    """
     Function to inverse feature scaling of a pandas dataframe
+    
+    Args:
+        df_scaled (dataframe): scaled data to transform back to original (inverse transfrom)
+        scaler (scaler object): original scikit learn scaler
 
-    :param df_scaled: pandas dataframe to rescale to original (inverse transfrom
-    :param scaler: original scikit learn scaler
-    :return:
-    '''
+    Returns:
+        dataframe: data in original format
+    """
     df_inv = pd.DataFrame(scaler.inverse_transform(df_scaled.values),
                           columns=df_scaled.columns, index=df_scaled.index)
     return df_inv
 
 
 def kmeans_clustering(df_param, n_clusters=100, seed=None, **kwargs):
-    '''
+    """
     Function to perform K-mean clustering
 
-    :param df_param: pandas dataframe with features
-    :param n_clusters: number of clusters
-    :param seed: None or int for random seed generator
-    :param kwargs:
-    :return:
-    '''
+    Args:
+        df_param (dataframe): features
+        n_clusters (int): number of clusters
+        seed (int): None or int for random seed generator
+        kwargs:
+
+    Returns:
+        dataframe: df_centers
+        kmean object: kmeans
+        dataframe: df_param
+
+    """
     X = df_param.to_numpy()
     col_names = df_param.columns
     print('---> Clustering with K-means in {} clusters'.format(n_clusters))
@@ -80,15 +97,20 @@ def kmeans_clustering(df_param, n_clusters=100, seed=None, **kwargs):
 
 
 def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, **kwargs):
-    '''
+    """
     Function to perform mini-batch K-mean clustering
+    
+    Args:
+        df_param (dataframe): features
+        n_clusters (int):  number of clusters
+        n_cores (int): number of processor core
+        kwargs:
 
-    :param df_param: pandas dataframe with features
-    :param n_clusters: (int) number of clusters
-    :param n_cores: (int) number of processor core
-    :param kwargs:
-    :return: centroids, kmean-object, and labels of input data
-    '''
+    Returns: 
+        dataframe: centroids
+        kmean object: kmean model
+        dataframe: labels of input data
+    """
     X = df_param.to_numpy()
     col_names = df_param.columns
     print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
@@ -101,16 +123,17 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
 
 
 def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=plt.cm.viridis, figsize=(14,10)):
-    '''
+    """
     Function to plot the location of the cluster centroids over the DEM
 
-    :param dem_file: path to dem raster file
-    :param ds_param: xarray dataset containing topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
-    :param df_centers: dataframe containing cluster centroid parameters ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
-    :param var: variable to plot as background
-    :param cmap: pyplot colormap to represent the variable.
-    :return:
-    '''
+    Args:
+        dem_file (str): path to dem raster file
+        ds_param (dataset): topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
+        df_centers(dataframe): containing cluster centroid parameters ['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
+        var (str): variable to plot as background
+        cmap (pyplot cmap): pyplot colormap to represent the variable.
+
+    """
     ls = LightSource(azdeg=315, altdeg=45)
 
     dx = np.diff(ds_param.x.values)[0]
@@ -158,10 +181,10 @@ def plot_pca_clusters(dem_file, df_param, df_centroids, scaler, n_components, su
 def write_landform(dem_file, df_param):
     """
     Function to write a landform file which maps cluster ids to dem pixels
-
-    :param dem_file: path to dem raster file
-    :param ds_param: xarray dataset containing topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
-    :return:
+    
+    Args:
+        dem_file (str): path to dem raster file
+        ds_param (dataset): topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     """
     with rasterio.open(dem_file) as dem:
         shape = dem.shape

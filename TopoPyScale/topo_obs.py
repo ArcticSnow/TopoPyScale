@@ -1,8 +1,8 @@
-'''
+"""
 Tools to download and compare Downsclaed timeseries to observation
 All observation in folder inputs/obs/
 S. Filhol December 2021
-'''
+"""
 
 import requests, os
 import pandas as pd
@@ -10,15 +10,18 @@ import numpy as np
 
 
 def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST_API_CLIENTID')):
-    '''
+    """
     Function to download observation data from MetNo FROST API (Norwegian Meteorological institute)
-    :param sources: list, station code, e.g. 'SN25830'
-    :param voi: list of variables to download
-    :param start_date: starting date
-    :param end_date: ending date
-    :param client_id: FROST_API_CLIENTID
-    :return: dataframe with all data combined together
-    
+
+    Args
+        sources (list): station code, e.g. 'SN25830'
+        voi (list): variables to download
+        start_date (str): starting date
+        end_date (str): ending date
+        client_id (str): FROST_API_CLIENTID
+
+    Return: 
+        dataframe: all data combined together
     
     List of variable: https://frost.met.no/element table
     Find out about stations: https://seklima.met.no/
@@ -26,7 +29,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
 
     TODO:
     - convert df to xarray dataset with stn_id, time as coordinates
-    '''
+    """
     endpoint = 'https://frost.met.no/observations/v0.jsonld'
     
     df_out = pd.DataFrame()
@@ -66,6 +69,17 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
     return df_out
 
 def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
+    """
+    Function to convert metno format to usable dataset
+
+    Args:
+        fnames (str pattern): pattern of the file to load
+        path (str): path of the file to load
+
+    Returns:
+        dataset: dataset will all data organized in timeseries and station number
+
+    """
     df_obs = pd.concat(map(pd.read_pickle, glob.glob(os.path.join('', path + fnames))))
     df = pd.pivot_table(df_obs, columns=['elementId'],values=['value'], index=['sourceId', 'referenceTime'])
     ds = df.xs('value', axis=1, level=0).to_xarray()

@@ -1,5 +1,6 @@
-'''
+"""
 Toposcale class definition
+
 S. Filhol, September 2021
 
 project/
@@ -9,7 +10,7 @@ project/
         -> climate/
     -> output/
 
-'''
+"""
 import os
 #import configparser
 import sys
@@ -27,9 +28,9 @@ from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_export as te
 
 class Topoclass(object):
-    '''
+    """
     A python class to bring the typical use-case of toposcale in a user friendly object
-    '''
+    """
 
     def __init__(self, config_file):
         
@@ -100,9 +101,9 @@ class Topoclass(object):
 
 
     class Toposub:
-        '''
+        """
         Class to initialize variables to store TopoSub variables
-        '''
+        """
         def __init__(self):
             self.dem_path = None
             self.ds_param = None
@@ -121,22 +122,24 @@ class Topoclass(object):
 
 
     def extract_pts_param(self, method='nearest', **kwargs):
-        '''
+        """
         Function to use a list point as input rather than cluster centroids from DEM segmentation (topo_sub.py/self.clustering_dem()).
-        :param df: pandas DataFrame
-        :param method: method of sampling
-        :param **kwargs: pd.read_csv() parameters
-        :return:
-        '''
+
+        Args:
+            df (dataFrame):
+            method (str): method of sampling
+            **kwargs: pd.read_csv() parameters
+        Returns:
+        """
         self.toposub.df_centroids = pd.read_csv(self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file, **kwargs)
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param, method=method)
 
 
     def extract_dem_cluster_param(self):
-        '''
+        """
         Function to segment a DEM in clusters and retain only the centroids of each cluster.
         :return:
-        '''
+        """
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
         if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
@@ -156,9 +159,9 @@ class Topoclass(object):
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
     def extract_topo_param(self):
-        '''
+        """
         Function to select which 
-        '''
+        """
         if self.config.sampling.method == 'points':
             self.extract_pts_param()
         elif self.config.sampling.method == 'toposub':
@@ -180,10 +183,10 @@ class Topoclass(object):
                                           self.config.project.CPU_cores)
 
     def compute_horizon(self):
-        '''
+        """
         Function to compute horizon angle and sample values for list of points
         :return:
-        '''
+        """
         self.horizon_da = tp.compute_horizon(self.config.dem.filepath, self.config.dem.horizon_increments, self.config.project.CPU_cores)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
@@ -208,11 +211,11 @@ class Topoclass(object):
 
             
     def get_era5(self):
-        '''
+        """
         Funtion to call fetching of ERA5 data
         TODO:
         - merge monthly data into one file (cdo?)- this creates massive slow down!
-        '''
+        """
         lonW = self.config.project.extent.get('lonW') - 0.4
         lonE = self.config.project.extent.get('lonE') + 0.4
         latN = self.config.project.extent.get('latN') + 0.4
@@ -244,12 +247,13 @@ class Topoclass(object):
             
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
-        '''
+        """
         wrapper function to export toposcale output to cryosgrid format from TopoClass
+        
+        Args:
+            fname_format (str): filename format. point_id is inserted where * is
 
-        :param fname_format: str, filename format. point_id is inserted where * is
-
-        '''
+        """
         path = self.config.project.directory + 'outputs/'
         if 'cluster:labels' in self.toposub.ds_param.keys():
             label_map = True
@@ -267,19 +271,20 @@ class Topoclass(object):
                        project_author=self.config.project.authors)
         
     def to_fsm(self, fname_format='./outputs/FSM_pt_*.txt'):
-        '''
+        """
         function to export toposcale output to FSM format
-        '''
+        """
         te.to_fsm(self.downscaled_pts, self.toposub.df_centroids, fname_format)
 
 
     def to_crocus(self, fname_format='./outputs/CROCUS_pt_*.nc', scale_precip=1):
-        '''
+        """
         function to export toposcale output to crocus format .nc. This functions saves one file per point_id
-
-        :param fout_format: str, filename format. point_id is inserted where * is
-        :param scale_precip: float, scaling factor to apply on precipitation. Default is 1
-        '''
+        
+        Args:
+            fout_format (str): filename format. point_id is inserted where * is
+            scale_precip(float): scaling factor to apply on precipitation. Default is 1
+        """
         te.to_crocus(self.downscaled_pts,
                      self.toposub.df_centroids,
                      fname_format=fname_format,
@@ -289,17 +294,20 @@ class Topoclass(object):
 
     
     def to_snowmodel(self, fname_format='./outputs/Snowmodel_stn_*.csv'):
-        '''
+        """
         function to export toposcale output to snowmodel format .ascii, for single station standard
 
-        :param fout_format: str, filename format. point_id is inserted where * is
-        '''
+            fout_format: str, filename format. point_id is inserted where * is
+        """
         te.to_micromet_single_station(self.downscaled_pts, self.toposub.df_centroids, fname_format=fname_format, na_values=-9999, headers=False)
     
     def to_netcdf(self, file_out='./outputs/output.nc'):
-        '''
+        """
         function to export toposcale output to one single generic netcdf format, compressed
-        '''
+
+        Args:
+            file_out (str): name of export file
+        """
         encod_dict = {}
         for var in list(self.downscaled_pts.keys()):
             scale_factor, add_offset = te.compute_scaling_and_offset(self.downscaled_pts[var], n=10)

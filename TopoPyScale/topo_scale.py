@@ -1,5 +1,6 @@
-'''
+"""
 Toposcale functionalities
+
 S. Filhol, Oct 2021
 
 ======= Organization of input data to Toposcale ======
@@ -42,7 +43,7 @@ TODO:
     - method (1) simply using a for loop over each row
     - method (2) concatenate 3*3 grid along an additional dimension to process all points in one go.
 
-'''
+"""
 import pdb
 
 import pandas as pd
@@ -67,18 +68,21 @@ def downscale_climate(path_forcing,
                       interp_method='idw',
                       lw_terrain_flag=True,
                       tstep='1H'):
-    '''
+    """
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
-    :param path_forcing: path to forcing data [SURF*, PLEV*]
-    :param df_centroids: pandas dataframe containing a list of point for which to downscale (includes all terrain data)
-    :param horizon_da: xarray dataarray containing the horizon angles for a list of azimuth
-    :param target_EPSG: int, EPSG code of the DEM
-    :param interp_method: str, interpolation method for horizontal interp. 'idw' or 'linear'
-    :param lw_terrain_flag: boolean, flag to compute contribution of surrounding terrain to LW or ignore
-    :param tstep: timestep of the input data, default = 1H
-    :return: xarray dataset containing downscaled data organized with time, point_id, lat, long
-    '''
+    Args:
+        path_forcing: path to forcing data [SURF*, PLEV*]
+        df_centroids (dataframe): containing a list of point for which to downscale (includes all terrain data)
+        horizon_da (dataarray): horizon angles for a list of azimuth
+        target_EPSG (int): EPSG code of the DEM
+        interp_method (str): interpolation method for horizontal interp. 'idw' or 'linear'
+        lw_terrain_flag (bool): flag to compute contribution of surrounding terrain to LW or ignore
+        tstep (str): timestep of the input data, default = 1H
+
+    Returns:
+        dataset: downscaled data organized with time, point_id, lat, long
+    """
     print('\n---> Downscaling climate to list of points using TopoScale')
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
@@ -303,8 +307,17 @@ def downscale_climate(path_forcing,
     print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
 
 
-def read_downscaled():
-    down_pts = xr.open_mfdataset('outputs/down_pt*.nc', concat_dim='point_id', combine='nested', parallel=True)
+def read_downscaled(path='outputs/down_pt*.nc'):
+    """
+    Function to read downscaled points saved into netcdf files into one single dataset using Dask
+
+    Args:
+        path (str): path and pattern to use into xr.open_mfdataset
+
+    Returns:
+        dataset: merged dataset readily to use and loaded in chuncks via Dask
+    """
+    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=True)
     return down_pts
 
 

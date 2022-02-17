@@ -1,8 +1,8 @@
-'''
+"""
 Function to compute Solar angles
 S. Filhol, Oct 2021
 
-'''
+"""
 
 import pvlib
 import pandas as pd
@@ -15,22 +15,22 @@ import multiprocessing as mproc
 
 
 def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None):
-    '''
+    """
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
-    :param df_position: dataframe with point_id as index, latitude, longitude
-    :param start_date: start date in string "2014-05-10"
-    :param end_date: end date in string     "2015-05-10"
-    :param tstep: time step to use (str)    '6H'
-    :param sr_epsg: source EPSG code for the input coordinate
-    :param num_threads: int, number of threads to parallelize computation on. default is number of core -2
-    :return: xarray dataset of   solar angles in degrees
 
-    TODO:
-        - [ ] implement pooling instead of the for loop to compute simultaneously multiple points
-        - [ ] remove avg computation by doubling the computation of.
-        - [ ] assume 1H timestep only
-    '''
+    Args:
+        df_position (dataframe): point_id as index, latitude, longitude
+        start_date (str): start date  "2014-05-10"
+        end_date (str: end date   "2015-05-10"
+        tstep (str): time step, ex: '6H'
+        sr_epsg (str): source EPSG code for the input coordinate
+        num_threads (int): number of threads to parallelize computation on. default is number of core -2
+
+    Returns: 
+        dataset: solar angles in degrees
+
+    """
     print('\n---> Computing solar geometry')
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
         trans = Transformer.from_crs("epsg:" + sr_epsg, "epsg:4326", always_xy=True)

@@ -1,4 +1,4 @@
-'''
+"""
 Methods to fetch DEM from various public repository
 
 TODO:
@@ -7,12 +7,21 @@ TODO:
 - [ ] ASTER dem
 - [ ] Norwegian DEM
 
-'''
+"""
 
 import sys
 import os
 
 def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
+    """
+    Function to fetch DEM data from SRTM and potentially other sources
+
+    Args:
+        dem_dir (str): path to dem folder
+        extent (list): list of spatial extent in lat-lon [latN, latS, lonW, lonE]
+        epsg (int): epsg projection code
+        dem_file (str): filename of the downloaded DEM. must be myfile.tif
+    """
 
     ymax = extent.get('latN')
     ymin = extent.get('latS')

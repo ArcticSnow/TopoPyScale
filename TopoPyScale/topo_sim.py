@@ -1,10 +1,10 @@
-'''
+"""
 Methods to generate required simulation files and run simulations of various models using tscale forcing
 J. Fiddes, February 2022
 
 TODO:
 
-'''
+"""
 
 import os
 import glob
@@ -15,14 +15,17 @@ import rasterio
 from matplotlib import pyplot as plt
 
 def fsm_nlst(nconfig, metfile, nave):
-    '''
+    """
     Function to generate namelist parameter file that is required to run the FSM model.
     https://github.com/RichardEssery/FSM
 
-    :param nconfig: which FSm configuration to run (integer 1-31)
-    :param metfile: path to input tscale file (relative as Fortran fails with long strings (max 21 chars?))
-    :param nave: number of forcing steps to average output over eg if forcing is hourly and output required is daily then nave = 24
-    :return: NULL (writes out namelist text file which configures a single FSM run)
+    Args:
+        nconfig (int): which FSm configuration to run (integer 1-31)
+        metfile (str): path to input tscale file (relative as Fortran fails with long strings (max 21 chars?))
+        nave (int): number of forcing steps to average output over eg if forcing is hourly and output required is daily then nave = 24
+    
+    Returns:
+        NULL (writes out namelist text file which configures a single FSM run)
 
     Notes:
         constraint is that Fortran fails with long strings (max?)
@@ -46,7 +49,7 @@ def fsm_nlst(nconfig, metfile, nave):
             &outputs
               out_file = 'out_CdP_0506.txt'
             /
-    '''
+    """
 
     METEOFILENAME = os.path.split(metfile)[1].split('.txt')[0]
     if not os.path.exists('./fsm_sims'):
@@ -73,27 +76,32 @@ def fsm_nlst(nconfig, metfile, nave):
     f.close()
 
 def fsm_sim(nlstfile, fsm_exec):
-    '''
+    """
     Function to simulate the FSM model
     https://github.com/RichardEssery/FSM
 
-    :param nlstfile: which FSm configuration to run (integer 1-31)
-    :param fsm_exec: path to input tscale file (relative as Fortran fails with long strings (max 21 chars?))
-    :return: NULL (FSM simulation file written to disk)
-    '''
+    Args:
+        nlstfile (int): which FSm configuration to run (integer 1-31)
+        fsm_exec (str): path to input tscale file (relative as Fortran fails with long strings (max 21 chars?))
+    
+    Returns: 
+        NULL (FSM simulation file written to disk)
+    """
     print('Simulation done: ' + nlstfile)
     os.system(fsm_exec + ' < ' + nlstfile)
     os.remove(nlstfile)
 
 def agg_by_var_fsm( ncol):
-    '''
+    """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
 
     Currently written for FSM files but could be generalised to other models.
 
-    :param ncol: column number of variable to extract
-    :return: NULL ( file written to disk)
+    Args:
+        ncol (int): column number of variable to extract
+    Returns: 
+        NULL ( file written to disk)
 
     ncol:
         4 = rof
@@ -101,7 +109,7 @@ def agg_by_var_fsm( ncol):
         6 = swe
         7 = gst
 
-    '''
+    """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob( "./fsm_sims/sim_FSM_pt*")
@@ -153,9 +161,13 @@ def timeseries_means_period(df, start_date, end_date):
     """
     Function to extract results vectors from simulation results. This can be entire time period some subset or sing day.
 
-    :param df: results df
-    :param start_date: start date of average (can be used to extract single day) '2020-01-01'
-    :param end_date: end date of average (can be used to extract single day) '2020-01-03'
+    Args:
+        df (dataframe): results df
+        start_date (str): start date of average (can be used to extract single day) '2020-01-01'
+        end_date (str): end date of average (can be used to extract single day) '2020-01-03'
+
+    Returns:
+        dataframe: averaged dataframe
     """
 
     #df = pd.read_csv(results_file, parse_dates=True, index_col=0)
@@ -180,7 +192,8 @@ def topo_map(df_mean):
     """
     Function to map results to toposub clusters generating map results.
 
-    :param df_mean: an array of values to map to dem same length as number of toposub clusters
+    Args:
+        df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
 
 
     Here
@@ -190,10 +203,6 @@ def topo_map(df_mean):
     https://gis.stackexchange.com/questions/163007/raster-reclassify-using-python-gdal-and-numpy
 
     """
-
-
-
-
 
     # Build a "lookup array" where the index is the original value and the value
     # is the reclassified value.  Setting all of the reclassified values is cheap
@@ -215,16 +224,9 @@ def topo_map(df_mean):
     # rasterio.plot.show(array, cmap='viridis')
     # plt.show()
 
-
-
     with rasterio.open('output_raster.tif', 'w', **profile) as dst:
         # Write to disk
         dst.write(array.astype(rasterio.int16))
-
-
-
-
-
 
     src = rasterio.open("output_raster.tif")
     plt.imshow(src.read(1), cmap='viridis')

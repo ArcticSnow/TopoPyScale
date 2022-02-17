@@ -1,11 +1,12 @@
-'''
+"""
 Functions to export topo_scale output to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...)
+
 S. Filhol, December 2021
 
 TODO;
 - export compressed netcdf ERROR!! syntax is not correct
 - SPHY forcing (grids)
-'''
+"""
 import sys
 
 import numpy as np
@@ -23,8 +24,10 @@ import multiprocessing as mproc
 def compute_scaling_and_offset(da, n=16):
     """
     Compute offset and scale factor for int conversion
-    :param da: dataarray of a given variable
-    :param n: number of digits to account for
+
+    Args:
+        da (dataarray): of a given variable
+        n (int): number of digits to account for
     """
     vmin = float(da.min().values)
     vmax = float(da.max().values)
@@ -45,16 +48,18 @@ def to_cryogrid(ds,
                 da_label=None,
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
-    '''
+    """
     Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model
-    :param ds:  xarray dataset with downscaled values from topo_scale
-    :param df_pts: pd dataframe with metadata of all point of downscaling
-    :param fname_format: str, file name for output
-    :param path: str, path where to export files
-    :param label_map: bool, export cluster_label map
-    :param da_label: (optional) dataarray containing label value for each pixel of the DEM
-    :return:
-    '''
+
+    Args:
+        ds (dataset): downscaled values from topo_scale
+        df_pts (dataframe): with metadata of all point of downscaling
+        fname_format (str): file name for output
+        path (str): path where to export files
+        label_map (bool): export cluster_label map
+        da_label (dataarray):(optional) dataarray containing label value for each pixel of the DEM
+    
+    """
     # Add logic to save maps of cluster labels in case of usage of topo_sub
     if label_map:
         if da_label is None:
@@ -113,11 +118,13 @@ def to_cryogrid(ds,
 def to_fsm(ds,
             df_pts, 
             fname_format='FSM_pt_*.tx'):
-    '''
+    """
     Function to export data for FSM.
-    :param ds: downscaled_pts,
-    :param df_pts: toposub.df_centroids,
-    :param fname_format: output format of filename
+
+    Args:
+        ds (dataset): downscaled_pts,
+        df_pts (dataframe): toposub.df_centroids,
+        fname_format (str pattern): output format of filename
 
     format is a text file with the following columns
     year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps
@@ -128,7 +135,7 @@ def to_fsm(ds,
     TODO: 
     - Check unit DONE jf
     - Check format is compatible with compiled model DONE jf
-    '''
+    """
 
     n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
@@ -158,14 +165,16 @@ def to_micromet_single_station(ds,
                                fname_format='Snowmodel_pt_*.csv',
                                na_values=-9999,
                                headers=False):
-    '''
+    """
     Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_id
-    :param ds: TopoPyScale xarray dataset, downscaled product
-    :param df_pts: pandas dataframe with point list info (x,y,elevation,slope,aspect,svf,...)
-    :param fname_format: str, filename format. point_id is inserted where * is
-    :param na_values: int, na_value default
-    :param headers: bool, add headers to file
-    :return:
+
+    Args:
+        ds (dataset): TopoPyScale xarray dataset, downscaled product
+        df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
+        fname_format (str): filename format. point_id is inserted where * is
+        na_values (int): na_value default
+        headers (bool): add headers to file
+
 
     Example of the compatible format for micromet (headers should be removed to run the model:
 
@@ -175,7 +184,7 @@ def to_micromet_single_station(ds,
      2002   10    1   12.00    101   426340.0  4411238.0  3598.0     0.92    57.77     4.80   238.29 -9999.00
      2002   10    2   12.00    101   426340.0  4411238.0  3598.0    -3.02    78.77 -9999.00 -9999.00 -9999.00
      2002   10    8   12.00    101   426340.0  4411238.0  3598.0    -5.02    88.77 -9999.00 -9999.00 -9999.00
-    '''
+    """
 
     n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
@@ -212,14 +221,16 @@ def to_crocus(ds,
               scale_precip=1,
               climate_dataset_name='ERA5',
               project_author='S. Filhol'):
-    '''
+    """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
-    :param ds: Toposcale downscaled dataset.
-    :param df_pts: pandas dataframe with point list info (x,y,elevation,slope,aspect,svf,...)
-    :param fname_format: str, filename format. point_id is inserted where * is
-    :param scale_precip: float, scaling factor to apply on precipitation. Default is 1
-    :return:
-    '''
+
+    Args:
+        ds (dataset): Toposcale downscaled dataset.
+        df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
+        fname_format (str): filename format. point_id is inserted where * is
+        scale_precip (float): scaling factor to apply on precipitation. Default is 1
+    
+    """
     # create one file per point_id
     n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
