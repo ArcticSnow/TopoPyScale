@@ -10,9 +10,10 @@ import os
 import glob
 import re
 import pandas as pd
-import numpy as  np
+import numpy as np
 import rasterio
 from matplotlib import pyplot as plt
+
 
 def fsm_nlst(nconfig, metfile, nave):
     """
@@ -56,11 +57,11 @@ def fsm_nlst(nconfig, metfile, nave):
         os.mkdir('./fsm_sims')
 
     f = open('./fsm_sims/nlst_' + METEOFILENAME + '.txt', 'w')
-    f.write('&config'+ '\n')
+    f.write('&config' + '\n')
     f.write('  nconfig = ' + str(nconfig) + '\n')
     f.write('/' + '\n')
     f.write('&drive' + '\n')
-    f.write('  met_file = '+ "'" + metfile + "'" + '\n')
+    f.write('  met_file = ' + "'" + metfile + "'" + '\n')
     f.write('  zT = 1.5' + '\n')
     f.write('  zvar = .FALSE.' + '\n')
     f.write('/' + '\n')
@@ -74,6 +75,7 @@ def fsm_nlst(nconfig, metfile, nave):
     f.write('  Nave = ' + str(int(nave)) + '\n')
     f.write('/' + '\n')
     f.close()
+
 
 def fsm_sim(nlstfile, fsm_exec):
     """
@@ -91,7 +93,8 @@ def fsm_sim(nlstfile, fsm_exec):
     os.system(fsm_exec + ' < ' + nlstfile)
     os.remove(nlstfile)
 
-def agg_by_var_fsm( ncol):
+
+def agg_by_var_fsm(ncol):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -112,23 +115,23 @@ def agg_by_var_fsm( ncol):
     """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
-    a = glob.glob( "./fsm_sims/sim_FSM_pt*")
+    a = glob.glob("./fsm_sims/sim_FSM_pt*")
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
+
         def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
+
         return sorted(l, key=alphanum_key)
 
     file_list = natural_sort(a)
 
     mydf = pd.read_csv(file_list[0], delim_whitespace=True, parse_dates=[[0, 1, 2]], header=None)
-    mydates = mydf.iloc[:,0]
-
-
+    mydates = mydf.iloc[:, 0]
 
     # can do temp subset here
-    #startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
-    #endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
+    # startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
+    # endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
 
     # all values
     startIndex = 0
@@ -151,10 +154,10 @@ def agg_by_var_fsm( ncol):
         varname = "gst"
 
     # add timestamp
-    df.insert(0, 'Datetime',mydates)
+    df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
     return df
-    #df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
+    # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
 def timeseries_means_period(df, start_date, end_date):
@@ -170,12 +173,11 @@ def timeseries_means_period(df, start_date, end_date):
         dataframe: averaged dataframe
     """
 
-    #df = pd.read_csv(results_file, parse_dates=True, index_col=0)
+    # df = pd.read_csv(results_file, parse_dates=True, index_col=0)
     df_mean = df[start_date:end_date].mean()
     return df_mean
 
-    #filename = os.path.split(results_file)[1].split('.csv')[0]
-
+    # filename = os.path.split(results_file)[1].split('.csv')[0]
 
     # pd.Series(df_mean).to_csv(
     #     "./fsm_sims/av_" +
@@ -188,6 +190,7 @@ def timeseries_means_period(df, start_date, end_date):
     #     float_format='%.3f',
     #     index=False)
 
+
 def topo_map(df_mean):
     """
     Function to map results to toposub clusters generating map results.
@@ -195,13 +198,10 @@ def topo_map(df_mean):
     Args:
         df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
 
-
     Here
     's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
-    s
-    answer:
+    s answer:
     https://gis.stackexchange.com/questions/163007/raster-reclassify-using-python-gdal-and-numpy
-
     """
 
     # Build a "lookup array" where the index is the original value and the value
@@ -232,3 +232,90 @@ def topo_map(df_mean):
     plt.imshow(src.read(1), cmap='viridis')
     plt.colorbar()
     plt.show()
+
+
+def lognormDraws_kris(n, med, s):
+    """
+    Function to generate n random draws from a log normal distribution
+
+    Args:
+        n: integer number of draws to make
+        med: median of distribrition
+        s: standard deviation of distribution
+
+    Returns:
+        Vector of draws
+    """
+    sig = np.sqrt(np.log(1 + (s ** 2 / med ** 2)))
+    draws = np.exp(np.log(med) + sig * np.random.randn(n))
+    return draws
+
+
+def normDraws(n, m, s):
+    """
+    Function to generate n random draws from a normal distribution
+
+    Args:
+        n: integer number of draws to make
+        m: mean of distribrition
+        s: standard deviation of distribution
+
+    Returns:
+        Vector of draws
+    """
+    draws = np.random.normal(m, s, n)
+    return draws
+
+
+def ensemble_gen(n):
+    """
+    Function to generate perturbabion parameters to create an ensemble of meteorological forcings
+
+    Args:
+        n: size of the ensemble (integer)
+
+    Returns:
+        array of perturbation factors of dimension n
+    """
+
+    pbias = lognormDraws_kris(n, 1, 0.5)
+    tbias = normDraws(n, 1,
+                      0.01)  # this is for K only, we convert C to K then multiply bias then K to C (roughly +/- 4 degrees)
+    swbias = normDraws(n, 1, 0.2)
+    lwbias = normDraws(n, 1, 0.2)
+
+    # uncorrelated
+    df_uncor = [pbias, tbias, swbias, lwbias]
+
+    cordat = np.array([1, 0.1, 0.3, 0.6, 0.1, 1, -0.1, 0.5, 0.3, -0.1, 1, -0.3, 0.6, 0.5, -0.3, 1])  # from Navari 2016 (not bad when compared to data), auto gen from all meteo in base run.
+
+    cordat = np.array([1, -0.1, 0.5, -0.1, -0.1, 1, -0.3, 0.3, 0.5, -0.3, 1, 0.6, -0.1, 0.3, 0.6, 1])
+    # https://stats.stackexchange.com/questions/82261/generating-correlated-distributions-with-a-certain-mean-and-standard-deviation
+    cormat = cordat.reshape(4, 4) #P,sw,lw, ta X P,sw,lw, ta  as table 1 navari 2016
+
+    # precip vals (pos 2) are the expected means sd of the lognorm distribution. we compute the mead sd of norm distribution below and substitute.
+    sd_vec = [ 0.5, 0.2, 0.1, 0.005]  # p, sw, lw, ta Navari, how to base this on the data?
+    mean_vec = np.array([0, 1, 1, 1])  # p, sw, lw, ta
+
+    mean = mean_vec
+    # empirical = true gives exact correlations in result eg https://stats.stackexchange.com/questions/82261/generating-correlated-distributions-with-a-certain-mean-and-standard-deviation
+    # res = mvrnorm(n=N, m=mean_vec, Sigma=covmat, empirical=TRUE)
+
+    # check for posite definiteness of covariance matrix
+    # stopifnot(eigen(covmat)$values > 0 )
+
+    # convert cor2cov matrix: https://stackoverflow.com/questions/39843162/conversion-between-covariance-matrix-and-correlation-matrix/39843276#39843276
+    covmat = cormat * sd_vec
+
+    cov = covmat  # diagonal covariance
+    # from here https://stackoverflow.com/questions/31666270/python-analog-of-mvrnorms-empirical-setting-when-generating-a-multivariate-dist?rq=1
+    res = np.random.multivariate_normal(mean, cov, n).T
+
+    # lognorm transform on P
+    plogN = np.exp(res[0, ])
+    tbias = res[3]  # this is for K only, we convert C to K then multiply bias then K to C
+    pbias = plogN
+    swbias = res[1, ]
+    lwbias = res[2, ]
+    df = pd.DataFrame({'pbias': pbias, 'tbias': tbias , 'swbias': swbias , 'lwbias': lwbias})
+    df.to_csv("ensemble.csv")
