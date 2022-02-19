@@ -117,8 +117,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 			pool.join()
 		else:
 			sys.exit('ERROR: surf_plev can only be surf or plev')
-	else:
-		sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
+		#else:
+		#	sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
 
 def era5_request_surf(dataset, year, month, bbox, target, product, time):
 	"""CDS surface api call
