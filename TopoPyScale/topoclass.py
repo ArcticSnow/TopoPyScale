@@ -15,7 +15,6 @@ import os
 #import configparser
 import sys
 import shutil
-
 from munch import DefaultMunch
 import pandas as pd
 import numpy as np
@@ -47,6 +46,17 @@ class Topoclass(object):
         except:
             os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
 
+        # remove output fsm directory
+        try:
+            shutil.rmtree(self.config.project.directory + '/fsm_sims/')
+        except:
+            print("no FSM directory to clean")
+
+        # remove output fsm directory
+        try:
+            shutil.rmtree(self.config.project.directory + '/ensemble/')
+        except:
+            print("no ensemble directory to clean")
         # check if tree directory exists. If not create it
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/'))):
             os.makedirs('/'.join((self.config.project.directory, 'inputs/')))
@@ -281,7 +291,7 @@ class Topoclass(object):
         """
         function to export toposcale output to FSM format
         """
-        te.to_fsm(self.downscaled_pts, self.toposub.df_centroids, fname_format)
+        te.to_fsm(self.downscaled_pts, fname_format)
 
 
     def to_crocus(self, fname_format='./outputs/CROCUS_pt_*.nc', scale_precip=1):
