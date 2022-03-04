@@ -115,9 +115,7 @@ def to_cryogrid(ds,
         print('---> File {} saved'.format(foutput))
 
 
-def to_fsm(ds,
-            df_pts, 
-            fname_format='FSM_pt_*.tx'):
+def to_fsm(ds, fname_format='FSM_pt_*.tx'):
     """
     Function to export data for FSM.
 
