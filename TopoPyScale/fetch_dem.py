@@ -44,7 +44,10 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
         print('>===== command to download DEM  from SRTM1 ====<\n')
         # os.system('eio clean')
         print(cmd_1)
-        os.system(cmd_1)
+        try:
+            os.system(cmd_1)
+        except RuntimeError:
+            return RuntimeError
         # os.system('eio clean')
 
 
