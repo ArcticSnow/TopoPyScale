@@ -119,9 +119,7 @@ def agg_by_var_fsm(ncol):
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
-
         def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
-
         return sorted(l, key=alphanum_key)
 
     file_list = natural_sort(a)
@@ -234,88 +232,5 @@ def topo_map(df_mean):
     plt.show()
 
 
-def lognormDraws_kris(n, med, s):
-    """
-    Function to generate n random draws from a log normal distribution
-
-    Args:
-        n: integer number of draws to make
-        med: median of distribrition
-        s: standard deviation of distribution
-
-    Returns:
-        Vector of draws
-    """
-    sig = np.sqrt(np.log(1 + (s ** 2 / med ** 2)))
-    draws = np.exp(np.log(med) + sig * np.random.randn(n))
-    return draws
 
 
-def normDraws(n, m, s):
-    """
-    Function to generate n random draws from a normal distribution
-
-    Args:
-        n: integer number of draws to make
-        m: mean of distribrition
-        s: standard deviation of distribution
-
-    Returns:
-        Vector of draws
-    """
-    draws = np.random.normal(m, s, n)
-    return draws
-
-
-def ensemble_gen(n):
-    """
-    Function to generate perturbabion parameters to create an ensemble of meteorological forcings
-
-    Args:
-        n: size of the ensemble (integer)
-
-    Returns:
-        array of perturbation factors of dimension n
-    """
-
-    pbias = lognormDraws_kris(n, 1, 0.5)
-    tbias = normDraws(n, 1,
-                      0.01)  # this is for K only, we convert C to K then multiply bias then K to C (roughly +/- 4 degrees)
-    swbias = normDraws(n, 1, 0.2)
-    lwbias = normDraws(n, 1, 0.2)
-
-    # uncorrelated
-    df_uncor = [pbias, tbias, swbias, lwbias]
-
-    cordat = np.array([1, 0.1, 0.3, 0.6, 0.1, 1, -0.1, 0.5, 0.3, -0.1, 1, -0.3, 0.6, 0.5, -0.3, 1])  # from Navari 2016 (not bad when compared to data), auto gen from all meteo in base run.
-
-    cordat = np.array([1, -0.1, 0.5, -0.1, -0.1, 1, -0.3, 0.3, 0.5, -0.3, 1, 0.6, -0.1, 0.3, 0.6, 1])
-    # https://stats.stackexchange.com/questions/82261/generating-correlated-distributions-with-a-certain-mean-and-standard-deviation
-    cormat = cordat.reshape(4, 4) #P,sw,lw, ta X P,sw,lw, ta  as table 1 navari 2016
-
-    # precip vals (pos 2) are the expected means sd of the lognorm distribution. we compute the mead sd of norm distribution below and substitute.
-    sd_vec = [ 0.5, 0.2, 0.1, 0.005]  # p, sw, lw, ta Navari, how to base this on the data?
-    mean_vec = np.array([0, 1, 1, 1])  # p, sw, lw, ta
-
-    mean = mean_vec
-    # empirical = true gives exact correlations in result eg https://stats.stackexchange.com/questions/82261/generating-correlated-distributions-with-a-certain-mean-and-standard-deviation
-    # res = mvrnorm(n=N, m=mean_vec, Sigma=covmat, empirical=TRUE)
-
-    # check for posite definiteness of covariance matrix
-    # stopifnot(eigen(covmat)$values > 0 )
-
-    # convert cor2cov matrix: https://stackoverflow.com/questions/39843162/conversion-between-covariance-matrix-and-correlation-matrix/39843276#39843276
-    covmat = cormat * sd_vec
-
-    cov = covmat  # diagonal covariance
-    # from here https://stackoverflow.com/questions/31666270/python-analog-of-mvrnorms-empirical-setting-when-generating-a-multivariate-dist?rq=1
-    res = np.random.multivariate_normal(mean, cov, n).T
-
-    # lognorm transform on P
-    plogN = np.exp(res[0, ])
-    tbias = res[3]  # this is for K only, we convert C to K then multiply bias then K to C
-    pbias = plogN
-    swbias = res[1, ]
-    lwbias = res[2, ]
-    df = pd.DataFrame({'pbias': pbias, 'tbias': tbias , 'swbias': swbias , 'lwbias': lwbias})
-    df.to_csv("ensemble.csv")
