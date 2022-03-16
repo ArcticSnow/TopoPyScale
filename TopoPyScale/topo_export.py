@@ -133,9 +133,13 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx'):
     TODO: 
     - Check unit DONE jf
     - Check format is compatible with compiled model DONE jf
+    - ensure ds.point_id.values always
     """
 
-    n_digits = len(str(ds.point_id.values.max()))
+    #n_digits = len(str(ds.point_id.values.max()))
+    # always set this as 3  simplifies parsing files later on
+    n_digits = 3
+
     for pt in ds.point_id.values:
         foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
