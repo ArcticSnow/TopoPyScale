@@ -1,17 +1,8 @@
-"""
-Set of functions to compare toposcale output to meteorological observation
-
-S. Filhol, December 2021
-
-1. set of plotting tools
-2. set of statistical evaluation (RMSE, Regression, biais, scaling, ...
-3. gap filling tools
-
-"""
 import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 def correct_trend(df,
                   reference_col='obs',
@@ -47,11 +38,11 @@ def correct_trend(df,
                                                                                      bias)
     print('=> Results <=')
     print(tbox)
-    metrics = {'reg':reg, 'RMSE':RMSE, 'bias':bias}
+    metrics = {'reg': reg, 'RMSE': RMSE, 'bias': bias, 'tbox': tbox}
 
     if apply_correction:
-        df[target_col+'_cor'] = df[target_col] * reg.slope + reg.intercept
-        return metrics, df[target_col+'_cor']
+        df['cor'] = df[target_col] * reg.slope + reg.intercept
+        return metrics, df['cor']
     else:
         return metrics
 
@@ -81,16 +72,16 @@ def correct_seasonal(df, reference_col='obs', target_col='dow', plot=True, apply
     se = se.iloc[np.arange(16, 16+366)].reset_index()
     if plot:
         plt.figure()
-        df.groupby(['doy'])['dif_cor'].median().plot(label='Daily median')
-        se.dif_cor.plot(label='31D mean')
+        df.groupby(['doy'])['dif'].median().plot(label='Daily median')
+        se.dif.plot(label='31D mean')
         plt.legend()
         plt.show()
 
     if apply_correction:
-        df['cor']=0
+        df['cor'] = 0
         for i, row in se.iterrows():
             df['cor'][df.doy==row.doy] = df[target_col][df.doy==row.doy] + row.dif
-        return se, df[target_col+'_cor']
+        return se, df['cor']
     else:
         return se
 
@@ -99,11 +90,11 @@ def obs_vs_downscaled(df,
                       target_col='dow',
                       trend_correction=True,
                       seasonal_correction=True,
-                      param={'xlab':'Observation [unit]',
-                             'ylab':'Downscaled [unit]',
-                             'xlim':(-20,20),
-                             'ylim':(-20,20),
-                             'title':None},
+                      param={'xlab': 'Downscaled [unit]',
+                             'ylab': 'Observation [unit]',
+                             'xlim': (-20,20),
+                             'ylim': (-20,20),
+                             'title': None},
                       plot='heatmap'):
     """
     Function to compare Observation to Downscaled for one given variable.
@@ -112,32 +103,48 @@ def obs_vs_downscaled(df,
         df (dataframe): pandas dataframe containing corresponding Observation and Downscaled values
         reference_col (str): name of the reference column. Observation
         target_col (str): name of the target column. Downscaled timeseries
-        param (dict): parameter for comaprison and plotting
+        trend_correction (bool): remove trend by applying a linear regression
+        seasonal_correction (bool): remove seasonal signal by deriving median per day of the year and computing the rolling mean over 31d on the median
+        param (dict): parameter for comparison and plotting
         plot (str): plot type: heatmap or timeseries
 
     Returns:
         dict: metrics of regression and comparison
+        dataframe: dataframe containing the seasonal corrections to applied
+        dataframe: corrected values
 
     Inspired by this study: https://reader.elsevier.com/reader/sd/pii/S0048969722015522?token=106483481240DE6206D83D9C7EC9D4990C2C3DE6F669EDE39DCB54FF7495A31CC57BDCF3370A6CA39D09BE293EACDDBB&originRegion=eu-west-1&originCreation=20220316094240
 
     """
+    metrics = None
+    se = None
 
+    if trend_correction and not seasonal_correction:
+        metrics, df['cor'] = correct_trend(df, reference_col=reference_col, target_col=target_col, apply_correction=True)
+    elif trend_correction and seasonal_correction:
+        metrics, df['cor_tmp'] = correct_trend(df, reference_col=reference_col, target_col=target_col, apply_correction=True)
+        se, df['cor'] = correct_seasonal(df, reference_col=reference_col, target_col='cor_tmp', apply_correction=True, plot=False)
+
+    elif not trend_correction and seasonal_correction:
+        se, df['cor'] = correct_seasonal(df, reference_col=reference_col, target_col=target_col, apply_correction=True, plot=False)
 
     if plot == 'heatmap':
-        # plot Obs. agains Downscaled in a 2D histogram
+        # plot Obs. against Downscaled in a 2D histogram
         plt.figure()
         ax = sns.histplot(x=df[target_col], y=df[reference_col], cmap='magma')
-
-        plt.plot(param['xlim'], np.array(param['xlim'])*reg.slope + reg.intercept, c='r', label='regression')
         plt.plot(param['xlim'], param['ylim'], c='b', linewidth=2, label='1:1 line')
-        plt.legend()
+
+        if metrics is not None:
+            plt.plot(param['xlim'], np.array(param['xlim'])*metrics['reg'].slope + metrics['reg'].intercept, c='r', label='regression')
+            props = dict(boxstyle='round', facecolor='white', edgecolor='0.8')
+            plt.text(0.03, 0.97, metrics['tbox'], transform=ax.transAxes, verticalalignment='top', bbox=props)
+        plt.legend(loc='lower right')
         plt.ylabel(param['ylab'])
         plt.xlabel(param['xlab'])
-
-        props = dict(boxstyle='round', facecolor='white', edgecolor='0.8')
-        plt.text(0.03, 0.97, tbox,transform=ax.transAxes, verticalalignment='top', bbox=props)
         plt.xlim(param['xlim'])
         plt.ylim(param['ylim'])
+        if param['title'] is not None:
+            plt.title(param['title'])
         plt.show()
 
     elif plot == 'timeseries':
@@ -151,11 +158,12 @@ def obs_vs_downscaled(df,
 
         ax[0].legend()
         ax[1].legend()
-        ax[0].set_title(param['title'])
+        if param['title'] is not None:
+            ax[0].set_title(param['title'])
         ax[0].set_ylabel(param['ylab'])
-        ax[1].set_ylim('Diff')
+        ax[1].set_ylim((-5,5))
         ax[1].set_ylabel('Diff [$^{o}C$]')
 
         plt.show()
 
-    return metrics
+    return metrics, se, df['cor']
