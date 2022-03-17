@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 import rasterio
 from matplotlib import pyplot as plt
-
+import netCDF4 as nc
 
 def fsm_nlst(nconfig, metfile, nave):
     """
@@ -158,6 +158,84 @@ def agg_by_var_fsm(ncol):
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
+def agg_by_var_fsm_ensemble(ncol, W):
+    """
+    Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
+    For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
+
+    Currently written for FSM files but could be generalised to other models.
+
+    Args:
+        ncol (int): column number of variable to extract
+    Returns: 
+        NULL ( file written to disk)
+
+    ncol:
+        4 = rof
+        5 = hs
+        6 = swe
+        7 = gst
+
+    """
+
+    # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
+    a = glob.glob("./fsm_sims/sim_ENS*_FSM_pt*")
+
+    def natural_sort(l):
+        def convert(text): return int(text) if text.isdigit() else text.lower()
+        def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
+        return sorted(l, key=alphanum_key)
+
+    file_list = natural_sort(a)
+
+    mydf = pd.read_csv(file_list[0], delim_whitespace=True, parse_dates=[[0, 1, 2]], header=None)
+    mydates = mydf.iloc[:, 0]
+
+    # can do temp subset here
+    # startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
+    # endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
+
+    # all values
+    startIndex = 0
+    endIndex = mydf.shape[0]
+
+    # efficient way to parse multifile
+    data = []
+    for file_path in file_list:
+        data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)])
+
+    myarray = np.asarray(data)  # samples x days
+    df = pd.DataFrame(myarray.transpose())
+    if ncol == 4:
+        varname = "rof"
+    if ncol == 5:
+        varname = "hs"
+    if ncol == 6:
+        varname = "swe"
+    if ncol == 7:
+        varname = "gst"
+
+    # add timestamp
+    df.insert(0, 'Datetime', mydates)
+    df = df.set_index("Datetime")
+
+    Nensembles = int(len(W))
+    Nsamples = int(len(a)/Nensembles)
+
+    dfreshape = np.array(df).reshape(len(mydates), Nensembles, Nsamples).transpose(0,2,1) # is this order correct?
+    # dfreshape= np.array(df).reshape(365, 20, 50)# .transpose(0,2,1) # is this order correct?
+    dfreshape_weight = dfreshape*W
+    dfreshape_weight_sum = dfreshape_weight.sum(2)
+
+    df = pd.DataFrame(dfreshape_weight_sum)
+    # add timestamp
+    df.insert(0, 'Datetime', mydates)
+    df = df.set_index("Datetime")
+
+    return df
+    # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
+
+
 def timeseries_means_period(df, start_date, end_date):
     """
     Function to extract results vectors from simulation results. This can be entire time period some subset or sing day.
@@ -232,5 +310,89 @@ def topo_map(df_mean):
     plt.show()
 
 
+def topo_map_forcing(ds_var):
+    """
+    Function to map forcing to toposub clusters generating gridded forcings
+
+    Args:
+        ds_var: single variable of ds eg. mp.downscaled_pts.t
+
+    Return:
+        grid_stack: stack of grids with dimension Time x Y x X
+
+    Here
+    's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
+    s answer:
+    https://gis.stackexchange.com/questions/163007/raster-reclassify-using-python-gdal-and-numpy
+    """
+
+    # Build a "lookup array" where the index is the original value and the value
+    # is the reclassified value.  Setting all of the reclassified values is cheap
+    # because the memory is only allocated once for the lookup array.
+    nclust = ds_var.shape[0]
+    lookup = np.arange(nclust, dtype=np.uint16)
+
+    # replicate looup through timedimens (dims Time X sample )
+    lookup2D = np.tile(lookup, (ds_var.shape[1], 1))
 
 
+    for i in range(0, nclust):
+        lookup2D[:,i] = ds_var[i,: ]
+
+    with rasterio.open('landform.tif') as src:
+        # Read as numpy array
+        array = src.read()
+        profile = src.profile
+
+    # Reclassify in a single operation using broadcasting
+    array2 = lookup2D.transpose()[array]
+    grid_stack = array2.squeeze().transpose(2, 0, 1) # transpose to Time x Y x X
+
+    return grid_stack
+
+    # # rasterio.plot.show(array, cmap='viridis')
+    # # plt.show()
+    #
+    # with rasterio.open('output_raster.tif', 'w', **profile) as dst:
+    #     # Write to disk
+    #     dst.write(array.astype(rasterio.int16))
+    #
+    # src = rasterio.open("output_raster.tif")
+    # plt.imshow(src.read(1), cmap='viridis')
+    # plt.colorbar()
+    # plt.show()
+
+
+
+def write_ncdf(wdir, grid_stack, var, units, longname, mytime):
+    # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
+
+    var = "T"
+    units = "K"
+    long_name = "air_temperature"
+    mytime = mp.downscaled_pts.time
+    longname = "air_temperature"
+
+    # coords
+    with rasterio.open("landform.tif") as src:
+        # bounding box of image
+        min_E, min_N, max_E, max_N = src.bounds
+        # resolution of image
+        res = src.res
+    lons = np.arange(min_E, max_E, res[0])
+    lats = np.arange(min_N, max_N, res[1])
+    lats = lats[::-1]
+
+
+    ds = xr.Dataset(
+         {"T": (("Time","y", "x"), grid_stack)},
+         coords={
+             "Time":  mytime.data,
+             "y": lats,
+             "x": lons
+
+         },
+     )
+
+    ds.attrs["units"] = "K"
+    ds.to_netcdf(long_name+".nc")
