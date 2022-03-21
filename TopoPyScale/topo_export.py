@@ -82,7 +82,7 @@ def to_cryogrid(ds,
         fo['Lin'] = ('time', ds_pt.LW.values)
         fo['p'] = ('time', ds_pt.p.values)
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
-        fo['rainfall'], fo['snowfall'] = ('time', rain / 24), ('time', snow / 24)  # convert from mm/hr to mm/day
+        fo['rainfall'], fo['snowfall'] = ('time', rain * 24), ('time', snow * 24)  # convert from mm/hr to mm/day
 
         fo.Tair.attrs = {'units':'C', 'standard_name':'Tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
         fo.q.attrs = {'units':'kg/kg', 'standard_name':'q', 'long_name':'Near Surface Specific Humidity', '_FillValue': -9999999.0}
