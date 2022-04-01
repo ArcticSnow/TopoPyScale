@@ -59,6 +59,7 @@ import multiprocessing as mproc
 g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
+
 def downscale_climate(path_forcing,
                       df_centroids,
                       horizon_da,
@@ -253,9 +254,12 @@ def downscale_climate(path_forcing,
 
         #pdb.set_trace()
         kt[~sunset] = (surf_interp.ssrd[~sunset]/pd.Timedelta('1H').seconds) / SWtoa[~sunset]     # clearness index
-        kd = np.max(0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt)), 0)    # Diffuse index
+        kt[kt < 0] = 0
+        kt[kt > 1] = 1
+        kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))    # Diffuse index
 
         surf_interp['SW'] = surf_interp.ssrd/pd.Timedelta('1H').seconds
+        surf_interp['SW'][surf_interp['SW'] < 0] = 0
         surf_interp['SW_diffuse'] = kd * surf_interp.SW
         down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
 
@@ -267,8 +271,9 @@ def downscale_climate(path_forcing,
         # Illumination angle
         down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(solar_ds.sel(point_id=row.name).zenith) *\
                                           np.sin(row.slope) * np.cos(solar_ds.sel(point_id=row.name).azimuth - row.aspect)
-        down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (down_pt.cos_illumination_tmp < 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
+        down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
         down_pt = down_pt.drop(['cos_illumination_tmp'])
+        down_pt['cos_illumination'][down_pt['cos_illumination'] < 0 ] =0
 
         # Binary shadow masks.
         horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth.isel(point_id=row.name)), method='nearest')
