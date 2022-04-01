@@ -16,6 +16,9 @@ Kristoffer Aalstad has a Matlab implementation: https://github.com/krisaalstad/T
 3. wanna develop a new feature/idea? -> create a new branch. Do the development. Merge with main branch when accomplished.
 4. Create release version when significant improvements and bug fixes have been done. Coordinate with others
 
+**Create a new release:**
+Follow procedure and conventions described in: https://www.youtube.com/watch?v=Ob9llA_QhQY
+
 And check out our Slack: tscaleworkspace.slack.com
 
 Contributors to the current version (2021) are:
