@@ -37,7 +37,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x.values, df_position.y.values)
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
 
-    times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq='1H', tz='UTC', closed='left')
+    times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, tz='UTC', closed='left')
 
 
     df_pool = pd.DataFrame()
