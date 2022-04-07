@@ -35,7 +35,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
         trans = Transformer.from_crs("epsg:" + sr_epsg, "epsg:4326", always_xy=True)
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x.values, df_position.y.values)
-    tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
+    # tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
 
     times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, tz='UTC', closed='left')
 
