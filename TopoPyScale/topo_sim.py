@@ -5,15 +5,16 @@ J. Fiddes, February 2022
 TODO:
 
 """
-
 import os
 import glob
 import re
 import pandas as pd
 import numpy as np
 import rasterio
+from rasterio.enums import Resampling
 from matplotlib import pyplot as plt
-import netCDF4 as nc
+import xarray as xr
+import dask.array as da
 
 def fsm_nlst(nconfig, metfile, nave):
     """
@@ -310,7 +311,7 @@ def topo_map(df_mean):
     plt.show()
 
 
-def topo_map_forcing(ds_var):
+def topo_map_forcing(ds_var, round_dp,mydtype, new_res = 50):
     """
     Function to map forcing to toposub clusters generating gridded forcings
 
@@ -330,27 +331,59 @@ def topo_map_forcing(ds_var):
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
     nclust = ds_var.shape[0]
-    lookup = np.arange(nclust, dtype=np.uint16)
+    lookup = np.arange(nclust, dtype=mydtype)
 
     # replicate looup through timedimens (dims Time X sample )
     lookup2D = np.tile(lookup, (ds_var.shape[1], 1))
 
-
     for i in range(0, nclust):
-        lookup2D[:,i] = ds_var[i,: ]
+        lookup2D[:, i] = ds_var[i, :]
 
-    with rasterio.open('landform.tif') as src:
-        # Read as numpy array
+    from osgeo import gdal
+    inputFile = "landform.tif"
+    outputFile = "landform_newres.tif"
+
+    xres = new_res
+    yres = new_res
+    resample_alg = gdal.GRA_NearestNeighbour
+
+    ds = gdal.Warp(destNameOrDestDS=outputFile,
+                   srcDSOrSrcDSTab=inputFile,
+                   format='GTiff',
+                   xRes=xres,
+                   yRes=yres,
+                   resampleAlg=resample_alg)
+    del ds
+
+
+    with rasterio.open("landform_newres.tif") as src:
+
+        # new res
+        # upscale_factor = src.res[0] / new_res
+        # # resample data to target shape
+        # array = src.read(
+        #     out_shape=(
+        #         src.count,
+        #         int(src.height * upscale_factor),
+        #         int(src.width * upscale_factor)
+        #     ),
+        #     resampling=Resampling.nearest
+        # )
+
+    # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out))
         array = src.read()
-        profile = src.profile
+        min_E, min_N, max_E, max_N = src.bounds
+        lons = np.arange(min_E, max_E, src.res[0])
+        lats = np.arange(min_N, max_N, src.res[1])
+        lats = lats[::-1]
 
-    # Reclassify in a single operation using broadcasting
-    array2 = lookup2D.transpose()[array]
-    grid_stack = array2.squeeze().transpose(2, 0, 1) # transpose to Time x Y x X
+    array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
+    grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , round_dp)# transpose to Time x Y x X
 
-    return grid_stack
+    return grid_stack, lats, lons
 
     # # rasterio.plot.show(array, cmap='viridis')
+
     # # plt.show()
     #
     # with rasterio.open('output_raster.tif', 'w', **profile) as dst:
@@ -364,35 +397,45 @@ def topo_map_forcing(ds_var):
 
 
 
-def write_ncdf(wdir, grid_stack, var, units, longname, mytime):
+def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydtype):
     # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
 
-    var = "T"
-    units = "K"
-    long_name = "air_temperature"
-    mytime = mp.downscaled_pts.time
-    longname = "air_temperature"
-
-    # coords
-    with rasterio.open("landform.tif") as src:
-        # bounding box of image
-        min_E, min_N, max_E, max_N = src.bounds
-        # resolution of image
-        res = src.res
-    lons = np.arange(min_E, max_E, res[0])
-    lats = np.arange(min_N, max_N, res[1])
-    lats = lats[::-1]
+    # # coords
+    # with rasterio.open("landform.tif") as src:
+    #     # bounding box of image
+    #     min_E, min_N, max_E, max_N = src.bounds
+    #     # resolution of image
+    #     res = src.res
+    # lons = np.arange(min_E, max_E, res[0])
+    # lats = np.arange(min_N, max_N, res[1])
+    # lats = lats[::-1]
 
 
     ds = xr.Dataset(
-         {"T": (("Time","y", "x"), grid_stack)},
+         {var: (("Time", "northing", "easting"), grid_stack)},
          coords={
              "Time":  mytime.data,
-             "y": lats,
-             "x": lons
+             "northing": lats,
+             "easting": lons
 
          },
      )
 
-    ds.attrs["units"] = "K"
-    ds.to_netcdf(long_name+".nc")
+    ds.attrs["units"] = units  # add epsg here
+    if var == "ta":
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+    else:
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+
+    # comp = dict(zlib=True, complevel=5)
+    # encoding = {var: comp for var in ds.data_vars}
+    # ds.to_netcdf(filename, encoding=encoding)
+    #     {"my_variable": {"dtype": "int16", "scale_factor": 0.1, "zlib": True}, ...}
+
+    # compression experiment (array 357 x 250 x 100)
+    # complevel, time(s), size (mb)
+    # 5, 2.75, 11.4
+    # 6, 6.45, 10.7
+    # 9, 50.08, 10.0
+
+    # Conclusion: use 5!
