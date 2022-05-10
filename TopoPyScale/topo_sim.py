@@ -311,12 +311,13 @@ def topo_map(df_mean):
     plt.show()
 
 
-def topo_map_forcing(ds_var, round_dp,mydtype, new_res = 50):
+def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
     """
     Function to map forcing to toposub clusters generating gridded forcings
 
     Args:
         ds_var: single variable of ds eg. mp.downscaled_pts.t
+        new_res: optional parameter to resample output to (in units of projection
 
     Return:
         grid_stack: stack of grids with dimension Time x Y x X
@@ -343,20 +344,25 @@ def topo_map_forcing(ds_var, round_dp,mydtype, new_res = 50):
     inputFile = "landform.tif"
     outputFile = "landform_newres.tif"
 
-    xres = new_res
-    yres = new_res
-    resample_alg = gdal.GRA_NearestNeighbour
+    # check if new_res is declared - if so resample landform and therefore output
+    if new_res is not None:
+        xres = new_res
+        yres = new_res
+        resample_alg = gdal.GRA_NearestNeighbour
 
-    ds = gdal.Warp(destNameOrDestDS=outputFile,
-                   srcDSOrSrcDSTab=inputFile,
-                   format='GTiff',
-                   xRes=xres,
-                   yRes=yres,
-                   resampleAlg=resample_alg)
-    del ds
+        ds = gdal.Warp(destNameOrDestDS=outputFile,
+                       srcDSOrSrcDSTab=inputFile,
+                       format='GTiff',
+                       xRes=xres,
+                       yRes=yres,
+                       resampleAlg=resample_alg)
+        del ds
+        landformfile = "landform_newres.tif"
+    else:
+        landformfile = "landform.tif"
 
 
-    with rasterio.open("landform_newres.tif") as src:
+    with rasterio.open(landformfile) as src:
 
         # new res
         # upscale_factor = src.res[0] / new_res
@@ -378,8 +384,10 @@ def topo_map_forcing(ds_var, round_dp,mydtype, new_res = 50):
         lats = lats[::-1]
 
     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
-    grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , round_dp)# transpose to Time x Y x X
-
+    try:
+        grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , round_dp)# transpose to Time x Y x X
+    except: # the case where we gen annual grids (no time dimension)
+        grid_stack = np.round(array2.squeeze(), round_dp)  # transpose to Time x Y x X
     return grid_stack, lats, lons
 
     # # rasterio.plot.show(array, cmap='viridis')
@@ -410,19 +418,28 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
     # lats = np.arange(min_N, max_N, res[1])
     # lats = lats[::-1]
 
+    try:
+        ds = xr.Dataset(
+             {var: (("Time", "northing", "easting"), grid_stack)},
+             coords={
+                 "Time":  mytime.data,
+                 "northing": lats,
+                 "easting": lons
 
-    ds = xr.Dataset(
-         {var: (("Time", "northing", "easting"), grid_stack)},
-         coords={
-             "Time":  mytime.data,
-             "northing": lats,
-             "easting": lons
+             },
+         )
+    except:
+        ds = xr.Dataset(
+            {var: (("northing", "easting"), grid_stack)},
+            coords={
+                "northing": lats,
+                "easting": lons
 
-         },
-     )
+            },
+        )
 
     ds.attrs["units"] = units  # add epsg here
-    if var == "ta":
+    if var == "ta" or var=="tas" or var=="TA":
         ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     else:
         ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
