@@ -92,6 +92,30 @@ def downscale_climate(path_forcing,
     ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=tvec.values)
     ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=tvec.values)
 
+    # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
+    # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
+    # https://code.mpimet.mpg.de/boards/1/topics/8961
+    # https://confluence.ecmwf.int/display/CUSF/ERA5+CDS+requests+which+return+a+mixture+of+ERA5+and+ERA5T+data
+    try:
+        # in case of there being an expver dimension and it has two or more values, select first value
+        expverN = ds_plev["expver"].values[0]
+        # create new datset when this dimoension only has a single value
+        ds_plev = ds_plev.sel(expver=expverN)
+        # finally this drops the coordinate
+        ds_plev = ds_plev.drop("expver")
+    except:
+        print("No ERA5T  PRESSURE data present with addirional dimension <expver>")
+
+    try:
+        # in case of there being an expver dimension and it has two or more values, select first value
+        expverN = ds_surf["expver"].values[0]
+        # create new datset when this dimoension only has a single value
+        ds_surf = ds_surf.sel(expver=expverN)
+        # finally this drops the coordinate
+        ds_surf = ds_surf.drop("expver")
+    except:
+        print("No ERA5T SURFACE data present with addirional dimension <expver>")
+
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
     nxv,  nyv = np.meshgrid(ds_surf.longitude.values, ds_surf.latitude.values)
@@ -223,6 +247,7 @@ def downscale_climate(path_forcing,
 
         down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
         surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
+
 
         # ======== Longwave downward radiation ===============
         x1, x2 = 0.43, 5.7
