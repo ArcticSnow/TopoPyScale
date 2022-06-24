@@ -268,7 +268,7 @@ def timeseries_means_period(df, start_date, end_date):
     #     index=False)
 
 
-def topo_map(df_mean):
+def topo_map(df_mean, outname="outputmap.tif"):
     """
     Function to map results to toposub clusters generating map results.
 
@@ -301,11 +301,11 @@ def topo_map(df_mean):
     # rasterio.plot.show(array, cmap='viridis')
     # plt.show()
 
-    with rasterio.open('output_raster.tif', 'w', **profile) as dst:
+    with rasterio.open(outname, 'w', **profile) as dst:
         # Write to disk
         dst.write(array.astype(rasterio.int16))
 
-    src = rasterio.open("output_raster.tif")
+    src = rasterio.open(outname)
     plt.imshow(src.read(1), cmap='viridis')
     plt.colorbar()
     plt.show()
@@ -440,9 +440,9 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
 
     ds.attrs["units"] = units  # add epsg here
     if var == "ta" or var=="tas" or var=="TA":
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     else:
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
 
     # comp = dict(zlib=True, complevel=5)
     # encoding = {var: comp for var in ds.data_vars}
