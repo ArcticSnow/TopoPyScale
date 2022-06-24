@@ -146,7 +146,7 @@ def compute_dem_param(dem_file):
     svf = viewf.viewf(np.double(dem_arr), dx)[0]
     print('---> Sky-view-factor finished in {}s'.format(np.round(time.time()-start_time), 0))
     ds['slope'] = (["y", "x"], slope)
-    ds['aspect'] = (["y", "x"], np.deg2rad(aspect - 180))
+    ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
     ds['aspect_cos'] = (["y", "x"], np.cos(np.deg2rad(aspect)))
     ds['aspect_sin'] = (["y", "x"], np.sin(np.deg2rad(aspect)))
     ds['svf'] = (["y", "x"], svf)
