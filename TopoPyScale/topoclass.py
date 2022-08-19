@@ -335,3 +335,26 @@ class Topoclass(object):
                                    'add_offset':add_offset}})
         self.downscaled_pts.to_netcdf(file_out, encoding=encod_dict)
         print('---> File {} saved'.format(file_out))
+
+
+    def to_musa(self, 
+                fname_met='musa_met.nc', 
+                fname_labels='musa_labels.nc'):
+        """
+        function to export TopoPyScale output in a format compatible with MuSa
+        MuSa: https://github.com/ealonsogzl/MuSA
+
+        Args:
+            fname: filename of the netcdf 
+        """
+
+        te.to_musa(ds=self.downscaled_pts,
+            df_pts=self.toposub.df_centroids,
+            da_label=self.toposub.ds_param.cluster_labels,
+            fname_met=fname_met,
+            fname_labels=fname_labels,
+            path=self.config.project.directory + 'outputs/',
+            climate_dataset_name=self.config.project.climate,
+            project_authors=self.config.project.authors
+            )
+        print('---> File ready for MuSa {} saved'.format(fname_met))

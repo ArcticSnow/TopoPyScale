@@ -39,6 +39,68 @@ def compute_scaling_and_offset(da, n=16):
 
     return scale_factor, add_offset
 
+def to_musa(ds,
+            df_pts,
+            da_label,
+            fname_met='musa.nc',
+            fname_labels='musa_labels.nc',
+            path='outputs/',
+            climate_dataset_name='ERA5',
+            project_authors='S. Filhol'
+            ):
+    """
+    Function to export to MuSa standard.
+    Args:
+        ds:
+        df_pts:
+        da_labels:
+        fname:
+        path:
+
+    Returns:
+
+    """
+
+    da_label.to_netcdf(path + fname_labels)
+
+    fo = xr.Dataset()
+    fo = ds[['t', 'q', 'p', 'LW', 'SW', 'ws', 'tp']]
+    fo['rh'] = (('point_id', 'time'), mu.q_2_rh(fo.t.values, fo.p.values, fo.q.values))
+    fo['precip'] = (('point_id', 'time'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
+    fo = fo.drop_vars(['q', 'tp'])
+    fo = fo.rename({'t':'tair', 'SW':'sw', 'LW':'lw'})
+
+    fo.tair.attrs = {'units':'C', 'standard_name':'tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
+    fo.rh.attrs = {'units':'kg/kg', 'standard_name':'rh', 'long_name':'Near Surface Relative Humidity', '_FillValue': -9999999.0}
+    fo.ws.attrs = {'units':'m/s', 'standard_name':'ws', 'long_name':'Wind Speed', '_FillValue': -9999999.0}
+    fo.precip.attrs = {'units':'mm/s', 'standard_name':'precip', 'long_name':'Precipitation', '_FillValue': -9999999.0}
+    fo.sw.attrs = {'units':'W/m2', 'standard_name':'sw', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+    fo.lw.attrs = {'units':'W/m2', 'standard_name':'lw', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+    fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
+
+    fo.attrs = {'title':'Forcing for MuSa assimilation scheme',
+                'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
+                'creator_name':'Dataset created by {}'.format(project_authors),
+                'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+    encod_dict = {}
+    for var in list(fo.keys()):
+        scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
+        encod_dict.update({var:{"zlib": True,
+                               "complevel": 9,
+                               'dtype':'int16',
+                               'scale_factor':scale_factor,
+                               'add_offset':add_offset}})
+    fo['latitude'] = df_pts.latitude
+    fo['longitude'] = df_pts.longitude
+    fo['elevation'] = df_pts.elevation
+    fo.latitude.attrs = {'units':'deg', 'standard_name':'latitude', 'long_name':'Cluster latitude'}
+    fo.longitude.attrs = {'units':'deg', 'standard_name':'longitude', 'long_name':'Cluster longitude'}
+    fo.elevation.attrs = {'units':'m', 'standard_name':'elevation', 'long_name':'Cluster elevation'}
+    fo.to_netcdf(path + fname_met, encoding=encod_dict)
+    print('---> File {} saved'.format(fname_met))
+
+
+
 
 def to_cryogrid(ds,
                 df_pts,
