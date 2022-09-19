@@ -36,6 +36,8 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
     Args:
         precip (array): 1D array, precipitation in mm/hr
         temp (arrray): 1D array, air temperature in K
+        rh (array): 1D array, relative humidity in %
+        sp (array): 1D array, surface pressure in Pa
         tair_low_thresh (float): lower temperature threshold under which all precip is snow. degree K
         tair_high_thresh (float): higher temperature threshold under which all precip is rain. degree K
 
@@ -59,7 +61,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
             print('ERROR: Relative humidity is required')
         else:
             # Compute probability of snowfall
-            psnow = 1/(1 + np.exp(-10.04 + 1.41 * temp + 0.09 * rh))
+            psnow = 1/(1 + np.exp(-10.04 + 1.41 * (temp + 273.15) + 0.09 * rh))
 
             # sample random realization based on probability
             snow_IO = np.array([func(xi) for xi in psnow])
@@ -73,7 +75,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
         else:
 
             # Compute probability of snowfall
-            psnow = 1/(1 + exp(-12.80 + 1.41 * temp + 0.09 *rhz + 0.03 * (sp / 1000)))
+            psnow = 1/(1 + exp(-12.80 + 1.41 * (temp+273.15) + 0.09 * rh + 0.03 * (sp / 1000)))
 
             # sample random realization based on probability
             snow_IO = np.array([func(xi) for xi in psnow])

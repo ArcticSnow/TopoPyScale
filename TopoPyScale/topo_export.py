@@ -108,6 +108,7 @@ def to_cryogrid(ds,
                 path='outputs/',
                 label_map=False,
                 da_label=None,
+                snow_partition_method='jennings2018_trivariate',
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
     """
@@ -143,7 +144,8 @@ def to_cryogrid(ds,
         fo['Sin'] = ('time', ds_pt.SW.values)
         fo['Lin'] = ('time', ds_pt.LW.values)
         fo['p'] = ('time', ds_pt.p.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
+        rh = q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         fo['rainfall'], fo['snowfall'] = ('time', rain * 24), ('time', snow * 24)  # convert from mm/hr to mm/day
 
         fo.Tair.attrs = {'units':'C', 'standard_name':'Tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}

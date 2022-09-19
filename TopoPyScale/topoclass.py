@@ -283,6 +283,7 @@ class Topoclass(object):
                        fname_format=fname_format,
                        path=path,
                        label_map=label_map,
+                       snow_partition_method='jennings2018_trivariate',
                        da_label=da_label,
                        climate_dataset_name=self.config.project.climate,
                        project_author=self.config.project.authors)
