@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.random import default_rng
 
 var_era_plevel = {
     'temp': 't',
@@ -28,13 +29,13 @@ eps0 = 0.622  # Ratio of molecular weight of water and dry air [-]
 S0 = 1370    # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
 
 
-def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15):
+def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low_thresh=272.15, tair_high_thresh=274.15):
     """
     Function to partition precipitation in between rain vs snow based on temperature threshold and mixing around freezing
 
     Args:
         precip (array): 1D array, precipitation in mm/hr
-        temp (arrray): 1S array, air temperature in K
+        temp (arrray): 1D array, air temperature in K
         tair_low_thresh (float): lower temperature threshold under which all precip is snow. degree K
         tair_high_thresh (float): higher temperature threshold under which all precip is rain. degree K
 
@@ -42,9 +43,42 @@ def partition_snow(precip, temp, tair_low_thresh=272.15, tair_high_thresh=274.15
         array: 1D array rain
         array: 1D array snow
     """
-    snow = precip * ((temp <= tair_low_thresh) +
-                     ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
-                     (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
+    def func(x):
+            '''
+            Function to choose if it snows or not randomly based on probability
+            '''
+            return rng.choice([0,1], 1, p=[1-x, x])
+
+    if method == 'continuous':
+        snow = precip * ((temp <= tair_low_thresh) +
+                         ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
+                         (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
+
+    elif method == 'Jennings2018_bivariate':
+        if rh is None:
+            print('ERROR: Relative humidity is required')
+        else:
+            # Compute probability of snowfall
+            psnow = 1/(1 + np.exp(-10.04 + 1.41 * temp + 0.09 * rh))
+
+            # sample random realization based on probability
+            snow_IO = np.array([func(xi) for xi in psnow])
+            snow = precip * snow_IO
+
+    elif method == 'Jennings2018_triivariate':
+        if rh is None:
+            print('ERROR: Relative humidity is required')
+        elif sp is None:
+            print('ERROR: Surface pressure is required')
+        else:
+
+            # Compute probability of snowfall
+            psnow = 1/(1 + exp(-12.80 + 1.41 * temp + 0.09 *rhz + 0.03 * (sp / 1000)))
+
+            # sample random realization based on probability
+            snow_IO = np.array([func(xi) for xi in psnow])
+            snow = precip * snow_IO
+
 
     rain = precip - snow
 

@@ -7,7 +7,7 @@ S. Filhol, December 2021
 import matplotlib.pyplot as plt
 import numpy as np
 
-def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.RdBu_r):
+def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.RdBu_r, **kwargs):
     """
     Function to plot unclustered downscaled points given that each point corresponds to a cluster label
 
@@ -17,6 +17,7 @@ def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.Rd
         time_step:
         var:
         cmap:
+        **kwargs: kwargs to pass to imshow() in dict format.
 
     TODO:
     - if temperature, divergent colorscale around 0degC
@@ -28,6 +29,6 @@ def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.Rd
     val = np.reshape(dc[var].values, ds_param.elevation.shape)
 
     plt.figure()
-    plt.imshow(val)
+    plt.imshow(val, kwargs)
     plt.colorbar()
     plt.show()

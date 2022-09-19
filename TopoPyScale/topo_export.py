@@ -42,7 +42,7 @@ def compute_scaling_and_offset(da, n=16):
 def to_musa(ds,
             df_pts,
             da_label,
-            fname_met='musa.nc',
+            fname_met='musa_met.nc',
             fname_labels='musa_labels.nc',
             path='outputs/',
             climate_dataset_name='ERA5',
