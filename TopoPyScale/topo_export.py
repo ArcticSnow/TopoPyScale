@@ -112,7 +112,7 @@ def to_cryogrid(ds,
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
     """
-    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model
+    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model.
 
     Args:
         ds (dataset): downscaled values from topo_scale
@@ -179,7 +179,7 @@ def to_cryogrid(ds,
         print('---> File {} saved'.format(foutput))
 
 
-def to_fsm(ds, fname_format='FSM_pt_*.tx'):
+def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='jennings2018_trivariate'):
     """
     Function to export data for FSM.
 
@@ -187,6 +187,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx'):
         ds (dataset): downscaled_pts,
         df_pts (dataframe): toposub.df_centroids,
         fname_format (str pattern): output format of filename
+        snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
 
     format is a text file with the following columns
     year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps
@@ -214,7 +215,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx'):
         df['hr']  = pd.to_datetime(ds_pt.time.values).hour
         df['SW'] = ds_pt.SW.values
         df['LW'] = ds_pt.LW.values
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         df['snowfall'] = snow / 3600
         df['rainfall'] = rain / 3600
         df['Tair'] = np.round(ds_pt.t.values, 2)
@@ -286,7 +287,8 @@ def to_crocus(ds,
               fname_format='CROCUS_pt_*.nc',
               scale_precip=1,
               climate_dataset_name='ERA5',
-              project_author='S. Filhol'):
+              project_author='S. Filhol',
+              snow_partition_method='jennings2018_trivariate'):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
 
@@ -295,6 +297,9 @@ def to_crocus(ds,
         df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
         fname_format (str): filename format. point_id is inserted where * is
         scale_precip (float): scaling factor to apply on precipitation. Default is 1
+        climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
+        project_author (str): name of project author(s)
+        snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
     
     """
     # create one file per point_id
@@ -312,7 +317,7 @@ def to_crocus(ds,
         df['xwind'] = ds_pt.u.values
         df['ywind'] = ds_pt.v.values
         df['precip'] = ds_pt.tp.values / 3600 * scale_precip
-        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values)
+        df['Rainf'], df['Snowf'] = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
 
         # Derive variables: Q- humidity, WD - wind direction (deg), and WS
         df['Qair'] = ds_pt.q.values

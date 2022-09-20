@@ -261,7 +261,6 @@ class Topoclass(object):
             surf_plev='plev',
             plevels=self.config.climate[self.config.project.climate].plevels,
             )
-            
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
         """

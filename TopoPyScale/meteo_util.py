@@ -31,13 +31,17 @@ S0 = 1370    # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF'
 
 def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low_thresh=272.15, tair_high_thresh=274.15):
     """
-    Function to partition precipitation in between rain vs snow based on temperature threshold and mixing around freezing
+    Function to partition precipitation in between rain vs snow based on temperature threshold and mixing around freezing.
+    The methods to partition snow/rain precipitation are:
+    - continuous: method implemented into Cryogrid.
+    - jennings2018 methods are from the publication Jennings et al (2018). DOI: https://doi.org/10.1038/s41467-018-03629-7
 
     Args:
         precip (array): 1D array, precipitation in mm/hr
         temp (arrray): 1D array, air temperature in K
         rh (array): 1D array, relative humidity in %
         sp (array): 1D array, surface pressure in Pa
+        method (str): 'continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'.
         tair_low_thresh (float): lower temperature threshold under which all precip is snow. degree K
         tair_high_thresh (float): higher temperature threshold under which all precip is rain. degree K
 
@@ -67,7 +71,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
             snow_IO = np.array([func(xi) for xi in psnow])
             snow = precip * snow_IO
 
-    elif method == 'Jennings2018_triivariate':
+    elif method == 'Jennings2018_trivariate':
         if rh is None:
             print('ERROR: Relative humidity is required')
         elif sp is None:
@@ -80,7 +84,8 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
             # sample random realization based on probability
             snow_IO = np.array([func(xi) for xi in psnow])
             snow = precip * snow_IO
-
+    else:
+        print(f"ERROR, {method} is not available. Choose from: ['continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'] ")
 
     rain = precip - snow
 
