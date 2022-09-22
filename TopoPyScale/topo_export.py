@@ -7,6 +7,7 @@ TODO;
 - export compressed netcdf ERROR!! syntax is not correct
 - SPHY forcing (grids)
 """
+import pdb
 import sys
 
 import numpy as np
@@ -58,17 +59,23 @@ def to_musa(ds,
         path:
 
     Returns:
-
+    flip diemnsion to time, point_id, dummy
+    dummy needs to be an integer
     """
 
     da_label.to_netcdf(path + fname_labels)
 
     fo = xr.Dataset()
-    fo = ds[['t', 'q', 'p', 'LW', 'SW', 'ws', 'tp']]
-    fo['rh'] = (('point_id', 'time'), mu.q_2_rh(fo.t.values, fo.p.values, fo.q.values))
-    fo['precip'] = (('point_id', 'time'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
+    fo['tair'] = ds['t'].T
+    fo['q'] = ds['q'].T
+    fo['p'] = ds['p'].T
+    fo['lw'] = ds['LW'].T
+    fo['sw'] = ds['SW'].T
+    fo['ws'] = ds['ws'].T
+    fo['tp'] = ds['tp'].T
+    fo['rh'] = (('time', 'point_id'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
+    fo['precip'] = (('time', 'point_id'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
     fo = fo.drop_vars(['q', 'tp'])
-    fo = fo.rename({'t':'tair', 'SW':'sw', 'LW':'lw'})
 
     fo.tair.attrs = {'units':'C', 'standard_name':'tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
     fo.rh.attrs = {'units':'kg/kg', 'standard_name':'rh', 'long_name':'Near Surface Relative Humidity', '_FillValue': -9999999.0}
@@ -144,7 +151,7 @@ def to_cryogrid(ds,
         fo['Sin'] = ('time', ds_pt.SW.values)
         fo['Lin'] = ('time', ds_pt.LW.values)
         fo['p'] = ('time', ds_pt.p.values)
-        rh = q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         fo['rainfall'], fo['snowfall'] = ('time', rain * 24), ('time', snow * 24)  # convert from mm/hr to mm/day
 

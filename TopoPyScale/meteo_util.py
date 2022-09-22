@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.random import default_rng
+import pdb
 
 var_era_plevel = {
     'temp': 't',
@@ -49,29 +50,31 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
         array: 1D array rain
         array: 1D array snow
     """
+    #
     def func(x):
             '''
             Function to choose if it snows or not randomly based on probability
             '''
+            rng = default_rng()
             return rng.choice([0,1], 1, p=[1-x, x])
 
-    if method == 'continuous':
+    if method.lower() == 'continuous':
         snow = precip * ((temp <= tair_low_thresh) +
                          ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
                          (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
 
-    elif method == 'Jennings2018_bivariate':
+    elif method.lower() == 'jennings2018_bivariate':
         if rh is None:
             print('ERROR: Relative humidity is required')
         else:
             # Compute probability of snowfall
-            psnow = 1/(1 + np.exp(-10.04 + 1.41 * (temp + 273.15) + 0.09 * rh))
+            psnow = 1/(1 + np.exp(-10.04 + 1.41 * (temp - 273.15) + 0.09 * rh))
 
             # sample random realization based on probability
-            snow_IO = np.array([func(xi) for xi in psnow])
+            snow_IO = np.array([func(xi) for xi in psnow]).flatten()
             snow = precip * snow_IO
 
-    elif method == 'Jennings2018_trivariate':
+    elif method.lower() == 'jennings2018_trivariate':
         if rh is None:
             print('ERROR: Relative humidity is required')
         elif sp is None:
@@ -79,16 +82,15 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
         else:
 
             # Compute probability of snowfall
-            psnow = 1/(1 + exp(-12.80 + 1.41 * (temp+273.15) + 0.09 * rh + 0.03 * (sp / 1000)))
+            psnow = 1/(1 + np.exp(-12.80 + 1.41 * (temp - 273.15) + 0.09 * rh + 0.03 * (sp / 1000)))
 
             # sample random realization based on probability
-            snow_IO = np.array([func(xi) for xi in psnow])
+            snow_IO = np.array([func(xi) for xi in psnow]).flatten()
             snow = precip * snow_IO
     else:
         print(f"ERROR, {method} is not available. Choose from: ['continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'] ")
 
     rain = precip - snow
-
     return rain, snow
 
 def q_2_rh(temp, pressure, qair):
