@@ -4,12 +4,9 @@ Functions to export topo_scale output to formats compatible with existing models
 S. Filhol, December 2021
 
 TODO;
-- export compressed netcdf ERROR!! syntax is not correct
 - SPHY forcing (grids)
 """
-import pdb
 import sys
-
 import numpy as np
 import pandas as pd
 import datetime as dt
@@ -18,8 +15,6 @@ from scipy import io
 from TopoPyScale import meteo_util as mu
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
-
-
 
 
 def compute_scaling_and_offset(da, n=16):
