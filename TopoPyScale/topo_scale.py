@@ -104,7 +104,7 @@ def downscale_climate(path_forcing,
         # finally this drops the coordinate
         ds_plev = ds_plev.drop("expver")
     except:
-        print("No ERA5T  PRESSURE data present with addirional dimension <expver>")
+        print("No ERA5T  PRESSURE data present with additional dimension <expver>")
 
     try:
         # in case of there being an expver dimension and it has two or more values, select first value
@@ -114,7 +114,7 @@ def downscale_climate(path_forcing,
         # finally this drops the coordinate
         ds_surf = ds_surf.drop("expver")
     except:
-        print("No ERA5T SURFACE data present with addirional dimension <expver>")
+        print("No ERA5T SURFACE data present with additional dimension <expver>")
 
     # ============ Convert lat lon to projected coordinates ==================
     trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)

@@ -6,6 +6,7 @@ S. Filhol, December 2021
 TODO;
 - SPHY forcing (grids)
 """
+import pdb
 import sys
 import numpy as np
 import pandas as pd
@@ -54,8 +55,7 @@ def to_musa(ds,
         path:
 
     Returns:
-    flip diemnsion to time, point_id, dummy
-    dummy needs to be an integer
+        Save downscaled timeseries and toposub cluster mapping
     """
 
     da_label.to_netcdf(path + fname_labels)
@@ -71,6 +71,7 @@ def to_musa(ds,
     fo['rh'] = (('time', 'point_id'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
     fo['precip'] = (('time', 'point_id'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
     fo = fo.drop_vars(['q', 'tp'])
+    fo = fo[['tair', 'rh', 'p', 'lw', 'sw', 'ws', 'precip']].expand_dims({'dummy': 1}, axis=2)
 
     fo.tair.attrs = {'units':'C', 'standard_name':'tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
     fo.rh.attrs = {'units':'kg/kg', 'standard_name':'rh', 'long_name':'Near Surface Relative Humidity', '_FillValue': -9999999.0}
@@ -92,12 +93,14 @@ def to_musa(ds,
                                'dtype':'int16',
                                'scale_factor':scale_factor,
                                'add_offset':add_offset}})
-    fo['latitude'] = df_pts.latitude
-    fo['longitude'] = df_pts.longitude
-    fo['elevation'] = df_pts.elevation
+
+    fo['latitude'] = (('point_id'), df_pts.latitude.values)
+    fo['longitude'] = (('point_id'), df_pts.longitude.values)
+    fo['elevation'] = (('point_id'), df_pts.elevation.values)
     fo.latitude.attrs = {'units':'deg', 'standard_name':'latitude', 'long_name':'Cluster latitude'}
     fo.longitude.attrs = {'units':'deg', 'standard_name':'longitude', 'long_name':'Cluster longitude'}
     fo.elevation.attrs = {'units':'m', 'standard_name':'elevation', 'long_name':'Cluster elevation'}
+
     fo.to_netcdf(path + fname_met, encoding=encod_dict)
     print('---> File {} saved'.format(fname_met))
 
