@@ -26,6 +26,7 @@ from TopoPyScale import fetch_dem as fd
 from TopoPyScale import solar_geom as sg
 from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_export as te
+from TopoPyScale import topo_plot as tpl
 
 class Topoclass(object):
     """
@@ -106,6 +107,7 @@ class Topoclass(object):
         print('\t----------------------------')
 
         self.toposub = self.Toposub()
+        self.plot = self.Plotting()
         self.solar_ds = None
         self.horizon_da = None
 
@@ -116,10 +118,60 @@ class Topoclass(object):
         if self.config.project.climate.lower() == 'era5':
             self.get_era5()
 
+    class Plotting:
+        '''
+        Sub-Class with plotting functions for topoclass object
+        '''
+        def __int__(self):
+            self.ds_param = None
+            self.ds_down = None
+
+        def map_variable(self,
+                         time_step=1,
+                         var='t',
+                         cmap=plt.cm.RdBu_r,
+                         hillshade=True,
+                         **kwargs):
+
+            # add logic to check ds_down and ds_param exist.
+            tpl.map_unclustered(self.ds_down,
+                         self.ds_param,
+                         time_step=time_step,
+                         var=var,
+                         cmap=cmap,
+                         hillshade=hillshade,
+                         **kwargs)
+        def map_terrain(self, var='elevation', hillshade=True, **kwargs):
+            tpl.map_terrain(self.ds_param,
+                            var=var,
+                            hillshade=hillshade,
+                            **kwargs
+                            )
+
+        def map_center_clusters(self,
+                                background_var='elevation',
+                                cmap=plt.cm.viridis,
+                                hillshade=True
+                                **kwargs):
+            print('to be implemented')
+
+        def cluster_map(self):
+            print('To be implemented')
+
+        def timeseries(self):
+            print('To be implemented')
+
+        def solar_geom(self):
+            print('To be implemented')
+
+        def horizon(self):
+            print('To be implemented')
+
+
 
     class Toposub:
         """
-        Class to initialize variables to store TopoSub variables
+        Sub-Class to initialize variables to store TopoSub variables
         """
         def __init__(self):
             self.dem_path = None
@@ -175,6 +227,9 @@ class Topoclass(object):
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
+        # update plotting class variable
+        self.plot.ds_param = self.toposub.ds_param
+
     def extract_topo_param(self):
         """
         Function to select which 
@@ -224,6 +279,9 @@ class Topoclass(object):
                                         self.config.toposcale.LW_terrain_contribution,
                                         self.config.climate[self.config.project.climate].timestep)
         self.downscaled_pts = ta.read_downscaled()
+
+        # update plotting class variables
+        self.plot.ds_down = self.downscaled_pts
 
 
             
