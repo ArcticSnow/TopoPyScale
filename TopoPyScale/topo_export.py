@@ -4,11 +4,9 @@ Functions to export topo_scale output to formats compatible with existing models
 S. Filhol, December 2021
 
 TODO;
-- export compressed netcdf ERROR!! syntax is not correct
 - SPHY forcing (grids)
 """
 import sys
-
 import numpy as np
 import pandas as pd
 import datetime as dt
@@ -17,8 +15,6 @@ from scipy import io
 from TopoPyScale import meteo_util as mu
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
-
-
 
 
 def compute_scaling_and_offset(da, n=16):
@@ -39,6 +35,74 @@ def compute_scaling_and_offset(da, n=16):
 
     return scale_factor, add_offset
 
+def to_musa(ds,
+            df_pts,
+            da_label,
+            fname_met='musa_met.nc',
+            fname_labels='musa_labels.nc',
+            path='outputs/',
+            climate_dataset_name='ERA5',
+            project_authors='S. Filhol'
+            ):
+    """
+    Function to export to MuSa standard.
+    Args:
+        ds:
+        df_pts:
+        da_labels:
+        fname:
+        path:
+
+    Returns:
+    flip diemnsion to time, point_id, dummy
+    dummy needs to be an integer
+    """
+
+    da_label.to_netcdf(path + fname_labels)
+
+    fo = xr.Dataset()
+    fo['tair'] = ds['t'].T
+    fo['q'] = ds['q'].T
+    fo['p'] = ds['p'].T
+    fo['lw'] = ds['LW'].T
+    fo['sw'] = ds['SW'].T
+    fo['ws'] = ds['ws'].T
+    fo['tp'] = ds['tp'].T
+    fo['rh'] = (('time', 'point_id'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
+    fo['precip'] = (('time', 'point_id'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
+    fo = fo.drop_vars(['q', 'tp'])
+
+    fo.tair.attrs = {'units':'C', 'standard_name':'tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
+    fo.rh.attrs = {'units':'kg/kg', 'standard_name':'rh', 'long_name':'Near Surface Relative Humidity', '_FillValue': -9999999.0}
+    fo.ws.attrs = {'units':'m/s', 'standard_name':'ws', 'long_name':'Wind Speed', '_FillValue': -9999999.0}
+    fo.precip.attrs = {'units':'mm/s', 'standard_name':'precip', 'long_name':'Precipitation', '_FillValue': -9999999.0}
+    fo.sw.attrs = {'units':'W/m2', 'standard_name':'sw', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+    fo.lw.attrs = {'units':'W/m2', 'standard_name':'lw', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+    fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
+
+    fo.attrs = {'title':'Forcing for MuSa assimilation scheme',
+                'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
+                'creator_name':'Dataset created by {}'.format(project_authors),
+                'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+    encod_dict = {}
+    for var in list(fo.keys()):
+        scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
+        encod_dict.update({var:{"zlib": True,
+                               "complevel": 9,
+                               'dtype':'int16',
+                               'scale_factor':scale_factor,
+                               'add_offset':add_offset}})
+    fo['latitude'] = df_pts.latitude
+    fo['longitude'] = df_pts.longitude
+    fo['elevation'] = df_pts.elevation
+    fo.latitude.attrs = {'units':'deg', 'standard_name':'latitude', 'long_name':'Cluster latitude'}
+    fo.longitude.attrs = {'units':'deg', 'standard_name':'longitude', 'long_name':'Cluster longitude'}
+    fo.elevation.attrs = {'units':'m', 'standard_name':'elevation', 'long_name':'Cluster elevation'}
+    fo.to_netcdf(path + fname_met, encoding=encod_dict)
+    print('---> File {} saved'.format(fname_met))
+
+
+
 
 def to_cryogrid(ds,
                 df_pts,
@@ -46,10 +110,11 @@ def to_cryogrid(ds,
                 path='outputs/',
                 label_map=False,
                 da_label=None,
+                snow_partition_method='jennings2018_trivariate',
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
     """
-    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model
+    Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model.
 
     Args:
         ds (dataset): downscaled values from topo_scale
@@ -81,7 +146,8 @@ def to_cryogrid(ds,
         fo['Sin'] = ('time', ds_pt.SW.values)
         fo['Lin'] = ('time', ds_pt.LW.values)
         fo['p'] = ('time', ds_pt.p.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         fo['rainfall'], fo['snowfall'] = ('time', rain * 24), ('time', snow * 24)  # convert from mm/hr to mm/day
 
         fo.Tair.attrs = {'units':'C', 'standard_name':'Tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
@@ -115,7 +181,7 @@ def to_cryogrid(ds,
         print('---> File {} saved'.format(foutput))
 
 
-def to_fsm(ds, fname_format='FSM_pt_*.tx'):
+def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='jennings2018_trivariate'):
     """
     Function to export data for FSM.
 
@@ -123,6 +189,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx'):
         ds (dataset): downscaled_pts,
         df_pts (dataframe): toposub.df_centroids,
         fname_format (str pattern): output format of filename
+        snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
 
     format is a text file with the following columns
     year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps
@@ -150,7 +217,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx'):
         df['hr']  = pd.to_datetime(ds_pt.time.values).hour
         df['SW'] = ds_pt.SW.values
         df['LW'] = ds_pt.LW.values
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         df['snowfall'] = snow / 3600
         df['rainfall'] = rain / 3600
         df['Tair'] = np.round(ds_pt.t.values, 2)
@@ -222,7 +289,8 @@ def to_crocus(ds,
               fname_format='CROCUS_pt_*.nc',
               scale_precip=1,
               climate_dataset_name='ERA5',
-              project_author='S. Filhol'):
+              project_author='S. Filhol',
+              snow_partition_method='jennings2018_trivariate'):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
 
@@ -231,6 +299,9 @@ def to_crocus(ds,
         df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
         fname_format (str): filename format. point_id is inserted where * is
         scale_precip (float): scaling factor to apply on precipitation. Default is 1
+        climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
+        project_author (str): name of project author(s)
+        snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
     
     """
     # create one file per point_id
@@ -248,7 +319,7 @@ def to_crocus(ds,
         df['xwind'] = ds_pt.u.values
         df['ywind'] = ds_pt.v.values
         df['precip'] = ds_pt.tp.values / 3600 * scale_precip
-        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values)
+        df['Rainf'], df['Snowf'] = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
 
         # Derive variables: Q- humidity, WD - wind direction (deg), and WS
         df['Qair'] = ds_pt.q.values

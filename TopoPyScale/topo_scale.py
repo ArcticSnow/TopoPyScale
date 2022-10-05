@@ -137,7 +137,7 @@ def downscale_climate(path_forcing,
     n_digits = len(str(df_centroids.index.max()))
 
     for i, row in df_centroids.iterrows():
-        print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(row.name, df_centroids.index.max()))
+        print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(row.name+1, df_centroids.index.max()+1))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
         ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
@@ -243,7 +243,7 @@ def downscale_climate(path_forcing,
     ds_list = []
     ds_paths = []
     for i, row in df_centroids.iterrows():
-        print('Downscaling LW, SW for point: {} out of {}'.format(row.name, df_centroids.index.max()))
+        print('Downscaling LW, SW for point: {} out of {}'.format(row.name+1, df_centroids.index.max()+1))
 
         down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
         surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')

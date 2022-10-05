@@ -261,7 +261,6 @@ class Topoclass(object):
             surf_plev='plev',
             plevels=self.config.climate[self.config.project.climate].plevels,
             )
-            
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
         """
@@ -283,6 +282,7 @@ class Topoclass(object):
                        fname_format=fname_format,
                        path=path,
                        label_map=label_map,
+                       snow_partition_method='jennings2018_trivariate',
                        da_label=da_label,
                        climate_dataset_name=self.config.project.climate,
                        project_author=self.config.project.authors)
@@ -335,3 +335,26 @@ class Topoclass(object):
                                    'add_offset':add_offset}})
         self.downscaled_pts.to_netcdf(file_out, encoding=encod_dict)
         print('---> File {} saved'.format(file_out))
+
+
+    def to_musa(self, 
+                fname_met='musa_met.nc', 
+                fname_labels='musa_labels.nc'):
+        """
+        function to export TopoPyScale output in a format compatible with MuSa
+        MuSa: https://github.com/ealonsogzl/MuSA
+
+        Args:
+            fname: filename of the netcdf 
+        """
+
+        te.to_musa(ds=self.downscaled_pts,
+            df_pts=self.toposub.df_centroids,
+            da_label=self.toposub.ds_param.cluster_labels,
+            fname_met=fname_met,
+            fname_labels=fname_labels,
+            path=self.config.project.directory + 'outputs/',
+            climate_dataset_name=self.config.project.climate,
+            project_authors=self.config.project.authors
+            )
+        print('---> File ready for MuSa {} saved'.format(fname_met))
