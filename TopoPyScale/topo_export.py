@@ -302,7 +302,7 @@ def to_crocus(ds,
         climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
         project_author (str): name of project author(s)
         snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
-    
+
     """
     # create one file per point_id
     n_digits = len(str(ds.point_id.values.max()))
@@ -402,3 +402,151 @@ def to_crocus(ds,
                      'UREF': {'dtype': 'float64'}})
         print('---> File {} saved'.format(foutput))
 
+def to_snowpack(ds, fname_format='smet_pt_*.tx'):
+    """
+    Function to export data for snowpack model as smet.
+    https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf
+
+    Args:
+        ds (dataset): downscaled_pts,
+        df_pts (dataframe): toposub.df_centroids,
+        fname_format (str pattern): output format of filename
+
+    format is a text file with the following columns (coulumns can vary)
+
+    SMET 1.1 ASCII
+    [HEADER]
+    station_id       = meteoc1
+    station_name     = WFJ2
+    latitude         = 46.829650
+    longitude        = 9.809328
+    altitude         = 2539.0
+    easting          = 780851.861845
+    northing         = 189232.420554
+    epsg             = 21781
+    nodata           = -999
+    tz               = 0
+    plot_unit        = time K - m/s ° W/m2 W/m2 kg/m2 -
+    plot_description = time air_temperature relative_humidity wind_velocity wind_direction incoming_short_wave_radiation incoming_long_wave_radiation water_equivalent_precipitation_sum -
+    plot_color       = 0x000000 0x8324A4 0x50CBDB 0x297E24 0x64DD78 0xF9CA25 0xD99521 0x2431A4 0xA0A0A0
+    plot_min         = -999 253.15 0 0 0 0 150 0 -999
+    plot_max         = -999 283.15 1 30 360 1400 400 20 -999
+    fields           = timestamp TA RH VW DW ISWR ILWR PSUM PINT
+    [DATA]
+    2014-09-01T00:00:00   271.44   1.000    5.9   342     67    304  0.000    0.495
+    2014-09-01T01:00:00   271.50   0.973    6.7   343    128    300  0.166    0.663
+    2014-09-01T02:00:00   271.46   0.968    7.4   343    244    286  0.197    0.788
+    2014-09-01T03:00:00   271.41   0.975    7.6   345    432    273  0.156    0.626
+    2014-09-01T04:00:00   271.57   0.959    7.8   347    639    249  0.115    0.462
+    2014-09-01T05:00:00   271.52   0.965    8.2   350    632    261  0.081    0.323
+
+    """
+
+    #n_digits = len(str(ds.point_id.values.max()))
+    # always set this as 3  simplifies parsing files later on
+    n_digits = 3
+
+    for pt in ds.point_id.values:
+        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_id=pt).copy()
+        df = pd.DataFrame()
+        df['timestamp'] = ds_pt.time
+        df['Tair'] = np.round(ds_pt.t.values, 2)
+        df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+        df['VW'] = ds_pt.ws.values
+        df['DW'] = ds_pt.wd.values
+        df['SW'] = ds_pt.SW.values
+        df['LW'] = ds_pt.LW.values
+        df['PSUM'] = ds_pt.tp.values
+
+        df.to_csv(foutput, index=False, header=False, sep=' ')
+        print('---> File {} saved'.format(foutput))
+
+        # if headers:
+        #     header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
+        #     with open(foutput, 'r+') as f:
+        #         f_data = f.read()
+        #         f.seek(0,0)
+        #         f.write(header + '\n' + f_data)
+        # print('---> File {} saved'.format(foutput))
+
+def to_geotop(ds, fname_format='geotop_pt_*.txt'):
+    """
+    Function to export data for snowpack model as smet.
+    https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf
+
+    Args:
+        ds (dataset): downscaled_pts,
+        df_pts (dataframe): toposub.df_centroids,
+        fname_format (str pattern): output format of filename
+
+
+    Date format = DD/MM/YYYY hh:mm
+    Air temperature = Degree Celsius
+    Relative Humidity = %
+    Radiations components such SWin, SWout, LWin = W/m2
+    Precipitation = mm/hr
+    Wind speed = m/s
+    Wind direction = degree
+    Air pressure = mbar
+
+    The format of the file is in *.txt format.
+
+
+
+    format is a text file with the following columns (coulumns can vary)
+
+    Date,AirT,WindS,WindDr,RelHum,Swglob,Swout,Lwin,Lwout,Iprec,AirPressure
+    01/09/2015 00:00,1.5,0.7,165,59,0,0,223.9,315.5,0,581.02897
+    01/09/2015 01:00,1.2,0.6,270,59,0,0,261.8,319,0,581.02897
+    01/09/2015 02:00,0.8,0.5,152,61,0,0,229.9,312.2,0,581.02897
+    01/09/2015 03:00,0.8,0.5,270,60,0,0,226.1,310.8,0,581.02897
+    01/09/2015 04:00,0.3,0.8,68,60,0,0,215.3,309.6,0,581.02897
+    01/09/2015 05:00,0.2,0.6,270,62,0,0,230.2,309.1,0,581.02897
+    01/09/2015 06:00,0.3,0.6,35,62,0,0,222.8,306.7,0,581.02897
+    01/09/2015 07:00,-0.2,0.3,270,65,0,0,210,305.5,0,581.02897
+    01/09/2015 08:00,0,0.6,52,59,114,23,218.3,312.3,0,581.02897
+    01/09/2015 09:00,1.9,1.5,176,57,173,35,220.2,322.8,0,581.02897
+    01/09/2015 10:00,3.4,1.9,183,47,331,67,245.8,372.6,0,581.02897
+
+
+    """
+
+    #n_digits = len(str(ds.point_id.values.max()))
+    # always set this as 3  simplifies parsing files later on
+    n_digits = 3
+
+    for pt in ds.point_id.values:
+        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_id=pt).copy()
+        df = pd.DataFrame()
+        dt = pd.to_datetime(ds_pt.time.values)
+        df['Date'] = dt.strftime( "%d/%m/%Y %H:%M")
+        # df['Date'] = str(pd.to_datetime(ds_pt.time.values).day) +   "/" + str(pd.to_datetime(ds_pt.time.values).month) +  "/" + str(pd.to_datetime(ds_pt.time.values).year) +  " " + str(pd.to_datetime(ds_pt.time.values).hour) + ":" + str(pd.to_datetime(ds_pt.time.values).minute)
+        df['AirT'] = np.round(ds_pt.t.values-273.15, 2)
+        df['RelHum'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
+        df['WindS'] = ds_pt.ws.values
+        df['WIndDr'] = ds_pt.wd.values * 180/np.pi
+        df['Swglob'] = ds_pt.SW.values
+        df['Lwin'] = ds_pt.LW.values
+        df['Iprec'] = ds_pt.tp.values
+
+        df.to_csv(foutput, index=False, header=False, sep=',', quoting=csv.QUOTE_NONE)
+
+
+        header = 'Date, AirT, RelHum, WindS, WindDr, Swglob, Lwin, Iprec'
+        with open(foutput, 'r+') as f:
+            f_data = f.read()
+            f.seek(0,0)
+            f.write(header + '\n' + f_data)
+        print('---> File {} saved'.format(foutput))
+
+
+
+        # if headers:
+        #     header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
+        #     with open(foutput, 'r+') as f:
+        #         f_data = f.read()
+        #         f.seek(0,0)
+        #         f.write(header + '\n' + f_data)
+        # print('---> File {} saved'.format(foutput))
