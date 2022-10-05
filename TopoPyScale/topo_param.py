@@ -18,7 +18,7 @@ from topocalc import horizon
 import time
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
-
+import os
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
     """
     Simple function to convert a list fo poitn from one projection to another oen using PyProj
@@ -141,10 +141,20 @@ def compute_dem_param(dem_file):
     dy = ds.y.diff('y').median().values
     dem_arr = ds.elevation.values
     slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
-    print('---> Computing sky view factor')
-    start_time = time.time()
-    svf = viewf.viewf(np.double(dem_arr), dx)[0]
-    print('---> Sky-view-factor finished in {}s'.format(np.round(time.time()-start_time), 0))
+
+
+    if not os.path.exists('inputs/dem/svf.npy'):
+        print('---> Computing sky view factor')
+        start_time = time.time()
+        svf = viewf.viewf(np.double(dem_arr), dx)[0]
+        np.save('inputs/dem/svf.npy', svf)
+        print('---> Sky-view-factor finished in {}s'.format(np.round(time.time() - start_time), 0))
+
+    else:
+        print('SVF file exists and loaded')
+        svf = np.load('inputs/dem/svf.npy')
+
+
     ds['slope'] = (["y", "x"], slope)
     ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
     ds['aspect_cos'] = (["y", "x"], np.cos(np.deg2rad(aspect)))
