@@ -27,6 +27,7 @@ from TopoPyScale import solar_geom as sg
 from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_export as te
 from TopoPyScale import topo_plot as tpl
+from TopoPyScale import topo_obs as tpo
 
 class Topoclass(object):
     """
@@ -319,6 +320,28 @@ class Topoclass(object):
             surf_plev='plev',
             plevels=self.config.climate[self.config.project.climate].plevels,
             )
+
+    def get_WMO_observations(self):
+        """
+        Function to download and parse in-situ data from WMO database
+        """
+        lonW = self.config.project.extent.get('lonW') - 0.4
+        lonE = self.config.project.extent.get('lonE') + 0.4
+        latN = self.config.project.extent.get('latN') + 0.4
+        latS = self.config.project.extent.get('latS') - 0.4
+
+        df = pd.DataFrame()
+        df['dates'] = pd.date_range(self.config.project.start,
+                                    self.config.project.end, freq='M')
+	    df['month'] = df.dates.dt.month
+	    df['year'] = df.dates.dt.year
+
+        bbox = [latS, lonW, latN, lonE]
+        tpo.fetch_WMO_insitu_observations(list(df.year.unique()),
+                                          list(df.month.unique()))
+        tpo.parse_WMO_insitu_observations()
+
+
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc'):
         """

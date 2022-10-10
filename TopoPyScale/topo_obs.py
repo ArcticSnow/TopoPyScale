@@ -3,10 +3,13 @@ Tools to download and compare Downsclaed timeseries to observation
 All observation in folder inputs/obs/
 S. Filhol December 2021
 """
-
-import requests, os
+import requests, os, glob
 import pandas as pd
 import numpy as np
+import xarray as xr
+import warnings
+warnings.filterwarnings("ignore")
+
 
 
 def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST_API_CLIENTID')):
@@ -85,9 +88,11 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     ds = df.xs('value', axis=1, level=0).to_xarray()
     return ds
 
-def fetch_meteo_insitu_observations(year, month, bbox, target_path):
-    '''
-    Function to download in-situ data from land surface in-situ observations from Copernicus.
+
+def
+def fetch_WMO_insitu_observations(year, month, bbox, target_path='./inputs/observations'):
+    """
+    Function to download WMO in-situ data from land surface in-situ observations from Copernicus.
     https://cds.climate.copernicus.eu/cdsapp#!/dataset/insitu-observations-surface-land?tab=overview
 
     Args:
@@ -100,11 +105,19 @@ def fetch_meteo_insitu_observations(year, month, bbox, target_path):
         Store to disk the dataset as zip file
 
     TODO:
-        - [ ] test function
-        - [ ] save data in individual files for each stations. store either as csv or netcdf (better)
-    '''
+        - [x] test function
+        - [ ] check if can download large extent at once or need multiple requests?
+        - [x] save data in individual files for each stations. store either as csv or netcdf (better)
+    """
     import cdsapi
     import zipfile
+
+    try:
+        if not os.path.isdir(target_path):
+            os.makedirs(target_path)
+    except:
+        print(f'ERROR: path "{target_path}" does not exist')
+        return False
 
     c = cdsapi.Client()
 
@@ -131,22 +144,87 @@ def fetch_meteo_insitu_observations(year, month, bbox, target_path):
 				 '25', '26', '27',
 				 '28', '29', '30',
 				 '31'
-				 ]
+				 ],
             'area': bbox,
             'format': 'zip',
         },
-        target_path + os.sep() + 'download.zip')
-    print('---> download complete")
+        target_path + os.sep + 'download.zip')
+    print('---> download complete')
 
     try:
-        with zipfile.ZipFile(target) as z:
-            z.extractall()
+        with zipfile.ZipFile(target_path + os.sep + 'download.zip') as z:
+            z.extractall(path=target_path)
             print('---> Observation extracted')
-            os.remove(target)
+            os.remove(target_path + os.sep + 'download.zip')
+            print(f'\t Stored in file {}')
+            return
     except:
-        print(f'ERROR: Invalid target file\n\t target file used: {target}')
+        print(f'ERROR: Invalid target path\n\t target path used: {target_path}')
 
 
+def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/surf*subset_csv*.csv', path='./inputs/observations'):
+    """
+    Function to parse WMO files formated from CDS database. parse in single station file
+
+    Args:
+        fname:
+        file_pattern:
+        path:
+
+    Returns:
+
+    """
+
+    if fname is None and file_pattern is not None:
+        flist = glob.glob(file_pattern)
+        if len(flist) == 1:
+            fname = flist[0]
+        else:
+            pmp = 'List of files available: \n'
+            for i, file in enumerate(flist):
+                pmp += f'\t- [{i}] {file} \n'
+
+            res = input(pmp + 'Pick file to load:\n')
+            fname = flist[int(res)]
+    elif fname is None and file_pattern is None:
+        print('ERROR: choose filename or provide file naming pattern')
+        return False
+
+    df = pd.read_csv(fname)
+    for stn in df.station_name.unique():
+        dd = df.loc[df.station_name==stn]
+        dd['time'] = pd.to_datetime(dd.date_time, utc=True)
+        de = dd.pivot(index='time', columns=['observed_variable'],values=[ 'observation_value'])
+        de = de.droplevel(level=0, axis=1)
+
+        ds = xr.Dataset(coords=dict(
+            time = de.index,
+            reference_time = pd.to_datetime('1970-01-01T00:00:00Z'),
+            latitude = dd.latitude.unique()[0],
+            longitude = dd.longitude.unique()[0],
+            station_name = stn,
+            station_id = dd.primary_station_id.unique()[0]
+        ))
+        ds.time.attrs = {'units':'ns'}
+        for col in de.columns:
+            ds[col] = ('time', de[col])
+            ds[col].attrs = {'units': dd.loc[dd.observed_variable==col].units.unique()[0], 'standard_name': col}
+
+        stn_f = stn.replace(' ', '_')
+        foutput = f'{stn_f}_{dd.time.min().strftime("%Y%m%d")}_{dd.time.max().strftime("%Y%m%d")}.nc'
+        ds.to_netcdf(path + os.sep + foutput)
+        print(f'---> Observation data for station {stn} parsed into file \n\t {foutput}')
+        dd = None
+        de = None
+        ds = None
+
+
+
+
+    # add here logic
+
+
+    # store each observation by stations with
 
 
 
