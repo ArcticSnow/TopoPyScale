@@ -72,7 +72,7 @@ class Topoclass(object):
         if not os.path.exists('/'.join((self.config.project.directory, 'outputs/tmp/'))):
             os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')))
 
-        self.config.dem.path = self.config.project.directory + 'inputs/dem/'
+        self.config.dem.path = self.config.project.directory + '/inputs/dem/'
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/dem/'))):
             os.makedirs('/'.join((self.config.project.directory, 'inputs/dem')))
 
@@ -393,6 +393,18 @@ class Topoclass(object):
                                    'add_offset':add_offset}})
         self.downscaled_pts.to_netcdf(file_out, encoding=encod_dict)
         print('---> File {} saved'.format(file_out))
+
+    def to_snowpack(self, fname_format='./outputs/smet_pt_*.smet'):
+        """
+        function to export toposcale output to FSM format
+        """
+        te.to_snowpack(self.downscaled_pts, fname_format)
+
+    def to_geotop(self, fname_format='./outputs/meteo_*.txt'):
+        """
+        function to export toposcale output to FSM format
+        """
+        te.to_geotop(self.downscaled_pts, fname_format)
 
 
     def to_musa(self, 
