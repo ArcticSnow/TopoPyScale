@@ -85,6 +85,72 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     ds = df.xs('value', axis=1, level=0).to_xarray()
     return ds
 
+def fetch_meteo_insitu_observations(year, month, bbox, target_path):
+    '''
+    Function to download in-situ data from land surface in-situ observations from Copernicus.
+    https://cds.climate.copernicus.eu/cdsapp#!/dataset/insitu-observations-surface-land?tab=overview
+
+    Args:
+        year (str or list): year(s) to download
+        month (str or list): month(s) to download
+        bbox (list): bonding box in lat-lon [lat_south, lon_west, lat_north, lon_east]
+        target (str): filename
+
+    Returns:
+        Store to disk the dataset as zip file
+
+    TODO:
+        - [ ] test function
+        - [ ] save data in individual files for each stations. store either as csv or netcdf (better)
+    '''
+    import cdsapi
+    import zipfile
+
+    c = cdsapi.Client()
+
+    c.retrieve(
+        'insitu-observations-surface-land',
+        {
+            'time_aggregation': 'sub_daily',
+            'variable': [
+                'air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
+                'dew_point_temperature', 'wind_from_direction', 'wind_speed'
+            ],
+            'usage_restrictions': 'restricted',
+            'data_quality': 'passed',
+            'year': year,
+            'month': month,
+            'day': ['01', '02', '03',
+				 '04', '05', '06',
+				 '07', '08', '09',
+				 '10', '11', '12',
+				 '13', '14', '15',
+				 '16', '17', '18',
+				 '19', '20', '21',
+				 '22', '23', '24',
+				 '25', '26', '27',
+				 '28', '29', '30',
+				 '31'
+				 ]
+            'area': bbox,
+            'format': 'zip',
+        },
+        target_path + os.sep() + 'download.zip')
+    print('---> download complete")
+
+    try:
+        with zipfile.ZipFile(target) as z:
+            z.extractall()
+            print('---> Observation extracted')
+            os.remove(target)
+    except:
+        print(f'ERROR: Invalid target file\n\t target file used: {target}')
+
+
+
+
+
+
 
 if __name__ == "__main__":
 	#=================== code ========================

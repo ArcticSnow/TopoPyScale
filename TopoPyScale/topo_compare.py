@@ -1,3 +1,5 @@
+import os
+
 import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
