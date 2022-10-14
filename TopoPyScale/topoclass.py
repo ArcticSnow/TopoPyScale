@@ -152,7 +152,7 @@ class Topoclass(object):
         def map_center_clusters(self,
                                 background_var='elevation',
                                 cmap=plt.cm.viridis,
-                                hillshade=True
+                                hillshade=True,
                                 **kwargs):
             print('to be implemented')
 
