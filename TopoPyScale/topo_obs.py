@@ -89,7 +89,6 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     return ds
 
 
-def
 def fetch_WMO_insitu_observations(year, month, bbox, target_path='./inputs/observations'):
     """
     Function to download WMO in-situ data from land surface in-situ observations from Copernicus.
@@ -156,7 +155,7 @@ def fetch_WMO_insitu_observations(year, month, bbox, target_path='./inputs/obser
             z.extractall(path=target_path)
             print('---> Observation extracted')
             os.remove(target_path + os.sep + 'download.zip')
-            print(f'\t Stored in file {}')
+            print(f'\t Stored in file {target_path + os.sep + "download.zip2"}')
             return
     except:
         print(f'ERROR: Invalid target path\n\t target path used: {target_path}')
