@@ -333,8 +333,8 @@ class Topoclass(object):
         df = pd.DataFrame()
         df['dates'] = pd.date_range(self.config.project.start,
                                     self.config.project.end, freq='M')
-	    df['month'] = df.dates.dt.month
-	    df['year'] = df.dates.dt.year
+        df['month'] = df.dates.dt.month
+        df['year'] = df.dates.dt.year
 
         bbox = [latS, lonW, latN, lonE]
         tpo.fetch_WMO_insitu_observations(list(df.year.unique()),
