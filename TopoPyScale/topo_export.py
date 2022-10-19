@@ -322,6 +322,7 @@ def to_crocus(ds,
         df['xwind'] = ds_pt.u.values
         df['ywind'] = ds_pt.v.values
         df['precip'] = ds_pt.tp.values / 3600 * scale_precip
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         df['Rainf'], df['Snowf'] = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
 
         # Derive variables: Q- humidity, WD - wind direction (deg), and WS
