@@ -113,7 +113,7 @@ def to_cryogrid(ds,
                 path='outputs/',
                 label_map=False,
                 da_label=None,
-                snow_partition_method='jennings2018_trivariate',
+                snow_partition_method='continuous',
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
     """
@@ -184,7 +184,7 @@ def to_cryogrid(ds,
         print('---> File {} saved'.format(foutput))
 
 
-def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='jennings2018_trivariate'):
+def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     """
     Function to export data for FSM.
 
@@ -293,7 +293,7 @@ def to_crocus(ds,
               scale_precip=1,
               climate_dataset_name='ERA5',
               project_author='S. Filhol',
-              snow_partition_method='jennings2018_trivariate'):
+              snow_partition_method='continuous'):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
 
