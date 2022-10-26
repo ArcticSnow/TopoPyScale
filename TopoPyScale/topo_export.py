@@ -321,9 +321,9 @@ def to_crocus(ds,
         df['HUMREL'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)*100
         df['xwind'] = ds_pt.u.values
         df['ywind'] = ds_pt.v.values
-        df['precip'] = ds_pt.tp.values / 3600 * scale_precip
+        df['precip'] = ds_pt.tp.values / 3600 * scale_precip  # convert from mm/hr to mm/s
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        df['Rainf'], df['Snowf'] = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
+        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
 
         # Derive variables: Q- humidity, WD - wind direction (deg), and WS
         df['Qair'] = ds_pt.q.values
