@@ -5,9 +5,54 @@ S. Filhol, December 2021
 """
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import LightSource
+
 import numpy as np
 
-def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.RdBu_r, **kwargs):
+def map__terrain(ds_param,
+                     var='elevation',
+                     hillshade=True,
+                     ):
+    '''
+    Function to plot terrain parameters
+
+    Args:
+        ds_param:
+        var:
+        hillshade:
+
+    Returns:
+
+    '''
+    plt.figure()
+    alpha=1
+    if hillshade:
+        ls = LightSource(azdeg=315, altdeg=45)
+        shade = ls.hillshade(ds_param.elevation.values, vert_exag=0.5,
+                             dx=ds_param.x.diff('x')[0].values,
+                             dy=ds_param.y.diff('y')[0].values,
+                             fraction=1.0)
+
+
+        plt.imshow(shade,
+                   extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
+                   cmap=plt.cm.gray)
+        alpha=0.5
+    plt.imshow(ds_param[var],
+               cmap=cmap,
+               extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
+               alpha=alpha, **kwargs)
+    plt.colorbar(label=var)
+    plt.show()
+
+
+def map_unclustered(ds_down,
+                         ds_param,
+                         time_step=1,
+                         var='t',
+                         cmap=plt.cm.RdBu_r,
+                         hillshade=True,
+                         **kwargs):
     """
     Function to plot unclustered downscaled points given that each point corresponds to a cluster label
 
@@ -29,6 +74,22 @@ def plot_unclustered_map(ds_down, ds_param, time_step=1, var='t', cmap=plt.cm.Rd
     val = np.reshape(dc[var].values, ds_param.elevation.shape)
 
     plt.figure()
-    plt.imshow(val, kwargs)
+    alpha=1
+    if hillshade:
+        ls = LightSource(azdeg=315, altdeg=45)
+        shade = ls.hillshade(ds_param.elevation.values, vert_exag=0.5,
+                             dx=ds_param.x.diff('x')[0].values,
+                             dy=ds_param.y.diff('y')[0].values,
+                             fraction=1.0)
+
+
+        plt.imshow(shade,
+                   extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
+                   cmap=plt.cm.gray)
+        alpha=0.5
+    plt.imshow(val,
+               cmap=cmap,
+               extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
+               alpha=alpha, **kwargs)
     plt.colorbar()
     plt.show()

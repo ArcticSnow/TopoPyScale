@@ -6,6 +6,7 @@ S. Filhol, December 2021
 TODO;
 - SPHY forcing (grids)
 """
+import pdb
 import sys
 import numpy as np
 import pandas as pd
@@ -54,8 +55,7 @@ def to_musa(ds,
         path:
 
     Returns:
-    flip diemnsion to time, point_id, dummy
-    dummy needs to be an integer
+        Save downscaled timeseries and toposub cluster mapping
     """
 
     da_label.to_netcdf(path + fname_labels)
@@ -71,6 +71,7 @@ def to_musa(ds,
     fo['rh'] = (('time', 'point_id'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
     fo['precip'] = (('time', 'point_id'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
     fo = fo.drop_vars(['q', 'tp'])
+    fo = fo[['tair', 'rh', 'p', 'lw', 'sw', 'ws', 'precip']].expand_dims({'dummy': 1}, axis=2)
 
     fo.tair.attrs = {'units':'C', 'standard_name':'tair', 'long_name':'Near Surface Air Temperature', '_FillValue': -9999999.0}
     fo.rh.attrs = {'units':'kg/kg', 'standard_name':'rh', 'long_name':'Near Surface Relative Humidity', '_FillValue': -9999999.0}
@@ -92,12 +93,14 @@ def to_musa(ds,
                                'dtype':'int16',
                                'scale_factor':scale_factor,
                                'add_offset':add_offset}})
-    fo['latitude'] = df_pts.latitude
-    fo['longitude'] = df_pts.longitude
-    fo['elevation'] = df_pts.elevation
+
+    fo['latitude'] = (('point_id'), df_pts.latitude.values)
+    fo['longitude'] = (('point_id'), df_pts.longitude.values)
+    fo['elevation'] = (('point_id'), df_pts.elevation.values)
     fo.latitude.attrs = {'units':'deg', 'standard_name':'latitude', 'long_name':'Cluster latitude'}
     fo.longitude.attrs = {'units':'deg', 'standard_name':'longitude', 'long_name':'Cluster longitude'}
     fo.elevation.attrs = {'units':'m', 'standard_name':'elevation', 'long_name':'Cluster elevation'}
+
     fo.to_netcdf(path + fname_met, encoding=encod_dict)
     print('---> File {} saved'.format(fname_met))
 
@@ -110,7 +113,7 @@ def to_cryogrid(ds,
                 path='outputs/',
                 label_map=False,
                 da_label=None,
-                snow_partition_method='jennings2018_trivariate',
+                snow_partition_method='continuous',
                 climate_dataset_name='ERA5',
                 project_author='S. Filhol'):
     """
@@ -181,7 +184,7 @@ def to_cryogrid(ds,
         print('---> File {} saved'.format(foutput))
 
 
-def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='jennings2018_trivariate'):
+def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     """
     Function to export data for FSM.
 
@@ -291,7 +294,7 @@ def to_crocus(ds,
               scale_precip=1,
               climate_dataset_name='ERA5',
               project_author='S. Filhol',
-              snow_partition_method='jennings2018_trivariate'):
+              snow_partition_method='continuous'):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
 
@@ -316,11 +319,12 @@ def to_crocus(ds,
         df['DIR_SWdown'] = ds_pt.SW.values
         df['LWdown'] = ds_pt.LW.values
         df['PSurf'] = ds_pt.p.values
-        df['HUMREL'] = mu.q_2_rh(ds_pt.t.values - 273.15, ds_pt.p.values*10**-2, ds_pt.q.values) * 100
+        df['HUMREL'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)*100
         df['xwind'] = ds_pt.u.values
         df['ywind'] = ds_pt.v.values
-        df['precip'] = ds_pt.tp.values / 3600 * scale_precip
-        df['Rainf'], df['Snowf'] = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
+        df['precip'] = ds_pt.tp.values / 3600 * scale_precip  # convert from mm/hr to mm/s
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
 
         # Derive variables: Q- humidity, WD - wind direction (deg), and WS
         df['Qair'] = ds_pt.q.values
