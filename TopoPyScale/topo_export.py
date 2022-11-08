@@ -220,11 +220,12 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
         df['hr']  = pd.to_datetime(ds_pt.time.values).hour
         df['SW'] = ds_pt.SW.values
         df['LW'] = ds_pt.LW.values
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         df['snowfall'] = snow / 3600
         df['rainfall'] = rain / 3600
         df['Tair'] = np.round(ds_pt.t.values, 2)
-        df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
+        df['RH'] = rh * 100
         df['speed'] = ds_pt.ws.values
         df['p'] = ds_pt.p.values
 
