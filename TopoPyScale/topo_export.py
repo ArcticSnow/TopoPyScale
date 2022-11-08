@@ -331,6 +331,8 @@ def to_crocus(ds,
         df['NEB'] = np.zeros(df.shape[0])
         df['CO2air'] = np.zeros(df.shape[0])
         df['SCA_SWdown'] = np.zeros(df.shape[0])
+
+        df.drop(columns=['precip','xwind','ywind'], inplace=True)
         ds_pt.close()
 
         #df = df.loc[(df.time>=pd.Timestamp(start)) & (df.time<pd.Timestamp(end)+pd.Timedelta('1D'))]

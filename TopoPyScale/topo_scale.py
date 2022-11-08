@@ -88,7 +88,7 @@ def downscale_climate(path_forcing,
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
-    tvec = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, closed='left')
+    tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, closed='left')
     ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=tvec.values)
     ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=tvec.values)
 
