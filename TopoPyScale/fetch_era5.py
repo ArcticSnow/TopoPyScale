@@ -10,7 +10,6 @@ import pandas as pd
 from datetime import datetime
 import cdsapi, os, sys
 from dateutil.relativedelta import *
-import logging
 import glob
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
@@ -75,18 +74,16 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	df['bbox'] = df.step.apply(lambda x: bbox)
 	df['product_type'] = product
 
-	print("Start date = ", df.dates[0])
-	print("End date = ", df.dates[len(df.dates) - 1])
+	print("Start = ", df.dates[0].strftime('%Y-%b'))
+	print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%b'))
 
-	logging.info(("ECWMF {} data found:").format(surf_plev.upper()))
-	logging.info(df.target_file.loc[df.file_exist == 1])
-	logging.info("Downloading {} from ECWMF:".format(surf_plev.upper()))
-	logging.info(df.target_file.loc[df.file_exist == 0])
+	if df.file_exist.sum() > 0:
+		print("ECWMF {} data found:".format(surf_plev.upper()))
+		print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
 
-	print("ECWMF {} data found:".format(surf_plev.upper()))
-	print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
-	print("Downloading {} from ECWMF:".format(surf_plev.upper()))
-	print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
+	if (df.file_exist == 0).sum() > 0:
+		print("Downloading {} from ECWMF:".format(surf_plev.upper()))
+		print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
 
 	download = df.loc[df.file_exist == 0]
 	if download.shape[0] > 0:

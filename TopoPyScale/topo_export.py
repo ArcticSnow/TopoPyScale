@@ -36,6 +36,30 @@ def compute_scaling_and_offset(da, n=16):
 
     return scale_factor, add_offset
 
+def to_netcdf(ds, fname='output.nc', variables=None):
+        """
+        Generic function to save a datatset to one single compressed netcdf file
+
+        Args:
+            fname (str): name of export file
+            variables (list str): list of variable to export. Default exports all variables
+        """
+
+        encod_dict = {}
+        if variables is None:
+            variables = list(ds.keys())
+
+        for var in variables:
+            scale_factor, add_offset = compute_scaling_and_offset(ds[var], n=10)
+            encod_dict.update({var:{"zlib": True,
+                                   "complevel": 9,
+                                   'dtype':'int16',
+                                   'scale_factor':scale_factor,
+                                   'add_offset':add_offset}})
+        ds[variables].to_netcdf(fname, encoding=encod_dict, engine='h5netcdf')
+
+        print(f'---> File {fname} saved')
+
 def to_musa(ds,
             df_pts,
             da_label,

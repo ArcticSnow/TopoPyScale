@@ -19,6 +19,9 @@ import time
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import os
+from TopoPyScale import topo_export as te
+
+
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
     """
     Simple function to convert a list fo poitn from one projection to another oen using PyProj
@@ -174,7 +177,7 @@ def compute_dem_param(dem_file):
     return ds
 
 
-def compute_horizon(dem_file, azimuth_inc=30, num_threads=None):
+def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc'):
     """
     Function to compute horizon angles for
 
@@ -187,7 +190,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None):
         dataarray: all horizon angles for x,y,azimuth coordinates
          
     """
-    print('\n---> Computing horizons with {} degree increment'.format(azimuth_inc))
+    print('\n---> Computing horizons with {} degree increments'.format(azimuth_inc))
     ds = xr.open_rasterio(dem_file).to_dataset('band')
     ds = ds.rename({1: 'elevation'})
     dx = ds.x.diff('x').median().values
@@ -221,8 +224,14 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None):
                           "x": ds.x.values,
                           "azimuth": azimuth
                       },
-                      dims=["azimuth", "y", "x"]
+                      dims=["azimuth", "y", "x"],
+                      name='horizon',
+                      attrs={
+                          'long_name': 'Horizon angles',
+                          'units':'degree'
+                      }
                       )
+    te.to_netcdf(da.to_dataset(), fname=f'outputs/{fname}')
     return da
 
 

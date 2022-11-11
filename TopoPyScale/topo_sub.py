@@ -122,6 +122,8 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
+
+
 def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=plt.cm.viridis, figsize=(14,10)):
     """
     Function to plot the location of the cluster centroids over the DEM
@@ -201,7 +203,7 @@ def write_landform(dem_file, df_param):
             nodata= -999,
             compress='lzw')
 
-        with rasterio.open('landform.tif', 'w', **profile) as dst:
+        with rasterio.open('outputs/landform.tif', 'w', **profile) as dst:
             dst.write(myarray.astype(rasterio.int16), 1)
 
     # At the end of the ``with rasterio.Env()`` block, context

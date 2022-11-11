@@ -11,12 +11,14 @@ project/
     -> output/
 
 """
+import glob
 import os
 #import configparser
 import sys
 import shutil
 from munch import DefaultMunch
 import pandas as pd
+import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 from TopoPyScale import fetch_era5 as fe
@@ -42,23 +44,28 @@ class Topoclass(object):
         except IOError:
                 print('ERROR: config file does not exist. Check path.')
 
-        # remove outputs directory because if results already exist this causes concat of netcdf files
-        try:
-            shutil.rmtree(self.config.project.directory + '/outputs/')
-        except:
-            os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
+        if self.config.outputs.file.clean_output:
+            # remove outputs directory because if results already exist this causes concat of netcdf files
+            try:
+                shutil.rmtree(self.config.project.directory + '/outputs/')
+                print('---> Output directory cleaned')
+            except:
+                os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
 
         # remove output fsm directory
-        try:
-            shutil.rmtree(self.config.project.directory + '/fsm_sims/')
-        except:
-            print("no FSM directory to clean")
+        if self.config.outputs.file.clean_FSM:
+            try:
+                shutil.rmtree(self.config.project.directory + '/fsm_sims/')
+                print('---> FSM directory cleaned')
+            except:
+                print("---> no FSM directory to clean")
 
-        # remove output fsm directory
-        try:
-            shutil.rmtree(self.config.project.directory + '/ensemble/')
-        except:
-            print("no ensemble directory to clean")
+            # remove output fsm directory
+            try:
+                shutil.rmtree(self.config.project.directory + '/ensemble/')
+                print("---> Ensemble directory cleaned")
+            except:
+                print("---> no ensemble directory to clean")
         # check if tree directory exists. If not create it
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/'))):
             os.makedirs('/'.join((self.config.project.directory, 'inputs/')))
@@ -72,6 +79,8 @@ class Topoclass(object):
             os.makedirs('/'.join((self.config.project.directory, 'inputs/climate/tmp')))
         if not os.path.exists('/'.join((self.config.project.directory, 'outputs/tmp/'))):
             os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')))
+        if not os.path.exists('/'.join((self.config.project.directory, 'outputs/downscaled'))):
+            os.makedirs('/'.join((self.config.project.directory, 'outputs/downscaled')))
 
         self.config.dem.path = self.config.project.directory + '/inputs/dem/'
         if not os.path.exists('/'.join((self.config.project.directory, 'inputs/dem/'))):
@@ -99,18 +108,18 @@ class Topoclass(object):
             self.config.project.extent = tp.get_extent_latlon(self.config.dem.filepath, self.config.dem.epsg)
 
         print(self.config.project.extent)
-        print('Project lat/lon extent:')
-        print('\t----------------------------')
-        print('\t|      North:{}          |\n\t|West:{}          East:{}|\n\t|      South:{}          |'.format(np.round(self.config.project.extent.get('latN'),1),
+        print('Project lat/lon extent:\n')
+        print('\t------------------------------')
+        print('\t|        North:{}          |\n\t|West:{}          East:{}|\n\t|        South:{}          |'.format(np.round(self.config.project.extent.get('latN'),1),
                                                         np.round(self.config.project.extent.get('lonW'),1),
                                                           np.round(self.config.project.extent.get('lonE'),1),
                                                           np.round(self.config.project.extent.get('latS'),1)))
-        print('\t----------------------------')
+        print('\t------------------------------')
 
         self.toposub = self.Toposub()
         self.plot = self.Plotting()
-        self.solar_ds = None
-        self.horizon_da = None
+        self.ds_solar = None
+        self.da_horizon = None
 
         # add here a little routinr doing chek on start and end date in config.yml compare to forcing in case
 
@@ -118,6 +127,44 @@ class Topoclass(object):
 
         if self.config.project.climate.lower() == 'era5':
             self.get_era5()
+    def load_project(self):
+        '''
+        Function to load pre-existing TopoPyScale project saved in files
+        '''
+        if os.path.isfile('outputs/' + self.config.outputs.file.df_centroids):
+            self.toposub.df_centroids = pd.read_pickle('outputs/' + self.config.outputs.file.df_centroids)
+            print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
+        else:
+            print(f'-> WARNING: Centroid file {self.config.outputs.file.df_centroids} not found')
+
+        if os.path.isfile('outputs/' + self.config.outputs.file.ds_param):
+            self.ds_param = xr.open_dataset('outputs/' + self.config.outputs.file.ds_param)
+            print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
+        else:
+            print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
+
+        if os.path.isfile('outputs/' + self.config.outputs.file.ds_solar):
+            self.ds_solar = xr.open_dataset('outputs/' + self.config.outputs.file.ds_solar)
+            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+        else:
+            print(f'-> WARNING: Solar file {self.config.outputs.file.ds_solar} not found')
+
+        if os.path.isfile('outputs/' + self.config.outputs.file.da_horizon):
+            self.da_horizon = xr.open_dataarray('outputs/' + self.config.outputs.file.da_horizon)
+            print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+        else:
+            print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
+
+        flist = glob.glob(f'outputs/downscaled/{self.config.outputs.file.downscaled_pt}')
+        if len(flist) > 0 :
+            self.downscaled_pts = xr.open_mfdataset(f'outputs/downscaled/{self.config.outputs.file.downscaled_pt}',
+                                                          concat_dim='point_id',
+                                                          combine='nested',
+                                                          parallel=True)
+            print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
+        else:
+            print(f'-> WARNING: Downscale point files {self.config.outputs.file.downscaled_pt} not found')
+
 
     class Plotting:
         '''
@@ -188,7 +235,13 @@ class Topoclass(object):
             ts.write_landform(self.dem_path, self.ds_param)
 
     def compute_dem_param(self):
-        self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath)
+        fname = 'outputs/'+ self.config.outputs.file.ds_param
+        if os.path.isfile(fname):
+            self.toposub.ds_param = xr.open_dataset(fname)
+            print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
+        else:
+            self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath)
+            te.to_netcdf(self.toposub.ds_param, fname=fname)
 
 
     def extract_pts_param(self, method='nearest', **kwargs):
@@ -201,32 +254,42 @@ class Topoclass(object):
             **kwargs: pd.read_csv() parameters
         Returns:
         """
-        self.toposub.df_centroids = pd.read_csv(self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file, **kwargs)
+        self.toposub.df_centroids = pd.read_csv('inputs/dem/' + self.config.sampling.points.csv_file, **kwargs)
+        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param, method=method)
 
 
-    def extract_dem_cluster_param(self):
+    def extract_topo_cluster_param(self):
         """
         Function to segment a DEM in clusters and retain only the centroids of each cluster.
+
         :return:
+
+        TODO:
+        - try to migrate most code of this functino to topo_sub.py as a function itself segment_topo()
         """
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
         if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.kmeans_clustering(
-                df_scaled, 
-                self.config.sampling.toposub.n_clusters, 
+                df_scaled,
+                self.config.sampling.toposub.n_clusters,
                 seed=self.config.sampling.toposub.random_seed)
         elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(
-                df_scaled, 
-                self.config.sampling.toposub.n_clusters, 
-                self.config.project.CPU_cores,  
+                df_scaled,
+                self.config.sampling.toposub.n_clusters,
+                self.config.project.CPU_cores,
                 seed=self.config.sampling.toposub.random_seed)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.sampling.toposub.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
+        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
+
+        # update file
+        fname = 'outputs/'+ self.config.outputs.file.ds_param
+        te.to_netcdf(self.toposub.ds_param, fname=fname)
 
         # update plotting class variable
         self.plot.ds_param = self.toposub.ds_param
@@ -235,57 +298,81 @@ class Topoclass(object):
         """
         Function to select which 
         """
-        if self.config.sampling.method == 'points':
-            self.extract_pts_param()
-        elif self.config.sampling.method == 'toposub':
-            self.extract_dem_cluster_param()
-        elif self.config.sampling.method == 'both':
-
-            # implement the case one wann run both toposub and a list of points
-            print('ERROR: method not yet implemented')
-            
+        if  os.path.isfile('outputs/'+ self.config.outputs.file.df_centroids):
+            self.toposub.df_centroids = pd.read_pickle('outputs/'+ self.config.outputs.file.df_centroids)
+            print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
-            print('ERROR: Extraction method not available')
+            if self.config.sampling.method == 'points':
+                self.extract_pts_param()
+            elif self.config.sampling.method == 'toposub':
+                self.extract_topo_cluster_param()
+            elif self.config.sampling.method == 'both':
+
+                # implement the case one wann run both toposub and a list of points
+                print('ERROR: method not yet implemented')
+                
+            else:
+                print('ERROR: Extraction method not available')
+
+            # Store dataframe to pickle
+            self.toposub.df_centroids.to_pickle('outputs/'+ self.config.outputs.file.df_centroids)
+            print(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
 
     def compute_solar_geometry(self):
-        self.solar_ds = sg.get_solar_geom(self.toposub.df_centroids,
-                                          self.config.project.start,
-                                          self.config.project.end,
-                                          self.config.climate[self.config.project.climate].timestep,
-                                          str(self.config.dem.epsg),
-                                          self.config.project.CPU_cores)
+        fname = 'outputs/'+ self.config.outputs.file.ds_solar
+        if os.path.isfile(fname):
+            self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
+            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+        else:
+            self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
+                                              self.config.project.start,
+                                              self.config.project.end,
+                                              self.config.climate[self.config.project.climate].timestep,
+                                              str(self.config.dem.epsg),
+                                              self.config.project.CPU_cores,
+                                              self.config.outputs.file.ds_solar)
 
     def compute_horizon(self):
         """
         Function to compute horizon angle and sample values for list of points
         :return:
         """
-        self.horizon_da = tp.compute_horizon(self.config.dem.filepath, self.config.dem.horizon_increments, self.config.project.CPU_cores)
+        fname = 'outputs/'+ self.config.outputs.file.da_horizon
+        if os.path.isfile(fname):
+            self.da_horizon = xr.open_dataarray(fname, chunks='auto', engine='h5netcdf')
+            print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+        else:
+            self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
+                                                 self.config.dem.horizon_increments,
+                                                 self.config.project.CPU_cores,
+                                                 self.config.outputs.file.da_horizon)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
-        for az in self.horizon_da.azimuth.values:
-            self.toposub.df_centroids['hori_azi_'+str(az)] = self.horizon_da.sel(x=tgt_x,
+        for az in self.da_horizon.azimuth.values:
+            self.toposub.df_centroids['hori_azi_'+str(az)] = self.da_horizon.sel(x=tgt_x,
                                                                             y=tgt_y,
                                                                             azimuth=az,
                                                                             method='nearest').values.flatten()
+        # update df_centroid file with horizons angle
+        self.toposub.df_centroids.to_pickle('outputs/'+ self.config.outputs.file.df_centroids)
+        print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
+        # add logic to check if files exist then load those nc files
         ta.downscale_climate(self.config.climate.path,
-                                        self.toposub.df_centroids,
-                                        self.horizon_da,
-                                        self.config.dem.epsg,
-                                        self.config.project.start,
-                                        self.config.project.end,
-                                        self.config.toposcale.interpolation_method,
-                                        self.config.toposcale.LW_terrain_contribution,
-                                        self.config.climate[self.config.project.climate].timestep)
-        self.downscaled_pts = ta.read_downscaled()
-
-        # update plotting class variables
-        self.plot.ds_down = self.downscaled_pts
+                             self.toposub.df_centroids,
+                             self.da_horizon,
+                             self.ds_solar,
+                             self.config.dem.epsg,
+                             self.config.project.start,
+                             self.config.project.end,
+                             self.config.toposcale.interpolation_method,
+                             self.config.toposcale.LW_terrain_contribution,
+                             self.config.climate[self.config.project.climate].timestep,
+                             self.config.outputs.file.downscaled_pt)
 
 
-            
+
     def get_era5(self):
         """
         Funtion to call fetching of ERA5 data
@@ -321,6 +408,7 @@ class Topoclass(object):
             plevels=self.config.climate[self.config.project.climate].plevels,
             )
 
+
     def get_WMO_observations(self):
         """
         Function to download and parse in-situ data from WMO database
@@ -340,7 +428,6 @@ class Topoclass(object):
         tpo.fetch_WMO_insitu_observations(list(df.year.unique()),
                                           list(df.month.unique()))
         tpo.parse_WMO_insitu_observations()
-
 
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', precip_partition='continuous'):
@@ -399,22 +486,16 @@ class Topoclass(object):
         """
         te.to_micromet_single_station(self.downscaled_pts, self.toposub.df_centroids, fname_format=fname_format, na_values=-9999, headers=False)
     
-    def to_netcdf(self, file_out='./outputs/output.nc'):
+    def to_netcdf(self, file_out='./outputs/output.nc', variables=None):
         """
         function to export toposcale output to one single generic netcdf format, compressed
 
         Args:
             file_out (str): name of export file
+            variables (list str): list of variable to export. Default exports all variables
         """
-        encod_dict = {}
-        for var in list(self.downscaled_pts.keys()):
-            scale_factor, add_offset = te.compute_scaling_and_offset(self.downscaled_pts[var], n=10)
-            encod_dict.update({var:{"zlib": True,
-                                   "complevel": 9,
-                                   'dtype':'int16',
-                                   'scale_factor':scale_factor,
-                                   'add_offset':add_offset}})
-        self.downscaled_pts.to_netcdf(file_out, encoding=encod_dict)
+
+        te.to_netcdf(self.downscaled_pts[variables], file_out, variables)
         print('---> File {} saved'.format(file_out))
 
     def to_snowpack(self, fname_format='./outputs/smet_pt_*.smet'):

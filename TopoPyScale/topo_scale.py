@@ -63,12 +63,14 @@ R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 def downscale_climate(path_forcing,
                       df_centroids,
                       horizon_da,
+                      ds_solar,
                       target_EPSG,
                       start_date,
                       end_date,
                       interp_method='idw',
                       lw_terrain_flag=True,
-                      tstep='1H'):
+                      tstep='1H',
+                      file_pattern='down_pt*.nc'):
     """
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -80,6 +82,7 @@ def downscale_climate(path_forcing,
         interp_method (str): interpolation method for horizontal interp. 'idw' or 'linear'
         lw_terrain_flag (bool): flag to compute contribution of surrounding terrain to LW or ignore
         tstep (str): timestep of the input data, default = 1H
+        file_pattern (str): filename pattern for storing downscaled points, default = 'down_pt_*.nc'
 
     Returns:
         dataset: downscaled data organized with time, point_id, lat, long
@@ -126,7 +129,6 @@ def downscale_climate(path_forcing,
     # ============ Loop over each point ======================================
     # Loop over each points (lat,lon) for which to downscale climate variable using Toposcale method
 
-    solar_ds = xr.open_dataset('outputs/solar_ds.nc', chunks='auto', engine='h5netcdf')
 
     dataset = []
     dpt_list = []
@@ -137,7 +139,8 @@ def downscale_climate(path_forcing,
     n_digits = len(str(df_centroids.index.max()))
 
     for i, row in df_centroids.iterrows():
-        print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(row.name+1, df_centroids.index.max()+1))
+        pt_id = row.point_id.astype(int)
+        print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(pt_id+1, df_centroids.index.max()+1))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
         ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
@@ -225,13 +228,14 @@ def downscale_climate(path_forcing,
 
 
         dpt_list.append(down_pt)
-        dpt_paths.append('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)))
+        dpt_paths.append('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)))
         surf_list.append(surf_interp)
-        surf_paths.append('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)))
+        surf_paths.append('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)))
 
         down_pt = None
         surf_interp = None
 
+    print('---> Storing to outputs/tmp/')
     xr.save_mfdataset(dpt_list, dpt_paths, engine='h5netcdf')
     dpt_list = None
     dpt_paths = None
@@ -243,10 +247,12 @@ def downscale_climate(path_forcing,
     ds_list = []
     ds_paths = []
     for i, row in df_centroids.iterrows():
-        print('Downscaling LW, SW for point: {} out of {}'.format(row.name+1, df_centroids.index.max()+1))
+        pt_id = row.point_id.astype(int)
+        print('Downscaling LW, SW for point: {} out of {}'.format(pt_id+1,
+                                                                  df_centroids.point_id.max()+1))
 
-        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
-        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(row.name).zfill(n_digits)), chunks='auto', engine='h5netcdf')
+        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), chunks='auto', engine='h5netcdf')
+        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), chunks='auto', engine='h5netcdf')
 
 
         # ======== Longwave downward radiation ===============
@@ -272,9 +278,9 @@ def downscale_climate(path_forcing,
             down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
 
         kt = surf_interp.ssrd * 0
-        sunset = solar_ds.sel(point_id=row.name).sunset
-        mu0 = solar_ds.sel(point_id=row.name).mu0
-        SWtoa = solar_ds.sel(point_id=row.name).SWtoa
+        sunset = ds_solar.sel(point_id=pt_id).sunset.astype(bool)
+        mu0 = ds_solar.sel(point_id=pt_id).mu0
+        SWtoa = ds_solar.sel(point_id=pt_id).SWtoa
 
 
         #pdb.set_trace()
@@ -294,15 +300,15 @@ def downscale_climate(path_forcing,
         #pdb.set_trace()
         ka[~sunset] = (g * mu0[~sunset]/down_pt.p)*np.log(SWtoa[~sunset]/surf_interp.SW_direct[~sunset])
         # Illumination angle
-        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(solar_ds.sel(point_id=row.name).zenith) *\
-                                          np.sin(row.slope) * np.cos(solar_ds.sel(point_id=row.name).azimuth - row.aspect)
+        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.sel(point_id=pt_id).zenith) *\
+                                          np.sin(row.slope) * np.cos(ds_solar.sel(point_id=pt_id).azimuth - row.aspect)
         down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
         down_pt = down_pt.drop(['cos_illumination_tmp'])
         down_pt['cos_illumination'][down_pt['cos_illumination'] < 0 ] =0
 
         # Binary shadow masks.
-        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(solar_ds.azimuth.isel(point_id=row.name)), method='nearest')
-        shade = (horizon > solar_ds.sel(point_id=row.name).elevation)
+        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth.isel(point_id=pt_id)), method='nearest')
+        shade = (horizon > ds_solar.sel(point_id=pt_id).elevation)
         down_pt['SW_direct_tmp'] = down_pt.t * 0
         down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(-ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
         down_pt['SW_direct'] = down_pt.t * 0
@@ -321,7 +327,9 @@ def downscale_climate(path_forcing,
         down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
 
         ds_list.append(down_pt)
-        ds_paths.append('outputs/down_pt_{}.nc'.format(str(row.name).zfill(n_digits)))
+
+        num = str(pt_id).zfill(n_digits)
+        ds_paths.append(f'outputs/downscaled/{file_pattern.split("*")[0]}_{num}.nc')
 
         down_pt = None
         surf_interp = None
@@ -330,7 +338,7 @@ def downscale_climate(path_forcing,
     ds_paths = None
 
 
-        #down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(row.name))
+        #down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(pt_id))
         #dataset.append(down_pt)
 
     # print timer to console

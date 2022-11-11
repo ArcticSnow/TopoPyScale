@@ -12,9 +12,10 @@ from pyproj import Transformer
 from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
+from TopoPyScale import topo_export as te
 
 
-def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None):
+def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None, fname='ds_solar.nc'):
     """
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
@@ -84,7 +85,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
     ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
     ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
-    ds.to_netcdf('outputs/solar_ds.nc', engine='h5netcdf')
+    te.to_netcdf(ds, fname=f'outputs/{fname}')
 
     return ds
 
