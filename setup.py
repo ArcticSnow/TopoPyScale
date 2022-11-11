@@ -9,16 +9,16 @@ with open(path.join(this_directory, 'README.md')) as f:
 
 setup(
     name='topopyscale',
-    version='0.0.1',
-    description='A Python package to perform statistical climate downscaling at the hillslope scale',
+    version='0.1.4',
+    description='A Python package to perform climate downscaling at the hillslope scale',
     long_description=long_description,
 
     # The project's main homepage.
     url='https://github.com/ArcticSnow/TopoPyScale',
-
+    download_url = 'https://github.com/ArcticSnow/TopoPyScale/releases/latest',
     # Author details
     author=['Simon Filhol', 'Joel Fiddes', 'Kristoffer Aalstad'],
-    author_email=['simon.filhol@geo.uio.no', 'joelfiddes@gmail.com', 'kristoffer.aalstad@geo.uio.no'],
+    author_email='simon.filhol@geo.uio.no',
 
     # Choose your license
     license='MIT',
@@ -29,11 +29,13 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
 
         # Indicate who your project is intended for
         'Intended Audience :: Science/Research',
         'Topic :: Scientific/Engineering :: Visualization',
+        'Topic :: Scientific/Engineering :: Hydrology',
+        'Topic :: Scientific/Engineering :: Atmospheric Science',
 
         # Pick your license as you wish (should match "license" above)
         'License :: OSI Approved :: MIT License',
@@ -44,7 +46,7 @@ setup(
     ],
 
     # What does your project relate to?
-    keywords=['climate', 'downscaling', 'meteorology'],
+    keywords=['climate', 'downscaling', 'meteorology', 'xarray'],
     packages=find_packages(),
     install_requires=['matplotlib', 'scikit-learn', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi',
                       'rasterio', 'pyproj', 'dask', 'configobj', 'munch'],

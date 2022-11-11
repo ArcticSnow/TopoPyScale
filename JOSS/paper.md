@@ -32,7 +32,7 @@ bibliography: paper.bib
 
 # Summary
 
-Climate reanalysis or forecast models are available worldwide for extended periods of time for the twentieth and twenty first century but often spatially too course to be relevant to mountainous regions. Mountain regions are some of the regions experiencing the fastest contenporary climate change. To understand and study geomorphological, hydrological, glaciological changes, we need tools to downscale climatic timeseries for the basic atmospheric state variables used to solve energy and water mass fluxes. Advanced physically based methods exist, though they come with high computational cost and complex technical setup. `TopoPyScale` uses a pragmatic approach to downscaling to minimize complexity, reduce computational cost, simplify interaoperability with land surface models, while retaining physical coherence. 
+Climate reanalysis or forecast models are available worldwide for extended periods of time for the twentieth and twenty first century but often spatially too course to be relevant to mountainous regions. Mountain regions are some of the regions experiencing the fastest contemporary climate change. To understand and study geomorphological, hydrological, glaciological changes, we need tools to downscale climatic timeseries for the basic atmospheric state variables used to solve energy and water mass fluxes. Advanced physically based methods exist, though they come with high computational cost and complex technical setup. `TopoPyScale` uses a pragmatic approach to downscaling to minimize complexity, reduce computational cost, simplify interaoperability with land surface models, while retaining physical coherence. 
 
 
 
@@ -45,6 +45,8 @@ Climate reanalysis or forecast models are available worldwide for extended perio
 , and interoperable inputs and outputs
 
 
+
+- insert figure showing before after temperature field over carpatians
 
 
 
