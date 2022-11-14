@@ -51,11 +51,15 @@ def to_netcdf(ds, fname='output.nc', variables=None):
 
         for var in variables:
             scale_factor, add_offset = compute_scaling_and_offset(ds[var], n=10)
-            encod_dict.update({var:{"zlib": True,
-                                   "complevel": 9,
-                                   'dtype':'int16',
-                                   'scale_factor':scale_factor,
-                                   'add_offset':add_offset}})
+            if str(ds[var].dtype)[:3] == 'int':
+                encod_dict.update({var:{
+                                   'dtype':ds[var].dtype}})
+            else:
+                encod_dict.update({var:{"zlib": True,
+                                       "complevel": 9,
+                                       'dtype':'int16',
+                                       'scale_factor':scale_factor,
+                                       'add_offset':add_offset}})
         ds[variables].to_netcdf(fname, encoding=encod_dict, engine='h5netcdf')
 
         print(f'---> File {fname} saved')

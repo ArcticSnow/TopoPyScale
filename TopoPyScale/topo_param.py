@@ -143,7 +143,9 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
     dem_arr = ds.elevation.values
+    print('Computing slope and aspect ...')
     slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
+    print('Computing svf ...')
     svf = viewf.viewf(np.double(dem_arr), dx)[0]
 
     ds['slope'] = (["y", "x"], slope)

@@ -44,7 +44,7 @@ class Topoclass(object):
         except IOError:
                 print('ERROR: config file does not exist. Check path.')
 
-        if self.config.outputs.file.clean_output:
+        if self.config.outputs.file.clean_outputs:
             # remove outputs directory because if results already exist this causes concat of netcdf files
             try:
                 shutil.rmtree(self.config.project.directory + '/outputs/')
@@ -117,16 +117,19 @@ class Topoclass(object):
         print('\t------------------------------')
 
         self.toposub = self.Toposub()
-        self.plot = self.Plotting()
+        self.plot = Plotting()
         self.ds_solar = None
         self.da_horizon = None
 
         # add here a little routinr doing chek on start and end date in config.yml compare to forcing in case
 
         self.toposub.dem_path = self.config.dem.filepath
+        self.toposub.project_directory = self.config.project.directory
 
         if self.config.project.climate.lower() == 'era5':
             self.get_era5()
+
+
     def load_project(self):
         '''
         Function to load pre-existing TopoPyScale project saved in files
@@ -157,6 +160,7 @@ class Topoclass(object):
 
         flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt}')
         if len(flist) > 0 :
+            print('---> Loading downscaled points ...')
             self.downscaled_pts = xr.open_mfdataset(f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt}',
                                                           concat_dim='point_id',
                                                           combine='nested',
@@ -165,64 +169,13 @@ class Topoclass(object):
         else:
             print(f'-> WARNING: Downscale point files {self.config.outputs.file.downscaled_pt} not found')
 
-
-    class Plotting:
-        '''
-        Sub-Class with plotting functions for topoclass object
-        '''
-        def __int__(self):
-            self.ds_param = None
-            self.ds_down = None
-
-        def map_variable(self,
-                         time_step=1,
-                         var='t',
-                         cmap=plt.cm.RdBu_r,
-                         hillshade=True,
-                         **kwargs):
-
-            # add logic to check ds_down and ds_param exist.
-            tpl.map_unclustered(self.ds_down,
-                         self.ds_param,
-                         time_step=time_step,
-                         var=var,
-                         cmap=cmap,
-                         hillshade=hillshade,
-                         **kwargs)
-        def map_terrain(self, var='elevation', hillshade=True, **kwargs):
-            tpl.map_terrain(self.ds_param,
-                            var=var,
-                            hillshade=hillshade,
-                            **kwargs
-                            )
-
-        def map_center_clusters(self,
-                                background_var='elevation',
-                                cmap=plt.cm.viridis,
-                                hillshade=True,
-                                **kwargs):
-            print('to be implemented')
-
-        def cluster_map(self):
-            print('To be implemented')
-
-        def timeseries(self):
-            print('To be implemented')
-
-        def solar_geom(self):
-            print('To be implemented')
-
-        def horizon(self):
-            print('To be implemented')
-
-
-
     class Toposub:
         """
         Sub-Class to initialize variables to store TopoSub variables
         """
         def __init__(self):
             self.dem_path = None
+            self.project_directory = None
             self.ds_param = None
             self.df_centroids = None
             self.kmeans_obj = None
@@ -232,17 +185,16 @@ class Topoclass(object):
             ts.plot_center_clusters(self.dem_path, self.ds_param, self.df_centroids, var=var, cmap=cmap, figsize=figsize)
 
         def write_landform(self):
-            ts.write_landform(self.dem_path, self.ds_param, self.config.project.directory)
+            ts.write_landform(self.dem_path, self.ds_param, self.project_directory)
 
     def compute_dem_param(self):
-        fname = self.config.project.directory + 'outputs/'+ self.config.outputs.file.ds_param
-        if os.path.isfile(fname):
-            self.toposub.ds_param = xr.open_dataset(fname)
+        if os.path.isfile(self.config.project.directory + 'outputs/'+ self.config.outputs.file.ds_param):
+            self.toposub.ds_param = xr.open_dataset(self.config.project.directory + 'outputs/'+ self.config.outputs.file.ds_param)
             print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
         else:
-            self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath)
-            te.to_netcdf(self.toposub.ds_param, fname=fname)
-
+            self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
+                                                         fname=self.config.outputs.file.ds_param,
+                                                         project_directory=self.config.project.directory)
 
     def extract_pts_param(self, method='nearest', **kwargs):
         """
@@ -257,7 +209,6 @@ class Topoclass(object):
         self.toposub.df_centroids = pd.read_csv(self.config.project.directory+ 'inputs/dem/' + self.config.sampling.points.csv_file, **kwargs)
         self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param, method=method)
-
 
     def extract_topo_cluster_param(self):
         """
@@ -373,8 +324,6 @@ class Topoclass(object):
                              self.config.climate[self.config.project.climate].timestep,
                              self.config.outputs.file.downscaled_pt)
 
-
-
     def get_era5(self):
         """
         Funtion to call fetching of ERA5 data
@@ -410,7 +359,6 @@ class Topoclass(object):
             plevels=self.config.climate[self.config.project.climate].plevels,
             )
 
-
     def get_WMO_observations(self):
         """
         Function to download and parse in-situ data from WMO database
@@ -430,7 +378,6 @@ class Topoclass(object):
         tpo.fetch_WMO_insitu_observations(list(df.year.unique()),
                                           list(df.month.unique()))
         tpo.parse_WMO_insitu_observations()
-
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', precip_partition='continuous'):
         """
@@ -457,14 +404,13 @@ class Topoclass(object):
                        climate_dataset_name=self.config.project.climate,
                        project_author=self.config.project.authors)
         
-    def to_fsm(self, fname_format='./outputs/FSM_pt_*.txt'):
+    def to_fsm(self, fname_format='FSM_pt_*.txt'):
         """
         function to export toposcale output to FSM format
         """
-        te.to_fsm(self.downscaled_pts, fname_format)
+        te.to_fsm(self.downscaled_pts, f'{self.config.project.directory}outputs/' + fname_format)
 
-
-    def to_crocus(self, fname_format='./outputs/CROCUS_pt_*.nc', scale_precip=1):
+    def to_crocus(self, fname_format='CROCUS_pt_*.nc', scale_precip=1):
         """
         function to export toposcale output to crocus format .nc. This functions saves one file per point_id
         
@@ -474,21 +420,24 @@ class Topoclass(object):
         """
         te.to_crocus(self.downscaled_pts,
                      self.toposub.df_centroids,
-                     fname_format=fname_format,
+                     fname_format=f'{self.config.project.directory}outputs/' + fname_format,
                      scale_precip=scale_precip,
                      climate_dataset_name=self.config.project.climate,
                      project_author=self.config.project.authors)
-
     
-    def to_snowmodel(self, fname_format='./outputs/Snowmodel_stn_*.csv'):
+    def to_snowmodel(self, fname_format='Snowmodel_stn_*.csv'):
         """
         function to export toposcale output to snowmodel format .ascii, for single station standard
 
             fout_format: str, filename format. point_id is inserted where * is
         """
-        te.to_micromet_single_station(self.downscaled_pts, self.toposub.df_centroids, fname_format=fname_format, na_values=-9999, headers=False)
+        te.to_micromet_single_station(self.downscaled_pts,
+                                      self.toposub.df_centroids,
+                                      fname_format=f'{self.config.project.directory}outputs/' + fname_format,
+                                      na_values=-9999,
+                                      headers=False)
     
-    def to_netcdf(self, file_out='./outputs/output.nc', variables=None):
+    def to_netcdf(self, file_out='output.nc', variables=None):
         """
         function to export toposcale output to one single generic netcdf format, compressed
 
@@ -497,21 +446,20 @@ class Topoclass(object):
             variables (list str): list of variable to export. Default exports all variables
         """
 
-        te.to_netcdf(self.downscaled_pts[variables], file_out, variables)
+        te.to_netcdf(self.downscaled_pts[variables], f'{self.config.project.directory}outputs/' + file_out, variables)
         print('---> File {} saved'.format(file_out))
 
-    def to_snowpack(self, fname_format='./outputs/smet_pt_*.smet'):
+    def to_snowpack(self, fname_format='smet_pt_*.smet'):
         """
         function to export toposcale output to FSM format
         """
-        te.to_snowpack(self.downscaled_pts, fname_format)
+        te.to_snowpack(self.downscaled_pts, f'{self.config.project.directory}outputs/' + fname_format)
 
-    def to_geotop(self, fname_format='./outputs/meteo_*.txt'):
+    def to_geotop(self, fname_format='meteo_*.txt'):
         """
         function to export toposcale output to FSM format
         """
-        te.to_geotop(self.downscaled_pts, fname_format)
-
+        te.to_geotop(self.downscaled_pts, f'{self.config.project.directory}outputs/' + fname_format)
 
     def to_musa(self, 
                 fname_met='musa_met.nc', 
@@ -534,3 +482,53 @@ class Topoclass(object):
             project_authors=self.config.project.authors
             )
         print('---> File ready for MuSa {} saved'.format(fname_met))
+
+class Plotting:
+    '''
+    Sub-Class with plotting functions for topoclass object
+    '''
+    def __int__(self):
+        self.ds_param = None
+        self.ds_down = None
+
+    def map_variable(self,
+                     time_step=1,
+                     var='t',
+                     cmap=plt.cm.RdBu_r,
+                     hillshade=True,
+                     **kwargs):
+
+        # add logic to check ds_down and ds_param exist.
+        tpl.map_unclustered(self.ds_down,
+                     self.ds_param,
+                     time_step=time_step,
+                     var=var,
+                     cmap=cmap,
+                     hillshade=hillshade,
+                     **kwargs)
+    def map_terrain(self, var='elevation', hillshade=True, **kwargs):
+        tpl.map_terrain(self.ds_param,
+                        var=var,
+                        hillshade=hillshade,
+                        **kwargs
+                        )
+
+    def map_center_clusters(self,
+                            background_var='elevation',
+                            cmap=plt.cm.viridis,
+                            hillshade=True,
+                            **kwargs):
+        print('to be implemented')
+
+    def cluster_map(self):
+        print('To be implemented')
+
+    def timeseries(self):
+        print('To be implemented')
+
+    def solar_geom(self):
+        print('To be implemented')
+
+    def horizon(self):
+        print('To be implemented')
+
