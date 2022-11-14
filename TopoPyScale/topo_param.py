@@ -126,7 +126,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
         print('ERROR: Method not implemented. Only nearest, linear or idw available')
     return df_pts
 
-def compute_dem_param(dem_file):
+def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
     """
     Function to compute and derive DEM parameters: slope, aspect, sky view factor
 
@@ -144,19 +144,7 @@ def compute_dem_param(dem_file):
     dy = ds.y.diff('y').median().values
     dem_arr = ds.elevation.values
     slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
-
-
-    if not os.path.exists('inputs/dem/svf.npy'):
-        print('---> Computing sky view factor')
-        start_time = time.time()
-        svf = viewf.viewf(np.double(dem_arr), dx)[0]
-        np.save('inputs/dem/svf.npy', svf)
-        print('---> Sky-view-factor finished in {}s'.format(np.round(time.time() - start_time), 0))
-
-    else:
-        print('SVF file exists and loaded')
-        svf = np.load('inputs/dem/svf.npy')
-
+    svf = viewf.viewf(np.double(dem_arr), dx)[0]
 
     ds['slope'] = (["y", "x"], slope)
     ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
@@ -173,11 +161,12 @@ def compute_dem_param(dem_file):
     ds.aspect_cos.attrs = {'units': 'cosinus'}
     ds.aspect_sin.attrs = {'units': 'sinus'}
     ds.svf.attrs = {'units': 'ratio', 'standard_name': 'svf', 'long_name': 'Sky view factor'}
+    te.to_netcdf(ds, fname=f'{project_directory}outputs/{fname}')
 
     return ds
 
 
-def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc'):
+def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc', project_directory='./'):
     """
     Function to compute horizon angles for
 
@@ -231,7 +220,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
                           'units':'degree'
                       }
                       )
-    te.to_netcdf(da.to_dataset(), fname=f'outputs/{fname}')
+    te.to_netcdf(da.to_dataset(), fname=f'{project_directory}outputs/{fname}')
     return da
 
 

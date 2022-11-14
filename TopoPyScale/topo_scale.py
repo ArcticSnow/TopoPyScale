@@ -60,7 +60,7 @@ g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
 
-def downscale_climate(path_forcing,
+def downscale_climate(project_directory,
                       df_centroids,
                       horizon_da,
                       ds_solar,
@@ -75,7 +75,7 @@ def downscale_climate(path_forcing,
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
     Args:
-        path_forcing: path to forcing data [SURF*, PLEV*]
+        project_directory: path to project root directory
         df_centroids (dataframe): containing a list of point for which to downscale (includes all terrain data)
         horizon_da (dataarray): horizon angles for a list of azimuth
         target_EPSG (int): EPSG code of the DEM
@@ -92,8 +92,8 @@ def downscale_climate(path_forcing,
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, closed='left')
-    ds_plev = xr.open_mfdataset(path_forcing + 'PLEV*.nc', parallel=True).sel(time=tvec.values)
-    ds_surf = xr.open_mfdataset(path_forcing + 'SURF*.nc', parallel=True).sel(time=tvec.values)
+    ds_plev = xr.open_mfdataset(project_directory + 'inputs/climate/PLEV*.nc', parallel=True).sel(time=tvec.values)
+    ds_surf = xr.open_mfdataset(project_directory + 'inputs/climate/SURF*.nc', parallel=True).sel(time=tvec.values)
 
     # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
     # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
@@ -228,9 +228,9 @@ def downscale_climate(path_forcing,
 
 
         dpt_list.append(down_pt)
-        dpt_paths.append('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)))
+        dpt_paths.append(project_directory + 'outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)))
         surf_list.append(surf_interp)
-        surf_paths.append('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)))
+        surf_paths.append(project_directory + 'outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)))
 
         down_pt = None
         surf_interp = None
@@ -329,7 +329,7 @@ def downscale_climate(path_forcing,
         ds_list.append(down_pt)
 
         num = str(pt_id).zfill(n_digits)
-        ds_paths.append(f'outputs/downscaled/{file_pattern.split("*")[0]}_{num}.nc')
+        ds_paths.append(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}_{num}.nc')
 
         down_pt = None
         surf_interp = None

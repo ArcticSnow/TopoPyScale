@@ -15,7 +15,7 @@ import multiprocessing as mproc
 from TopoPyScale import topo_export as te
 
 
-def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None, fname='ds_solar.nc'):
+def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None, fname='ds_solar.nc', project_directory='./'):
     """
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
@@ -27,6 +27,8 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
         tstep (str): time step, ex: '6H'
         sr_epsg (str): source EPSG code for the input coordinate
         num_threads (int): number of threads to parallelize computation on. default is number of core -2
+        fname (str): name of netcdf file to store solar geometry
+        project_directory (str): path to project root directory
 
     Returns: 
         dataset: solar angles in degrees
@@ -85,7 +87,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
     ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
     ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 
-    te.to_netcdf(ds, fname=f'outputs/{fname}')
+    te.to_netcdf(ds, fname=f'{project_directory}outputs/{fname}')
 
     return ds
 
