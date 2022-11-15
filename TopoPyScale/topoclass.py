@@ -141,7 +141,7 @@ class Topoclass(object):
             print(f'-> WARNING: Centroid file {self.config.outputs.file.df_centroids} not found')
 
         if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param):
-            self.ds_param = xr.open_dataset(self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param)
+            self.toposub.ds_param = xr.open_dataset(self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param)
             print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
         else:
             print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
@@ -160,7 +160,7 @@ class Topoclass(object):
 
         flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt}')
         if len(flist) > 0 :
-            print('---> Loading downscaled points ...')
+            print('---> Loading downscaled points \n ...')
             self.downscaled_pts = xr.open_mfdataset(f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt}',
                                                           concat_dim='point_id',
                                                           combine='nested',
@@ -287,7 +287,6 @@ class Topoclass(object):
     def compute_horizon(self):
         """
         Function to compute horizon angle and sample values for list of points
-        :return:
         """
         fname = self.config.project.directory + 'outputs/'+ self.config.outputs.file.da_horizon
         if os.path.isfile(fname):
@@ -311,7 +310,7 @@ class Topoclass(object):
         print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
-        # add logic to check if files exist then load those nc files
+        # add logic to check if files exist then load those netcdf files
         ta.downscale_climate(self.config.project.directory,
                              self.toposub.df_centroids,
                              self.da_horizon,

@@ -105,27 +105,25 @@ def map_unclustered(ds_down,
     return ax
 
 def map_variable(ds_down,
-                    ds_param,
-                    time_step=1,
-                    var='t'):
+                 ds_param):
     """
     Function to plot unclustered downscaled points given that each point corresponds to a cluster label
 
     Args:
-        ds_down:
-        ds_param:
-        time_step:
-    """
+        ds_down (dataset): Slice of single timestep for a variable of interest.  e.g. mp.downscaled_pts['t'].sel(time='2020-01-01 12:00')
+        ds_param (dataset): mapping of the clusters. From topoclass().toposub.ds_param
 
-    ds_mini = ds_down[var].isel(time=time_step)
-    nclust = ds_mini.shape[0]
-    lookup = np.arange(nclust, dtype=np.uint16)
+    Returns:
+        Numpy 2D Array of the variable mapped to individual clusters
+
+    """
+    arr = ds_down.values
+    nclust = ds_down.shape[0]
+    lookup = np.arange(nclust)
+    mapping = ds_param.cluster_labels.values
 
     for i in range(0, nclust):
-        lookup[i] = ds_mini[i].values
-    val = lookup[ds_param.cluster_labels.astype(int).values]
+        lookup[i] = ds_down[i]
+    val = lookup[mapping]
 
-    ds = ds_param.drop(list(mp.ds_param.keys()))
-    ds[var] = (('y','x'), val)
-
-    return ds
+    return val
