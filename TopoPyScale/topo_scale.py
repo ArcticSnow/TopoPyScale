@@ -54,11 +54,19 @@ import sys, time
 from TopoPyScale import meteo_util as mu
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
+import os
 
 # Physical constants
 g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 
+def clear_files(path):
+    # Clear outputs/tmp/ folder
+    for dirpath, dirnames, filenames in os.walk(path):
+        # Remove regular files, ignore directories
+        for filename in filenames:
+            os.unlink(os.path.join(dirpath, filename))
+        print(f'{path} cleaned')
 
 def downscale_climate(project_directory,
                       df_centroids,
@@ -88,6 +96,9 @@ def downscale_climate(project_directory,
         dataset: downscaled data organized with time, point_id, lat, long
     """
     print('\n---> Downscaling climate to list of points using TopoScale')
+
+    clear_files(f'{project_directory}outputs/tmp')
+
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
     # =========== Open dataset with Dask =================
@@ -183,13 +194,19 @@ def downscale_climate(project_directory,
         surf_interp = mu.dewT_2_q_magnus(surf_interp, mu.var_era_surf)
         plev_interp = mu.t_rh_2_dewT(plev_interp, mu.var_era_plevel)
 
+        down_pt = xr.Dataset(coords={
+                'time': plev_interp.time,
+                'point_id': pt_id
+            })
+
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
             print("---> WARNING: Point {} is {} m lower than the 1000hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation".
                   format(i, np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values),0)))
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
-            down_pt = (top['t']).to_dataset()
+
+            down_pt['t'] = top['t']
             down_pt['u'] = top.u
             down_pt['v'] = top.v
             down_pt['q'] = top.q
@@ -210,7 +227,7 @@ def downscale_climate(project_directory,
             weights = dist / np.sum(dist, axis=0)
 
             # ============ Creating a dataset containing the downscaled timeseries ========================
-            down_pt = (bot.t * weights[1] + top.t * weights[0]).to_dataset()
+            down_pt['t'] = bot.t * weights[1] + top.t * weights[0]
             down_pt['u'] = bot.u * weights[1] + top.u * weights[0]
             down_pt['v'] = bot.v * weights[1] + top.v * weights[0]
             down_pt['q'] = bot.q * weights[1] + top.q * weights[0]
@@ -245,7 +262,7 @@ def downscale_climate(project_directory,
 
         
     ds_list = []
-    ds_paths = []
+    path_list = []
     for i, row in df_centroids.iterrows():
         pt_id = row.point_id.astype(int)
         print('Downscaling LW, SW for point: {} out of {}'.format(pt_id+1,
@@ -329,17 +346,15 @@ def downscale_climate(project_directory,
         ds_list.append(down_pt)
 
         num = str(pt_id).zfill(n_digits)
-        ds_paths.append(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}_{num}.nc')
+        path_list.append(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}')
 
         down_pt = None
         surf_interp = None
-    xr.save_mfdataset(ds_list, ds_paths, engine='h5netcdf')
+    xr.save_mfdataset(ds_list, path_list, engine='h5netcdf')
     ds_list = None
-    ds_paths = None
+    path_list = None
 
-
-        #down_pt.to_netcdf('outputs/down_pt_{}.nc'.format(pt_id))
-        #dataset.append(down_pt)
+    clear_files(f'{project_directory}outputs/tmp')
 
     # print timer to console
     print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
