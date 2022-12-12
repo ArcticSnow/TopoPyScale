@@ -50,7 +50,7 @@ Global climate reanalyses and model projections are available  worldwide for the
 
 # Working examples
 
-The repository [TopoPyScale_examples]() provides three applications of TopoPyScale to independent regions:
+The repository [TopoPyScale_examples](https://github.com/ArcticSnow/TopoPyScale_examples) provides applications of TopoPyScale to three independent regions:
 - the site of [Finse](https://www.mn.uio.no/geo/english/research/groups/latice/infrastructure/) in Southern Norway. Located at 1200m above sea level, Finse is equipped with a wide range of instrumentation for atmospheric, climate and hydrological studies since 2016. In this example *TopoPyScale* is run for the weather station location.
 - the mountain range of Retezat in the Romanian Carpathian mountains. This is an example for applying the *TopoSUB* subroutine for spatialized downscaling.
 - the area of Davos, Switzerland, specifically selected for studies on snow distributino and avalanches. This example shows how *TopoPyScale* can be combined within the same workflow to FSM. 
