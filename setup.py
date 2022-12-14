@@ -9,7 +9,7 @@ with open(path.join(this_directory, 'README.md')) as f:
 
 setup(
     name='topopyscale',
-    version='0.1.5',
+    version='0.1.6',
     description='A Python package to perform climate downscaling at the hillslope scale',
     long_description=long_description,
 
@@ -48,7 +48,7 @@ setup(
     # What does your project relate to?
     keywords=['climate', 'downscaling', 'meteorology', 'xarray'],
     packages=find_packages(),
-    install_requires=['matplotlib', 'scikit-learn', 'pandas', 'numpy', 'xarray', 'pvlib', 'topocalc', 'cdsapi',
+    install_requires=['matplotlib', 'scikit-learn', 'pandas', 'numpy', 'netcdf4', 'h5netcdf', 'pvlib', 'topocalc', 'cdsapi',
                       'rasterio', 'pyproj', 'dask', 'configobj', 'munch'],
     include_package_data=True
 )
