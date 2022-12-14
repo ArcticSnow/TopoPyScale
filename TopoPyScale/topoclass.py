@@ -13,6 +13,7 @@ project/
 """
 import glob
 import os
+import pdb
 #import configparser
 import sys
 import shutil
@@ -30,6 +31,11 @@ from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_export as te
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_obs as tpo
+
+
+
+
+
 
 class Topoclass(object):
     """
@@ -121,13 +127,18 @@ class Topoclass(object):
         self.ds_solar = None
         self.da_horizon = None
 
-        # add here a little routinr doing chek on start and end date in config.yml compare to forcing in case
-
         self.toposub.dem_path = self.config.dem.filepath
         self.toposub.project_directory = self.config.project.directory
 
         if self.config.project.climate.lower() == 'era5':
             self.get_era5()
+
+        if self.config.project.split.IO:
+            self.time_splitter = self.TimeSplitter(self.config.project.start,
+                                                   self.config.project.end,
+                                                   self.config.project.split.time,
+                                                   self.config.outputs.file.ds_solar,
+                                                   self.config.outputs.file.downscaled_pt)
 
 
     def load_project(self):
@@ -269,20 +280,63 @@ class Topoclass(object):
             self.toposub.df_centroids.to_pickle(self.config.project.directory + 'outputs/'+ self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
 
+    class TimeSplitter():
+        def __init__(self, start, end, period, ds_solar_fname, downscale_fname):
+            self.start = start
+            self.end = end
+            self.period = period
+
+            s = pd.date_range(self.start, self.end, freq=f'{self.period}YS')
+            self.start_list = list(s.astype(str))
+            self.end_list = list((s-pd.Timedelta('1D')).astype(str))[1:]
+            self.end_list.append(end.strftime('%Y-%m-%d'))
+
+            self.ds_solar_flist = self._flist_generator(ds_solar_fname)
+            self.downscaled_flist = self._flist_generator(downscale_fname)
+
+        def _flist_generator(self, fname):
+            # function to creat list of filename
+            fcom = fname.split('.')
+            flist = []
+            for i, start in enumerate(self.start_list):
+                flist.append(f'{fcom[0]}_{start}_{self.end_list[i]}.{fcom[1]}')
+            return flist
+
+
     def compute_solar_geometry(self):
-        fname = self.config.project.directory + 'outputs/'+ self.config.outputs.file.ds_solar
-        if os.path.isfile(fname):
-            self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
-            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+
+        if self.config.project.split.IO:
+            for i, start in enumerate(self.time_splitter.start_list):
+                end = self.time_splitter.end_list[i]
+                fname = self.config.project.directory + 'outputs/' + self.time_splitter.ds_solar_flist[i]
+
+                if os.path.isfile(fname):
+                    self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
+                    print(f'---> Solar file {self.time_splitter.ds_solar_flist[i]} exists and loaded')
+                else:
+                    self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
+                                                      start,
+                                                      end,
+                                                      self.config.climate[self.config.project.climate].timestep,
+                                                      str(self.config.dem.epsg),
+                                                      self.config.project.CPU_cores,
+                                                      self.time_splitter.ds_solar_flist[i],
+                                                      self.config.project.directory)
+
         else:
-            self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
-                                              self.config.project.start,
-                                              self.config.project.end,
-                                              self.config.climate[self.config.project.climate].timestep,
-                                              str(self.config.dem.epsg),
-                                              self.config.project.CPU_cores,
-                                              self.config.outputs.file.ds_solar,
-                                              self.config.project.directory)
+            fname = self.config.project.directory + 'outputs/'+ self.config.outputs.file.ds_solar
+            if os.path.isfile(fname):
+                self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
+                print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+            else:
+                self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
+                                                  self.config.project.start,
+                                                  self.config.project.end,
+                                                  self.config.climate[self.config.project.climate].timestep,
+                                                  str(self.config.dem.epsg),
+                                                  self.config.project.CPU_cores,
+                                                  self.config.outputs.file.ds_solar,
+                                                  self.config.project.directory)
 
     def compute_horizon(self):
         """
@@ -310,18 +364,66 @@ class Topoclass(object):
         print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
-        # add logic to check if files exist then load those netcdf files
-        ta.downscale_climate(self.config.project.directory,
-                             self.toposub.df_centroids,
-                             self.da_horizon,
-                             self.ds_solar,
-                             self.config.dem.epsg,
-                             self.config.project.start,
-                             self.config.project.end,
-                             self.config.toposcale.interpolation_method,
-                             self.config.toposcale.LW_terrain_contribution,
-                             self.config.climate[self.config.project.climate].timestep,
-                             self.config.outputs.file.downscaled_pt)
+        if self.config.project.split.IO:
+            for i, start in enumerate(self.time_splitter.start_list):
+                print()
+                end = self.time_splitter.end_list[i]
+                fname = self.time_splitter.downscaled_flist[i]
+
+                self.ds_solar = None
+                self.ds_solar = xr.open_dataset(self.config.project.directory + 'outputs/' + self.time_splitter.ds_solar_flist[i])
+
+                ta.downscale_climate(self.config.project.directory,
+                                     self.toposub.df_centroids,
+                                     self.da_horizon,
+                                     self.ds_solar,
+                                     self.config.dem.epsg,
+                                     start,
+                                     end,
+                                     self.config.toposcale.interpolation_method,
+                                     self.config.toposcale.LW_terrain_contribution,
+                                     self.config.climate[self.config.project.climate].timestep,
+                                     fname)
+
+            # Concatenate time-splitted outputs along time-dimension
+            n_digits = len(str(self.toposub.df_centroids.index.max()))
+            ds_list = []
+            out_path_list = []
+            tmp_path_list = []
+            for pt_id in self.toposub.df_centroids.point_id.values:
+                print(f'Concatenating point {pt_id}')
+                num = str(pt_id).zfill(n_digits)
+                f_pattern = f'{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}*'
+                tmp_path_list.append(f_pattern)
+                #pdb.set_trace()
+                ds = xr.open_mfdataset(f'{self.config.project.directory}outputs/downscaled/{f_pattern}')
+                ds_list.append(ds)
+                file = f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}.nc'
+                out_path_list.append(file)
+                ds = None
+            xr.save_mfdataset(ds_list, out_path_list, engine='h5netcdf')
+
+            # Delete time slice files.
+            for fpat in self.time_splitter.downscaled_flist:
+                flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{fpat}')
+                for file in flist:
+                    os.remove(file)
+
+
+
+        else:
+            ta.downscale_climate(self.config.project.directory,
+                                 self.toposub.df_centroids,
+                                 self.da_horizon,
+                                 self.ds_solar,
+                                 self.config.dem.epsg,
+                                 self.config.project.start,
+                                 self.config.project.end,
+                                 self.config.toposcale.interpolation_method,
+                                 self.config.toposcale.LW_terrain_contribution,
+                                 self.config.climate[self.config.project.climate].timestep,
+                                 self.config.outputs.file.downscaled_pt)
+
 
     def get_era5(self):
         """
