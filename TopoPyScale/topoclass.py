@@ -264,7 +264,7 @@ class Topoclass(object):
             self.toposub.df_centroids = pd.read_pickle(self.config.project.directory + 'outputs/'+ self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
-            if self.config.sampling.method == 'points':
+            if self.config.sampling.method in ['points', 'point'] :
                 self.extract_pts_param()
             elif self.config.sampling.method == 'toposub':
                 self.extract_topo_cluster_param()
@@ -409,8 +409,6 @@ class Topoclass(object):
                 for file in flist:
                     os.remove(file)
 
-
-
         else:
             ta.downscale_climate(self.config.project.directory,
                                  self.toposub.df_centroids,
@@ -424,6 +422,9 @@ class Topoclass(object):
                                  self.config.climate[self.config.project.climate].timestep,
                                  self.config.outputs.file.downscaled_pt)
 
+        self.downscaled_pts = ta.read_downscaled(self.config.project.directory + 'outputs/downscaled/' + self.config.outputs.file.downscaled_pt)
+        # update plotting class variables
+        self.plot.ds_down = self.downscaled_pts
 
     def get_era5(self):
         """

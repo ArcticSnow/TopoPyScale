@@ -150,7 +150,7 @@ def downscale_climate(project_directory,
     n_digits = len(str(df_centroids.index.max()))
 
     for i, row in df_centroids.iterrows():
-        pt_id = row.point_id.astype(int)
+        pt_id = np.int(row.point_id)
         print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(pt_id+1, df_centroids.index.max()+1))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
@@ -178,10 +178,10 @@ def downscale_climate(project_directory,
                               },
                               dims=["latitude", "longitude"]
                               )
-        dw = xr.core.weighted.DatasetWeighted(ds_plev_pt, da_idw)
+        dw = xr.Dataset.weighted(ds_plev_pt, da_idw)
         plev_interp = dw.sum(['longitude', 'latitude'], keep_attrs=True)    # compute horizontal inverse weighted horizontal interpolation
-        dw = xr.core.weighted.DatasetWeighted(ds_surf_pt, da_idw)
-        surf_interp = dw.sum(['longitude', 'latitude'], keep_attrs=True)    # compute horizontal inverse weighted horizontal interpolation
+        dww = xr.Dataset.weighted(ds_surf_pt, da_idw)
+        surf_interp = dww.sum(['longitude', 'latitude'], keep_attrs=True)    # compute horizontal inverse weighted horizontal interpolation
 
         # ========= Converting z from [m**2 s**-2] to [m] asl =======
         plev_interp.z.values = plev_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
@@ -264,7 +264,7 @@ def downscale_climate(project_directory,
     ds_list = []
     path_list = []
     for i, row in df_centroids.iterrows():
-        pt_id = row.point_id.astype(int)
+        pt_id = np.int(row.point_id)
         print('Downscaling LW, SW for point: {} out of {}'.format(pt_id+1,
                                                                   df_centroids.point_id.max()+1))
 
