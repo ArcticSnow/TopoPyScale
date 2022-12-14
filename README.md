@@ -7,7 +7,7 @@
 # TopoPyScale
 Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an original idea of Joel Fiddes to perform topography-based downscaling of climate data to the hillslope scale.
 
-Documentation avalaible (in construction): https://topopyscale.readthedocs.io
+Documentation avalaible: https://topopyscale.readthedocs.io
 
 **References:**
 - Fiddes, J. and Gruber, S.: TopoSCALE v.1.0: downscaling gridded climate data in complex terrain, Geosci. Model Dev., 7, 387–405, https://doi.org/10.5194/gmd-7-387-2014, 2014.
@@ -31,23 +31,6 @@ Contributors to the current version (2021) are:
 - Simon Filhol
 - Joel Fiddes
 - Kristoffer Aalstad
-
-## TODO
-
-- class `topoclass`:
-    - [ ] implement routine to fecth DEM automatically from ArcticDEM/ASTER
-    - [ ] add plotting routines.
-- `topo_sub.py`:
-  - [ ] look into alternative clustering method DBscan
-  - [ ] write download routine for CORDEX climate projection
-- `topo_scale.py`:
-    - [ ] try to rewrite function to skip for loop using the power of zarray
-    - [ ] check against previous implementation of TopoScale
-- **Documentation**:
-  - [ ] describe `config.ini` variables
-  - [ ] short description of `topoclass` structure
-  - [ ] example of downscaling without `topoclass` 
-  - [ ] write about about available forcing datasets
 
 ## Design
 
@@ -174,5 +157,3 @@ my_project/
     ├── outputs/
     └── config.ini
 ```
-
-## Principle of TopoPyScale
