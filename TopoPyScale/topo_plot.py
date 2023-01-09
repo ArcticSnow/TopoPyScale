@@ -47,40 +47,39 @@ def map_terrain(ds_param,
     plt.show()
 
 
-def map_unclustered(ds_down,
-                    ds_param,
-                    time_step=1,
-                    var='t',
-                    ax=None,
-                    cmap=plt.cm.RdBu_r,
-                    hillshade=True,
-                    colorbar=True,
-                    **kwargs):
+def map_variable(ds_down,
+                 ds_param,
+                 time_step=1,
+                 time=None,
+                 var='t',
+                 ax=None,
+                 cmap=plt.cm.RdBu_r,
+                 hillshade=True,
+                 **kwargs):
     """
     Function to plot unclustered downscaled points given that each point corresponds to a cluster label
 
     Args:
-        ds_down:
-        ds_param:
-        time_step:
-        var:
-        cmap:
+        ds_down (dataset): TopoPyScale downscaled point object with coordinates (time, point_id)
+        ds_param (dataset): TopoPyScale toposub dataset with coordinates (x,y)
+        time_step (int): (optional) time step to plot.
+        time (str): (optional) time slice to plot. time overule time_step
+        var (str): variable from ds_down to plot. e.g. 't' for temperature
+        cmap (obj): pyplot colormap object
+        hillshade (bool): add terrain hillshade in background
         **kwargs: kwargs to pass to imshow() in dict format.
 
     TODO:
     - if temperature, divergent colorscale around 0degC
-    - see if we can remain within xarray dataset/dataarray to reshape and include x,y
     """
     if ax is None:
         fig, ax = plt.subplots(1,1)
 
-    ds_mini = ds_down[var].isel(time=time_step)
-    nclust = ds_mini.shape[0]
-    lookup = np.arange(nclust, dtype=np.uint16)
+    if time is None:
+        time = ds_down.time.isel(time=time_step).data
 
-    for i in range(0, nclust):
-        lookup[i] = ds_mini[i].values
-    val = lookup[ds_param.cluster_labels.astype(int).values]
+    if var=='t':
+        print('Suggestion: use divergent colormap plt.cm.RdBl_r centered around 0C')
 
     alpha=1
     if hillshade:
@@ -89,41 +88,19 @@ def map_unclustered(ds_down,
                              dx=ds_param.x.diff('x')[0].values,
                              dy=ds_param.y.diff('y')[0].values,
                              fraction=1.0)
-
-
         ax.imshow(shade,
                    extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
                    cmap=plt.cm.gray)
         alpha=0.5
-    ax.imshow(val,
-               cmap=cmap,
-               extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
-               alpha=alpha, **kwargs)
-    if colorbar:
-        plt.colorbar()
+
+    ds_down[var].sel(point_id=ds_param.cluster_labels).sel(time=time).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
 
     return ax
 
-def map_variable(ds_down,
-                 ds_param):
-    """
-    Function to plot unclustered downscaled points given that each point corresponds to a cluster label
-
-    Args:
-        ds_down (dataset): Slice of single timestep for a variable of interest.  e.g. mp.downscaled_pts['t'].sel(time='2020-01-01 12:00')
-        ds_param (dataset): mapping of the clusters. From topoclass().toposub.ds_param
-
-    Returns:
-        Numpy 2D Array of the variable mapped to individual clusters
-
-    """
-    arr = ds_down.values
-    nclust = ds_down.shape[0]
-    lookup = np.arange(nclust)
-    mapping = ds_param.cluster_labels.values
-
-    for i in range(0, nclust):
-        lookup[i] = ds_down[i]
-    val = lookup[mapping]
-
-    return val
+def map_clusters(ds_down,
+                 ds_param,
+                 df_centroids=None,
+                 **kwargs):
+    ds_down.point_id.sel(point_id=ds_param.cluster_labels).plot.imshow(**kwargs)
+    if df_centroids is not None:
+        plt.scatter(df_centroids.x, df_centroids.y, c='k', s=2)

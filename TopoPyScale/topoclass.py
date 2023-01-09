@@ -383,6 +383,7 @@ class Topoclass(object):
                                      self.config.toposcale.interpolation_method,
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate[self.config.project.climate].timestep,
+                                     self.config.climate.precip_lapse_rate,
                                      fname)
 
             # Concatenate time-splitted outputs along time-dimension
@@ -420,6 +421,7 @@ class Topoclass(object):
                                  self.config.toposcale.interpolation_method,
                                  self.config.toposcale.LW_terrain_contribution,
                                  self.config.climate[self.config.project.climate].timestep,
+                                 self.config.climate.precip_lapse_rate,
                                  self.config.outputs.file.downscaled_pt)
 
         self.downscaled_pts = ta.read_downscaled(self.config.project.directory + 'outputs/downscaled/' + self.config.outputs.file.downscaled_pt)
@@ -594,20 +596,22 @@ class Plotting:
         self.ds_down = None
 
     def map_variable(self,
-                     time_step=1,
                      var='t',
+                     time_step=1,
+                     time=None,
                      cmap=plt.cm.RdBu_r,
                      hillshade=True,
                      **kwargs):
 
         # add logic to check ds_down and ds_param exist.
-        tpl.map_unclustered(self.ds_down,
-                     self.ds_param,
-                     time_step=time_step,
-                     var=var,
-                     cmap=cmap,
-                     hillshade=hillshade,
-                     **kwargs)
+        tpl.map_variable(self.ds_down,
+                         self.ds_param,
+                         time_step=time_step,
+                         time=time,
+                         var=var,
+                         cmap=cmap,
+                         hillshade=hillshade,
+                         **kwargs)
     def map_terrain(self, var='elevation', hillshade=True, **kwargs):
         tpl.map_terrain(self.ds_param,
                         var=var,
@@ -622,8 +626,10 @@ class Plotting:
                             **kwargs):
         print('to be implemented')
 
-    def cluster_map(self):
-        print('To be implemented')
+    def map_clusters(self, **kwargs):
+        tp.map_clusters(self.ds_down,
+                        self.toposub.ds_param,
+                        **kwargs)
 
     def timeseries(self):
         print('To be implemented')

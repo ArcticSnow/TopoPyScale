@@ -78,6 +78,7 @@ def downscale_climate(project_directory,
                       interp_method='idw',
                       lw_terrain_flag=True,
                       tstep='1H',
+                      precip_lapse_rate_flag=True,
                       file_pattern='down_pt*.nc'):
     """
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
@@ -210,7 +211,7 @@ def downscale_climate(project_directory,
             down_pt['u'] = top.u
             down_pt['v'] = top.v
             down_pt['q'] = top.q
-            down_pt['tp'] = surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
+
             down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
 
         else:
@@ -232,16 +233,28 @@ def downscale_climate(project_directory,
             down_pt['v'] = bot.v * weights[1] + top.v * weights[0]
             down_pt['q'] = bot.q * weights[1] + top.q * weights[0]
             down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
-            down_pt['tp'] = surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
 
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
+        if precip_lapse_rate_flag:
+            monthly_coeffs = xr.Dataset(
+                {
+                    'coef': (['month'], [0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
+                },
+                coords={'month': [1,2,3,4,5,6,7,8,9,10,11,12]}
+            )
+            down_pt['month'] = ('time', down_pt.time.dt.month.data)
+            down_pt['precip_lapse_rate'] = (1 + monthly_coeffs.coef.sel(month=down_pt.month.values).data * (row.elevation - surf_interp.z) * 1e-3) / \
+                                           (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (row.elevation - surf_interp.z) * 1e-3)
+        else:
+            down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
+        down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0)*(down_pt.theta + 2*np.pi)
         down_pt['theta_pos'] = (down_pt.theta >= 0)*down_pt.theta
         down_pt = down_pt.drop('theta')
         down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
         down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
-        down_pt = down_pt.drop(['theta_pos', 'theta_neg'])
+        down_pt = down_pt.drop(['theta_pos', 'theta_neg', 'month'])
 
 
         dpt_list.append(down_pt)

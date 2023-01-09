@@ -51,12 +51,12 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
         array: 1D array snow
     """
     #
-    def func(x):
+    def func(p):
             '''
             Function to choose if it snows or not randomly based on probability
             '''
             rng = default_rng()
-            return rng.choice([0,1], 1, p=[1-x, x])
+            return rng.choice([0,1], 1, p=[1-p, p])
 
     if method.lower() == 'continuous':
         snow = precip * ((temp <= tair_low_thresh) +
