@@ -480,7 +480,8 @@ class Topoclass(object):
 
         bbox = [latS, lonW, latN, lonE]
         tpo.fetch_WMO_insitu_observations(list(df.year.unique()),
-                                          list(df.month.unique()))
+                                          list(df.month.unique()),
+                                          bbox)
         tpo.parse_WMO_insitu_observations()
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', precip_partition='continuous'):
