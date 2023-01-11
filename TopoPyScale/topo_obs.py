@@ -89,7 +89,7 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     return ds
 
 
-def fetch_WMO_insitu_observations(year, month, bbox, target_path='./inputs/observations'):
+def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/observations'):
     """
     Function to download WMO in-situ data from land surface in-situ observations from Copernicus.
     https://cds.climate.copernicus.eu/cdsapp#!/dataset/insitu-observations-surface-land?tab=overview
@@ -119,7 +119,6 @@ def fetch_WMO_insitu_observations(year, month, bbox, target_path='./inputs/obser
         return False
 
     c = cdsapi.Client()
-
     c.retrieve(
         'insitu-observations-surface-land',
         {
@@ -130,8 +129,8 @@ def fetch_WMO_insitu_observations(year, month, bbox, target_path='./inputs/obser
             ],
             'usage_restrictions': 'restricted',
             'data_quality': 'passed',
-            'year': year,
-            'month': month,
+            'year': years,
+            'month': months,
             'day': ['01', '02', '03',
 				 '04', '05', '06',
 				 '07', '08', '09',
