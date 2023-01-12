@@ -211,12 +211,14 @@ def downscale_climate(project_directory,
             down_pt['u'] = top.u
             down_pt['v'] = top.v
             down_pt['q'] = top.q
-
             down_pt['p'] = top.level*(10**2) * np.exp(-(row.elevation-top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
 
         else:
             # ========== Vertical interpolation at the DEM surface z  ===============
             ind_z_bot = (plev_interp.where(plev_interp.z < row.elevation).z - row.elevation).argmax('level')
+            if (row.elevation < plev_interp.z.isel(level=0)).sum() > plev_interp.z.isel(level=0).shape[0]:
+                sys.exit(f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation')
+
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
             bot = plev_interp.isel(level=ind_z_bot)
@@ -247,6 +249,7 @@ def downscale_climate(project_directory,
                                            (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (row.elevation - surf_interp.z) * 1e-3)
         else:
             down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
+
         down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp  * 1 / tstep_dict.get(tstep) * 10**3 # Convert to mm/hr
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0)*(down_pt.theta + 2*np.pi)
