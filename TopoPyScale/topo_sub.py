@@ -11,6 +11,7 @@ TODO:
 import rasterio
 from rasterio import plot
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
 from sklearn import cluster
 from sklearn.decomposition import PCA
 import pandas as pd
@@ -121,6 +122,66 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
     df_param['cluster_labels'] = miniBkmeans.labels_
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
+
+def find_number_of_clusters(df_param,
+                            method='minibatch_kmean',
+                            cluster_range=np.arange(1000, 3000, 500),
+                            plot=True):
+    '''
+    Function to help identify an optimum number of clusters using the elbow method
+    Args:
+        df_param:
+        kmean_obj:
+        range_n_clusters:
+        plot:
+
+    Returns:
+
+    '''
+    wcss = [] # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
+    db_scores = []
+    ch_scores = []
+
+    for n_clusters in cluster_range:
+        if method == 'minibatchkmean':
+            df_centroids, kmeans_obj, df_param['cluster_labels'] = minibatch_kmeans_clustering(
+                            df_param,
+                            n_clusters,
+                            seed=2)
+        elif method == 'kmean':
+            df_centroids, kmeans_obj, df_param['cluster_labels'] = kmeans_clustering(
+                            df_param,
+                            n_clusters,
+                            seed=2)
+
+        labels = kmeans_obj.labels_
+        #score = silhouette_score(df_param, labels)
+        #scores.append(score)
+        wcss.append(kmeans_obj.inertia_)
+        db_scores.append(davies_bouldin_score(df_param, labels))
+        ch_scores.append(calinski_harabasz_score(df_param, labels))
+
+        df = pd.DataFrame({'n_clusters':cluster_range,
+                           'wcss_score': wcss,
+                           'db_score':db_scores,
+                           'ch_score':ch_scores})
+
+        if plot:
+            fig, ax = plt.subplots(3,1,sharex=True)
+            #------ Elbow method ------
+            ax[0].plot(df.n_clusters, df.wcss_score, label="Within-Cluster-Sum-of-Squares (WCSS)")
+            ax[0].set_ylabel("Score")
+            ax[0].legend()
+            ax[1].plot(df.n_clusters, df.db_score, label='Davies-Bouldin')
+            ax[1].set_ylabel("Score")
+            ax[1].legend()
+            ax[2].plot(df.n_clusters, df.ch_score, label='Calinski-Harabasz')
+            ax[2].set_xlabel("Number of clusters")
+            ax[2].set_ylabel("Score")
+            ax[2].legend()
+            plt.show()
+
+        return df
 
 
 

@@ -168,4 +168,11 @@ def obs_vs_downscaled(df,
 
         plt.show()
 
-    return metrics, se, df['cor']
+    if not trend_correction and not seasonal_correction:
+        return
+    elif trend_correction and not seasonal_correction:
+        return metrics, df['cor']
+    elif not trend_correction and seasonal_correction:
+        return se, df['cor']
+    else:
+        return metrics, se, df['cor']

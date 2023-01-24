@@ -216,10 +216,13 @@ def downscale_climate(project_directory,
         else:
             # ========== Vertical interpolation at the DEM surface z  ===============
             ind_z_bot = (plev_interp.where(plev_interp.z < row.elevation).z - row.elevation).argmax('level')
-            if (row.elevation < plev_interp.z.isel(level=0)).sum() > plev_interp.z.isel(level=0).shape[0]:
-                sys.exit(f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation')
 
-            ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
+            # In case upper pressure level elevation is not high enough, stop process and print error
+            try:
+                ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
+            except:
+                print(f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation')
+
             top = plev_interp.isel(level=ind_z_top)
             bot = plev_interp.isel(level=ind_z_bot)
 
