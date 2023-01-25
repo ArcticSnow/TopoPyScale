@@ -142,6 +142,10 @@ def search_number_of_clusters(df_param,
     wcss = [] # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
     db_scores = []
     ch_scores = []
+    n_pixels_median = []
+    n_pixels_min = []
+    n_pixels_max = []
+    n_pixels_mean = []
 
     for n_clusters in cluster_range:
         if method == 'minibatchkmean':
@@ -156,16 +160,27 @@ def search_number_of_clusters(df_param,
                             seed=2)
 
         labels = kmeans_obj.labels_
-        #score = silhouette_score(df_param, labels)
-        #scores.append(score)
+
+        # compute scores
         wcss.append(kmeans_obj.inertia_)
         db_scores.append(davies_bouldin_score(df_param, labels))
         ch_scores.append(calinski_harabasz_score(df_param, labels))
 
+        # compute stats on cluster sizes
+        pix_count = df_param.groupby('cluster_labels').count()['x']
+        n_pixels_min.append(pix_count.min())
+        n_pixels_max.append(pix_count.max())
+        n_pixels_mean.append(pix_count.mean())
+        n_pixels_median.append(pix_count.median())
+
     df = pd.DataFrame({'n_clusters':cluster_range,
                        'wcss_score': wcss,
                        'db_score':db_scores,
-                       'ch_score':ch_scores})
+                       'ch_score':ch_scores,
+                       'n_pixels_min':n_pixels_min,
+                       'n_pixels_median':n_pixels_median,
+                       'n_pixels_mean':n_pixels_mean,
+                       'n_pixels_max':n_pixels_max})
 
     if plot:
         fig, ax = plt.subplots(3,1,sharex=True)

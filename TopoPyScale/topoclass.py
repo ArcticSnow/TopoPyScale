@@ -216,13 +216,24 @@ class Topoclass(object):
         print(f'Computing scores for {cluster_range} clusters')
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         print(f'Variables used in clustering: {list(df_param.columns.values)}')
+
+        # extract pixel size
+        dx = np.diff(self.toposub.ds_param.x.values).mean()
+        dy = np.diff(self.toposub.ds_param.y.values).mean()
+
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
 
-        df_nclusters =ts.search_number_of_clusters(df_scaled,
+        df_nclusters = ts.search_number_of_clusters(df_scaled,
                                    method=self.config.sampling.toposub.clustering_method,
                                    cluster_range = cluster_range,
                                    plot=plot)
-        print('TBA: statistics of clusters per km2, [mean, min, max, median] cluster area')
+
+        # print to console stats about
+        tmp = df_nclusters['n_cluster']
+        tmp[['cluster_size_median', 'cluster_size_min', 'cluster_size_max']] = df_nclusters[['n_pixels_median','n_pixels_min','n_pixels_max']] * dx * dy
+        print('... Cluster size statisitics [median, min, max] ...')
+        print(tmp)
+        
         return df_nclusters
 
 
