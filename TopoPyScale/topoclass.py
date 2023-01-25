@@ -230,7 +230,7 @@ class Topoclass(object):
 
         # print to console stats about
         tmp = df_nclusters['n_clusters']
-        tmp['cluster_size_median'], tmp['cluster_size_min'], tmp['cluster_size_max'] = df_nclusters['n_pixels_median'] * dx * dy, df['n_pixels_min'] * dx * dy, df_nclusters['n_pixels_max'] * dx * dy
+        tmp['cluster_size_median'], tmp['cluster_size_min'], tmp['cluster_size_max'] = df_nclusters['n_pixels_median'] * dx * dy, df_nclusters['n_pixels_min'] * dx * dy, df_nclusters['n_pixels_max'] * dx * dy
         print('... Cluster size statisitics [median, min, max] ...')
         print(tmp)
 
