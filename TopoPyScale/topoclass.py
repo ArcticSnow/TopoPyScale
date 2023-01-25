@@ -33,10 +33,6 @@ from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_obs as tpo
 
 
-
-
-
-
 class Topoclass(object):
     """
     A python class to bring the typical use-case of toposcale in a user friendly object
@@ -206,6 +202,29 @@ class Topoclass(object):
             self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                          fname=self.config.outputs.file.ds_param,
                                                          project_directory=self.config.project.directory)
+
+    def test_number_of_clusters(self, cluster_range=np.arange(100,1000,200), plot=True):
+        '''
+        Function to test what would be an appropriate number of clusters
+        Args:
+            cluster_range (int array): numpy array or list of number of clusters to compute scores.
+
+        Returns:
+
+        '''
+        print('---> Testing number of clusters')
+        print(f'Variables used in clustering: {df_param.columns}')
+        print(f'Computing scores for {cluster_range} clusters')
+        df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+        df_scaled, self.toposub.scaler = ts.scale_df(df_param)
+
+        df_nclusters =ts.find_number_of_clusters(df_scaled,
+                                   method=self.config.sampling.toposub.clustering_method,
+                                   cluster_range = cluster_range,
+                                   plot=plot)
+        return df_nclusters
+
+
 
     def extract_pts_param(self, method='nearest', **kwargs):
         """

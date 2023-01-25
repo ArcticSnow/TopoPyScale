@@ -124,18 +124,19 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
 
 
 def find_number_of_clusters(df_param,
-                            method='minibatch_kmean',
-                            cluster_range=np.arange(1000, 3000, 500),
+                            method='minibatchkmean',
+                            cluster_range=np.arange(100, 1000, 200),
                             plot=True):
     '''
     Function to help identify an optimum number of clusters using the elbow method
     Args:
-        df_param:
-        kmean_obj:
-        range_n_clusters:
-        plot:
+        df_param (dataframe): pandas dataframe containing input variable to the clustering method
+        method (str): method for clustering. Currently available: ['minibatchkmean', 'kmeans']
+        range_n_clusters (array int): array of number of clusters to derive scores for
+        plot (bool): plot results or not
 
     Returns:
+        dataframe: wcss score, Davies Boulding score, Calinsky Harabasz score
 
     '''
     wcss = [] # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)

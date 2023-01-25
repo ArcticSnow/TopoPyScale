@@ -6,7 +6,6 @@ S. Filhol, December 2021
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LightSource
-
 import numpy as np
 
 def map_terrain(ds_param,
