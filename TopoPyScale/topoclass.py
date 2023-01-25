@@ -217,10 +217,6 @@ class Topoclass(object):
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         print(f'Variables used in clustering: {list(df_param.columns.values)}')
 
-        # extract pixel size
-        dx = np.diff(self.toposub.ds_param.x.values).mean()
-        dy = np.diff(self.toposub.ds_param.y.values).mean()
-
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
 
         df_nclusters = ts.search_number_of_clusters(df_scaled,
@@ -229,10 +225,7 @@ class Topoclass(object):
                                    plot=plot)
 
         # print to console stats about
-        tmp = df_nclusters['n_clusters']
-        tmp['cluster_size_median'], tmp['cluster_size_min'], tmp['cluster_size_max'] = df_nclusters['n_pixels_median'] * dx * dy, df_nclusters['n_pixels_min'] * dx * dy, df_nclusters['n_pixels_max'] * dx * dy
-        print('... Cluster size statisitics [median, min, max] ...')
-        print(tmp)
+        print(df_nclusters)
 
         return df_nclusters
 
