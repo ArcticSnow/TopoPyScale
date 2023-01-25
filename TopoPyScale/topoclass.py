@@ -215,7 +215,7 @@ class Topoclass(object):
         print('---> Testing number of clusters')
         print(f'Computing scores for {cluster_range} clusters')
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
-        print(f'Variables used in clustering: {df_param.columns}')
+        print(f'Variables used in clustering: {list(df_param.columns.values)}')
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
 
         df_nclusters =ts.search_number_of_clusters(df_scaled,

@@ -162,27 +162,27 @@ def search_number_of_clusters(df_param,
         db_scores.append(davies_bouldin_score(df_param, labels))
         ch_scores.append(calinski_harabasz_score(df_param, labels))
 
-        df = pd.DataFrame({'n_clusters':cluster_range,
-                           'wcss_score': wcss,
-                           'db_score':db_scores,
-                           'ch_score':ch_scores})
+    df = pd.DataFrame({'n_clusters':cluster_range,
+                       'wcss_score': wcss,
+                       'db_score':db_scores,
+                       'ch_score':ch_scores})
 
-        if plot:
-            fig, ax = plt.subplots(3,1,sharex=True)
-            #------ Elbow method ------
-            ax[0].plot(df.n_clusters, df.wcss_score, label="Within-Cluster-Sum-of-Squares (WCSS)")
-            ax[0].set_ylabel("Score")
-            ax[0].legend()
-            ax[1].plot(df.n_clusters, df.db_score, label='Davies-Bouldin')
-            ax[1].set_ylabel("Score")
-            ax[1].legend()
-            ax[2].plot(df.n_clusters, df.ch_score, label='Calinski-Harabasz')
-            ax[2].set_xlabel("Number of clusters")
-            ax[2].set_ylabel("Score")
-            ax[2].legend()
-            plt.show()
+    if plot:
+        fig, ax = plt.subplots(3,1,sharex=True)
+        #------ Elbow method ------
+        ax[0].plot(df.n_clusters, df.wcss_score, label="Within-Cluster-Sum-of-Squares (WCSS)")
+        ax[0].set_ylabel("Score")
+        ax[0].legend()
+        ax[1].plot(df.n_clusters, df.db_score, label='Davies-Bouldin')
+        ax[1].set_ylabel("Score")
+        ax[1].legend()
+        ax[2].plot(df.n_clusters, df.ch_score, label='Calinski-Harabasz')
+        ax[2].set_xlabel("Number of clusters")
+        ax[2].set_ylabel("Score")
+        ax[2].legend()
+        plt.show()
 
-        return df
+    return df
 
 
 
