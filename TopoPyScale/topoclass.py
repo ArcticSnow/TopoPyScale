@@ -229,11 +229,11 @@ class Topoclass(object):
                                    plot=plot)
 
         # print to console stats about
-        tmp = df_nclusters['n_cluster']
+        tmp = df_nclusters['n_clusters']
         tmp[['cluster_size_median', 'cluster_size_min', 'cluster_size_max']] = df_nclusters[['n_pixels_median','n_pixels_min','n_pixels_max']] * dx * dy
         print('... Cluster size statisitics [median, min, max] ...')
         print(tmp)
-        
+
         return df_nclusters
 
 
