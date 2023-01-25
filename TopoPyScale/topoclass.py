@@ -218,7 +218,7 @@ class Topoclass(object):
         print(f'Variables used in clustering: {df_param.columns}')
         df_scaled, self.toposub.scaler = ts.scale_df(df_param)
 
-        df_nclusters =ts.find_number_of_clusters(df_scaled,
+        df_nclusters =ts.search_number_of_clusters(df_scaled,
                                    method=self.config.sampling.toposub.clustering_method,
                                    cluster_range = cluster_range,
                                    plot=plot)
