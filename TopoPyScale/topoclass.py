@@ -203,7 +203,7 @@ class Topoclass(object):
                                                          fname=self.config.outputs.file.ds_param,
                                                          project_directory=self.config.project.directory)
 
-    def test_number_of_clusters(self, cluster_range=np.arange(100,1000,200), plot=True):
+    def search_optimum_number_of_clusters(self, cluster_range=np.arange(100,1000,200), plot=True):
         '''
         Function to test what would be an appropriate number of clusters
         Args:
@@ -222,6 +222,7 @@ class Topoclass(object):
                                    method=self.config.sampling.toposub.clustering_method,
                                    cluster_range = cluster_range,
                                    plot=plot)
+        print('TBA: statistics of clusters per km2, [mean, min, max, median] cluster area')
         return df_nclusters
 
 

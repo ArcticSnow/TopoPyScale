@@ -123,7 +123,7 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
-def find_number_of_clusters(df_param,
+def search_number_of_clusters(df_param,
                             method='minibatchkmean',
                             cluster_range=np.arange(100, 1000, 200),
                             plot=True):
