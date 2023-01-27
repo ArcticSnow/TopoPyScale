@@ -92,7 +92,7 @@ key: {uid}:{api-key}
 
 1. Setup your Python environment
 2. Create your project directory
-3. Configure the file `config.ini` to fit your problem (see [`config.ini`](https://github.com/ArcticSnow/TopoPyScale/blob/main/TopoPyScale/config.ini) for an example)
+3. Configure the file `config.ini` to fit your problem (see [`config.yml`](https://github.com/ArcticSnow/TopoPyScale_examples/blob/main/ex1_norway_finse/config_spatial.yml) for an example)
 4. Run TopoPyScale
 
 ```python
@@ -102,7 +102,7 @@ from matplotlib import pyplot as plt
 
 # ========= STEP 1 ==========
 # Load Configuration
-config_file = './config.ini'
+config_file = './config.yml'
 mp = tc.Topoclass(config_file)
 # Compute parameters of the DEM (slope, aspect, sky view factor)
 mp.compute_dem_param()
