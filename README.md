@@ -9,6 +9,8 @@ Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an ori
 
 Documentation avalaible: https://topopyscale.readthedocs.io
 
+![](https://github.com/ArcticSnow/TopoPyScale/blob/main/JOSS/temperature_comparison_crop_scaled.jpg)
+
 **References:**
 - Fiddes, J. and Gruber, S.: TopoSCALE v.1.0: downscaling gridded climate data in complex terrain, Geosci. Model Dev., 7, 387–405, https://doi.org/10.5194/gmd-7-387-2014, 2014.
 - Fiddes, J. and Gruber, S.: TopoSUB: a tool for efficient large area numerical modelling in complex topography at sub-grid scales, Geosci. Model Dev., 5, 1245–1257, https://doi.org/10.5194/gmd-5-1245-2012, 2012. 
@@ -92,7 +94,7 @@ key: {uid}:{api-key}
 
 1. Setup your Python environment
 2. Create your project directory
-3. Configure the file `config.ini` to fit your problem (see [`config.ini`](https://github.com/ArcticSnow/TopoPyScale/blob/main/TopoPyScale/config.ini) for an example)
+3. Configure the file `config.ini` to fit your problem (see [`config.yml`](https://github.com/ArcticSnow/TopoPyScale_examples/blob/main/ex1_norway_finse/config_spatial.yml) for an example)
 4. Run TopoPyScale
 
 ```python
@@ -102,7 +104,7 @@ from matplotlib import pyplot as plt
 
 # ========= STEP 1 ==========
 # Load Configuration
-config_file = './config.ini'
+config_file = './config.yml'
 mp = tc.Topoclass(config_file)
 # Compute parameters of the DEM (slope, aspect, sky view factor)
 mp.compute_dem_param()
