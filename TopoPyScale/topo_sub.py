@@ -38,7 +38,9 @@ def ds_to_indexed_dataframe(ds):
     n_levels = df.index.names.__len__()
     return df.reset_index(level=list(range(0, n_levels)))
 
-def scale_df(df_param, scaler=StandardScaler()):
+def scale_df(df_param,
+             scaler=StandardScaler(),
+             features=None):
     """
     Function to scale features of a pandas dataframe
 
@@ -49,12 +51,19 @@ def scale_df(df_param, scaler=StandardScaler()):
     Returns:
         dataframe: scaled data
     """
+    feature_list = features.keys()
     print('---> Scaling data prior to clustering')
-    df_scaled = pd.DataFrame(scaler.fit_transform(df_param.values),
-                             columns=df_param.columns, index=df_param.index)
+    df_scaled = pd.DataFrame(scaler.fit_transform(df_param[feature_list].values),
+                             columns=df_param[feature_list].columns,
+                             index=df_param[feature_list].index)
+    for fe in feature_list:
+        df_scaled[fe] *= features.get(fe)
+
     return df_scaled, scaler
 
-def inverse_scale_df(df_scaled, scaler):
+def inverse_scale_df(df_scaled,
+                     scaler,
+                     features=None):
     """
     Function to inverse feature scaling of a pandas dataframe
     
@@ -65,12 +74,21 @@ def inverse_scale_df(df_scaled, scaler):
     Returns:
         dataframe: data in original format
     """
+    feature_list = features.keys()
+    for fe in feature_list:
+        df_scaled[fe] /= features.get(fe)
+
     df_inv = pd.DataFrame(scaler.inverse_transform(df_scaled.values),
-                          columns=df_scaled.columns, index=df_scaled.index)
+                          columns=df_scaled.columns,
+                          index=df_scaled.index)
     return df_inv
 
 
-def kmeans_clustering(df_param, n_clusters=100, seed=None, **kwargs):
+def kmeans_clustering(df_param,
+                      feature_list=['x','y', 'elevation', 'slope', 'svf', 'aspect_cos', 'aspect_sin'],
+                      n_clusters=100,
+                      seed=None,
+                      **kwargs):
     """
     Function to perform K-mean clustering
 
@@ -86,8 +104,8 @@ def kmeans_clustering(df_param, n_clusters=100, seed=None, **kwargs):
         dataframe: df_param
 
     """
-    X = df_param.to_numpy()
-    col_names = df_param.columns
+    X = df_param[feature_list].to_numpy()
+    col_names = df_param[feature_list].columns
     print('---> Clustering with K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
     kmeans = cluster.KMeans(n_clusters=n_clusters, random_state=seed, **kwargs).fit(X)
@@ -142,12 +160,16 @@ def search_number_of_clusters(df_param,
     wcss = [] # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
     db_scores = []
     ch_scores = []
+    rmse_elevation = []
     n_pixels_median = []
     n_pixels_min = []
     n_pixels_max = []
     n_pixels_mean = []
 
     for n_clusters in cluster_range:
+        if 'cluster_labels' in df_param.columns:
+            df_param = df_param.drop('cluster_labels', axis=1)
+
         if method == 'minibatchkmean':
             df_centroids, kmeans_obj, df_param['cluster_labels'] = minibatch_kmeans_clustering(
                             df_param,
@@ -160,11 +182,14 @@ def search_number_of_clusters(df_param,
                             seed=2)
 
         labels = kmeans_obj.labels_
+        cluster_elev = ts.inverse_scale_df(df_centroids, scaler).elevation.loc[df_param.cluster_labels].values
+        rmse = (((df_param.elevation - cluster_elev)**2).mean())**0.5
 
         # compute scores
         wcss.append(kmeans_obj.inertia_)
         db_scores.append(davies_bouldin_score(df_param, labels))
         ch_scores.append(calinski_harabasz_score(df_param, labels))
+        rmse_elevation.append(rmse)
 
         # compute stats on cluster sizes
         pix_count = df_param.groupby('cluster_labels').count()['x']
@@ -177,13 +202,14 @@ def search_number_of_clusters(df_param,
                        'wcss_score': wcss,
                        'db_score':db_scores,
                        'ch_score':ch_scores,
+                       'rmse_elevation':rmse_elevation,
                        'n_pixels_min':n_pixels_min,
                        'n_pixels_median':n_pixels_median,
                        'n_pixels_mean':n_pixels_mean,
                        'n_pixels_max':n_pixels_max})
 
     if plot:
-        fig, ax = plt.subplots(3,1,sharex=True)
+        fig, ax = plt.subplots(4,1,sharex=True)
         #------ Elbow method ------
         ax[0].plot(df.n_clusters, df.wcss_score, label="Within-Cluster-Sum-of-Squares (WCSS)")
         ax[0].set_ylabel("Score")
@@ -192,9 +218,12 @@ def search_number_of_clusters(df_param,
         ax[1].set_ylabel("Score")
         ax[1].legend()
         ax[2].plot(df.n_clusters, df.ch_score, label='Calinski-Harabasz')
-        ax[2].set_xlabel("Number of clusters")
         ax[2].set_ylabel("Score")
         ax[2].legend()
+        ax[3].plot(df.n_clusters, df.rmse_elevation, label='Elevation RMSE')
+        ax[3].set_xlabel("Number of clusters")
+        ax[3].set_ylabel("RMSE [m]")
+        ax[3].legend()
         plt.show()
 
     return df

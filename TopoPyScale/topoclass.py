@@ -255,7 +255,7 @@ class Topoclass(object):
         - try to migrate most code of this functino to topo_sub.py as a function itself segment_topo()
         """
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
-        df_scaled, self.toposub.scaler = ts.scale_df(df_param)
+        df_scaled, self.toposub.scaler = ts.scale_df(df_param, features=self.config.sampling.toposub.clustering_features)
         if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.kmeans_clustering(
                 df_scaled,
@@ -269,7 +269,7 @@ class Topoclass(object):
                 seed=self.config.sampling.toposub.random_seed)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.sampling.toposub.clustering_method))
-        self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler)
+        self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler, features=self.config.sampling.toposub.clustering_features)
         self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
@@ -378,14 +378,17 @@ class Topoclass(object):
                                                  self.config.project.directory)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
-        for az in self.da_horizon.azimuth.values:
-            self.toposub.df_centroids['hori_azi_'+str(az)] = self.da_horizon.sel(x=tgt_x,
-                                                                            y=tgt_y,
-                                                                            azimuth=az,
-                                                                            method='nearest').values.flatten()
-        # update df_centroid file with horizons angle
-        self.toposub.df_centroids.to_pickle(self.config.project.directory + 'outputs/'+ self.config.outputs.file.df_centroids)
-        print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
+
+        # In case horizon angles are computed after clustering
+        if self.toposub.df_centroids is not None:
+            for az in self.da_horizon.azimuth.values:
+                self.toposub.df_centroids['hori_azi_'+str(az)] = self.da_horizon.sel(x=tgt_x,
+                                                                                y=tgt_y,
+                                                                                azimuth=az,
+                                                                                method='nearest').values.flatten()
+            # update df_centroid file with horizons angle
+            self.toposub.df_centroids.to_pickle(self.config.project.directory + 'outputs/'+ self.config.outputs.file.df_centroids)
+            print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
         if self.config.project.split.IO:
