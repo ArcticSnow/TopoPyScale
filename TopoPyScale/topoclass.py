@@ -11,12 +11,8 @@ project/
     -> output/
 
 """
-import glob
-import os
+import glob, os, sys, shutil
 import pdb
-#import configparser
-import sys
-import shutil
 from munch import DefaultMunch
 import pandas as pd
 import xarray as xr
@@ -31,6 +27,9 @@ from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_export as te
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_obs as tpo
+
+from sklearn.preprocessing import StandardScaler
+
 
 
 class Topoclass(object):
@@ -203,7 +202,10 @@ class Topoclass(object):
                                                          fname=self.config.outputs.file.ds_param,
                                                          project_directory=self.config.project.directory)
 
-    def search_optimum_number_of_clusters(self, cluster_range=np.arange(100,1000,200), plot=True):
+    def search_optimum_number_of_clusters(self,
+                                          cluster_range=np.arange(100,1000,200),
+                                          scaler_type=StandardScaler(),
+                                          plot=True):
         '''
         Function to test what would be an appropriate number of clusters
         Args:
@@ -217,12 +219,13 @@ class Topoclass(object):
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         print(f'Variables used in clustering: {list(df_param.columns.values)}')
 
-        df_scaled, self.toposub.scaler = ts.scale_df(df_param)
-
-        df_nclusters = ts.search_number_of_clusters(df_scaled,
-                                   method=self.config.sampling.toposub.clustering_method,
-                                   cluster_range = cluster_range,
-                                   plot=plot)
+        df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+        df_nclusters = ts.search_number_of_clusters(df_param,
+                                                    method=self.config.sampling.toposub.clustering_method,
+                                                    cluster_range = cluster_range,
+                                                    features=self.config.sampling.toposub.clustering_features,
+                                                    scaler_type=scaler_type,
+                                                    plot=plot)
 
         # print to console stats about
         print(df_nclusters)
@@ -259,17 +262,28 @@ class Topoclass(object):
         if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.kmeans_clustering(
                 df_scaled,
-                self.config.sampling.toposub.n_clusters,
+                features=self.config.sampling.toposub.clustering_features,
+                n_clusters=self.config.sampling.toposub.n_clusters,
                 seed=self.config.sampling.toposub.random_seed)
         elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
             self.toposub.df_centroids, self.toposub.kmeans_obj, df_param['cluster_labels'] = ts.minibatch_kmeans_clustering(
                 df_scaled,
-                self.config.sampling.toposub.n_clusters,
-                self.config.project.CPU_cores,
+                n_clusters=self.config.sampling.toposub.n_clusters,
+                features=self.config.sampling.toposub.clustering_features,
+                n_cores=self.config.project.CPU_cores,
                 seed=self.config.sampling.toposub.random_seed)
         else:
             print('ERROR: {} clustering method not available'.format(self.config.sampling.toposub.clustering_method))
         self.toposub.df_centroids = ts.inverse_scale_df(self.toposub.df_centroids, self.toposub.scaler, features=self.config.sampling.toposub.clustering_features)
+
+        # logic to add variables not used as clustering predictors into df_centroids
+        feature_list = self.config.sampling.toposub.clustering_features.keys()
+        flist = list(feature_list)
+        flist.append('cluster_labels')
+        if len(df_param.columns) > len(flist):
+            tmp = df_param.groupby('cluster_labels').mean()
+            for var in df_param.drop(flist, axis=1).columns:
+                self.toposub.df_centroids[var] = tmp[var]
         self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 

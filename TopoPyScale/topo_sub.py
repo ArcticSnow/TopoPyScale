@@ -40,13 +40,14 @@ def ds_to_indexed_dataframe(ds):
 
 def scale_df(df_param,
              scaler=StandardScaler(),
-             features=None):
+             features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1}):
     """
     Function to scale features of a pandas dataframe
 
     Args:
         df_param (dataframe): features to scale
         scaler (scaler object): Default is StandardScaler()
+        features (dict): dictionnary of features to use as predictors with their respect importance. {'x':1, 'y':1}
 
     Returns:
         dataframe: scaled data
@@ -63,13 +64,14 @@ def scale_df(df_param,
 
 def inverse_scale_df(df_scaled,
                      scaler,
-                     features=None):
+                     features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1}):
     """
     Function to inverse feature scaling of a pandas dataframe
     
     Args:
         df_scaled (dataframe): scaled data to transform back to original (inverse transfrom)
         scaler (scaler object): original scikit learn scaler
+        features (dict): dictionnary of features to use as predictors with their respect importance. {'x':1, 'y':1}
 
     Returns:
         dataframe: data in original format
@@ -85,7 +87,7 @@ def inverse_scale_df(df_scaled,
 
 
 def kmeans_clustering(df_param,
-                      feature_list=['x','y', 'elevation', 'slope', 'svf', 'aspect_cos', 'aspect_sin'],
+                      features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1},
                       n_clusters=100,
                       seed=None,
                       **kwargs):
@@ -94,6 +96,7 @@ def kmeans_clustering(df_param,
 
     Args:
         df_param (dataframe): features
+        features (dict): dictionnary of features to use as predictors with their respect importance. {'x':1, 'y':1}
         n_clusters (int): number of clusters
         seed (int): None or int for random seed generator
         kwargs:
@@ -104,6 +107,7 @@ def kmeans_clustering(df_param,
         dataframe: df_param
 
     """
+    feature_list = features.keys()
     X = df_param[feature_list].to_numpy()
     col_names = df_param[feature_list].columns
     print('---> Clustering with K-means in {} clusters'.format(n_clusters))
@@ -115,13 +119,19 @@ def kmeans_clustering(df_param,
     return df_centers, kmeans, df_param
 
 
-def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, **kwargs):
+def minibatch_kmeans_clustering(df_param,
+                                n_clusters=100,
+                                features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1},
+                                n_cores=4,
+                                seed=None,
+                                **kwargs):
     """
     Function to perform mini-batch K-mean clustering
     
     Args:
         df_param (dataframe): features
         n_clusters (int):  number of clusters
+        features (dict): dictionnary of features to use as predictors with their respect importance. {'x':1, 'y':1}
         n_cores (int): number of processor core
         kwargs:
 
@@ -130,7 +140,8 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
         kmean object: kmean model
         dataframe: labels of input data
     """
-    X = df_param.to_numpy()
+    feature_list = features.keys()
+    X = df_param[feature_list].to_numpy()
     col_names = df_param.columns
     print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
@@ -144,6 +155,8 @@ def minibatch_kmeans_clustering(df_param, n_clusters=100, n_cores=4, seed=None, 
 def search_number_of_clusters(df_param,
                             method='minibatchkmean',
                             cluster_range=np.arange(100, 1000, 200),
+                            features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1},
+                            scaler_type=StandardScaler(),
                             plot=True):
     '''
     Function to help identify an optimum number of clusters using the elbow method
@@ -151,12 +164,15 @@ def search_number_of_clusters(df_param,
         df_param (dataframe): pandas dataframe containing input variable to the clustering method
         method (str): method for clustering. Currently available: ['minibatchkmean', 'kmeans']
         range_n_clusters (array int): array of number of clusters to derive scores for
+        features (dict): dictionnary of features to use as predictors with their respect importance. {'x':1, 'y':1}
+        scaler_type (scikit_learn obj): type of scaler to use: e.g. StandardScaler() or RobustScaler()
         plot (bool): plot results or not
 
     Returns:
         dataframe: wcss score, Davies Boulding score, Calinsky Harabasz score
 
     '''
+    feature_list = features.keys()
     wcss = [] # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
     db_scores = []
     ch_scores = []
@@ -167,22 +183,22 @@ def search_number_of_clusters(df_param,
     n_pixels_mean = []
 
     for n_clusters in cluster_range:
-        if 'cluster_labels' in df_param.columns:
-            df_param = df_param.drop('cluster_labels', axis=1)
+
+        df_scaled, scaler = scale_df(df_param[feature_list], scaler=scaler_type, features=features)
 
         if method == 'minibatchkmean':
-            df_centroids, kmeans_obj, df_param['cluster_labels'] = minibatch_kmeans_clustering(
-                            df_param,
-                            n_clusters,
-                            seed=2)
+            df_centroids, kmeans_obj, df_param['cluster_labels'] = minibatch_kmeans_clustering(df_scaled,
+                                                                                               n_clusters,
+                                                                                               seed=2,
+                                                                                               features=features)
         elif method == 'kmean':
-            df_centroids, kmeans_obj, df_param['cluster_labels'] = kmeans_clustering(
-                            df_param,
-                            n_clusters,
-                            seed=2)
+            df_centroids, kmeans_obj, df_param['cluster_labels'] = kmeans_clustering(df_scaled,
+                                                                                     n_clusters,
+                                                                                     seed=2,
+                                                                                     features=features)
 
         labels = kmeans_obj.labels_
-        cluster_elev = ts.inverse_scale_df(df_centroids, scaler).elevation.loc[df_param.cluster_labels].values
+        cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler, features=features).elevation.loc[df_param.cluster_labels].values
         rmse = (((df_param.elevation - cluster_elev)**2).mean())**0.5
 
         # compute scores
