@@ -255,7 +255,7 @@ class Topoclass(object):
         :return:
 
         TODO:
-        - try to migrate most code of this functino to topo_sub.py as a function itself segment_topo()
+        - try to migrate most code of this function to topo_sub.py as a function itself segment_topo()
         """
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         df_scaled, self.toposub.scaler = ts.scale_df(df_param, features=self.config.sampling.toposub.clustering_features)

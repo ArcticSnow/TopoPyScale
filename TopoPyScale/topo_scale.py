@@ -68,6 +68,25 @@ def clear_files(path):
             os.unlink(os.path.join(dirpath, filename))
         print(f'{path} cleaned')
 
+def parallelize_downscaling(n_threads):
+    '''
+    WARNING: this function is a draft. Implementaiton not finished
+
+    ROADMAP:
+    - switch off parallelize in open_mfdataset in downscale_climate()
+    - remove for loops over point_id in downscale_climate() and insted downscale each point_id indivdually on cores
+    - figure out how to pass function argutmenst. Could build a zip contain
+
+    '''
+    print('WARNING: Feature not finished')
+    fun_param = zip()
+    pool = ThreadPool(n_threads)
+    pool.starmap(downscale_climate, fun_param)
+    pool.close()
+    pool.join()
+
+
+
 def downscale_climate(project_directory,
                       df_centroids,
                       horizon_da,
@@ -97,7 +116,6 @@ def downscale_climate(project_directory,
         dataset: downscaled data organized with time, point_id, lat, long
     """
     print('\n---> Downscaling climate to list of points using TopoScale')
-
     clear_files(f'{project_directory}outputs/tmp')
 
     start_time = time.time()

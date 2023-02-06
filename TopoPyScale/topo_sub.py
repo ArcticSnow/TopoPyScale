@@ -183,7 +183,6 @@ def search_number_of_clusters(df_param,
     n_pixels_mean = []
 
     for n_clusters in cluster_range:
-
         df_scaled, scaler = scale_df(df_param[feature_list], scaler=scaler_type, features=features)
 
         if method == 'minibatchkmean':
@@ -274,33 +273,6 @@ def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=p
     ax.set_xlabel('x-coordinate')
     plt.show()
 
-
-def plot_pca_clusters(dem_file, df_param, df_centroids, scaler, n_components, subsample=3):
-    pca = PCA(n_components)
-    col_names = ['x', 'y', 'elevation', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
-    dfs = scale_df(df_param[col_names], scaler=scaler)[0]
-    param_pca = pca.fit_transform(dfs[col_names])
-
-    miniBkmeans = cluster.MiniBatchKMeans(n_clusters=50, batch_size=256*4).fit(param_pca)
-    centroid = miniBkmeans.cluster_centers_
-    print(centroid.shape)
-    df_param['cluster_labels'] = miniBkmeans.labels_
-    #centroid = pca.transform(scale_df(df_centroids[['x', 'y', 'elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']], scaler=scaler)[0])
-
-    thinner = np.arange(0, df_param.shape[0], subsample)
-    fig, ax = plt.subplots(2,1)
-    ax[0].scatter(param_pca[thinner, 0], param_pca[thinner, 1], c=df_param.cluster_labels.iloc[thinner], cmap=plt.cm.hsv, alpha=0.3)
-    ax[0].scatter(centroid[:, 0], centroid[:, 1], c=np.arange(0,50,1), edgecolor='k', s=100, cmap=plt.cm.hsv)
-    ax[0].set_xlabel('PCA-1')
-    ax[0].set_ylabel('PCA-2')
-
-    with rasterio.open(dem_file) as dem:
-        shape = dem.shape
-        extent = plot.plotting_extent(dem)
-
-
-    ax[1].imshow(np.reshape(df_param.cluster_labels.values, shape), extent=extent, cmap=plt.cm.hsv)
-    plt.show()
 
 def write_landform(dem_file, df_param, project_directory='./'):
     """
