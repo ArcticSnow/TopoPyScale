@@ -68,24 +68,6 @@ def clear_files(path):
             os.unlink(os.path.join(dirpath, filename))
         print(f'{path} cleaned')
 
-def parallelize_downscaling(n_core):
-    '''
-    WARNING: this function is a draft. Implementaiton not finished
-
-    ROADMAP:
-    - switch off parallelize in open_mfdataset in downscale_climate()
-    - remove for loops over point_id in downscale_climate() and insted downscale each point_id indivdually on cores
-    - figure out how to pass function argutmenst. Could build a zip contain
-
-    '''
-    print('WARNING: Feature not finished')
-    fun_param = zip()
-    pool = Pool(n_core)
-    pool.starmap(downscale_climate, fun_param)
-    pool.close()
-    pool.join()
-
-
 
 def downscale_climate(project_directory,
                       df_centroids,
@@ -159,50 +141,37 @@ def downscale_climate(project_directory,
     # ============ Distribute each point on cores ======================================
 
     #------------------------------------ IN CONSTRUCTION
+    # note: have a look at: https://github.com/ArcticSnow/TopoPyScale/blob/tc_pool/TopoPyScale/topo_scale.py
+
     # Replace for loop below by a function
     print('WARNING: Feature not finished')
 
-    def downscale_interp():
-        # insrt here downscaling routine for t,q,u,v,tp,p
-        # save file to tmp/
-
-
-    fun_param = zip()
-    pool = Pool(n_core)
-    pool.starmap(downscale_interp, fun_param)
-    pool.close()
-    pool.join()
-
-    def downscale_radiations():
-        # insrt here downscaling routine for sw and lw
-        # save file final file
-
-    fun_param = zip()
-    pool = Pool(n_core)
-    pool.starmap(downscale_radiations, fun_param)
-    pool.close()
-    pool.join()
-
-
-    ##############################################################################################
-    #       OLD CODE
-    #############################################################################################
-
-    dataset = []
-    dpt_list = []
-    dpt_paths = []
-    surf_paths  = []
-    surf_list = []
-
-    n_digits = len(str(df_centroids.index.max()))
+    # Preparing list to feed into Pooling
+    surf_pt_list = []
+    plev_pt_list = []
+    solar_ds_list = []
+    horizon_da_list = []
+    row_list = []
+    meta_list = []
+    interp_method_list = []
+    lw_terrain_flag_list = []
     for i, row in df_centroids.iterrows():
-        pt_id = np.int(row.point_id)
-        print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(pt_id+1, df_centroids.index.max()+1))
+        print('Preparing point {}'.format(row.name))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
         ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
-        ds_surf_pt = ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1])
-        ds_plev_pt = ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1])
+        surf_pt_list.append(ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
+        plev_pt_list.append(ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]))
+        solar_ds_list.append(solar_ds.sel(point_id=row.name))
+        horizon_da_list.append(horizon_da)
+        row_list.append(row)
+        meta_list.append({'interp_method':interp_method,
+                         'lw_terrain_flag':lw_terrain_flag,
+                         'tstep':tstep})
+
+    def pt_downscale_interp(row, ds_plev, ds_surf, interp_method, n_digits):
+        pt_id = np.int(row.point_id)
+        print(f'Downscaling t,q,p,tp,ws,wd for point: {pt_id+1}')
 
         # ====== Horizontal interpolation ====================
         interp_method = 'idw'
@@ -307,30 +276,24 @@ def downscale_climate(project_directory,
         down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
         down_pt = down_pt.drop(['theta_pos', 'theta_neg', 'month'])
 
-
-        dpt_list.append(down_pt)
-        dpt_paths.append(project_directory + 'outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)))
-        surf_list.append(surf_interp)
-        surf_paths.append(project_directory + 'outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)))
-
+        print(f'---> Storing point {pt_id} to outputs/tmp/')
+        down_pt.to_netcdf(project_directory + 'outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
+        surf_interp.to_netcdf(project_directory + 'outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
         down_pt = None
         surf_interp = None
 
-    print('---> Storing to outputs/tmp/')
-    xr.save_mfdataset(dpt_list, dpt_paths, engine='h5netcdf')
-    dpt_list = None
-    dpt_paths = None
-    xr.save_mfdataset(surf_list, surf_paths, engine='h5netcdf')
-    surf_list = None
-    surf_paths = None
+    fun_param = zip() # construct here the tuple that goes into the pooling for arguments
+    pool = Pool(n_core)
+    pool.starmap(pt_downscale_interp, fun_param)
+    pool.close()
+    pool.join()
+    pool = None
 
-        
-    ds_list = []
-    path_list = []
-    for i, row in df_centroids.iterrows():
+    def pt_downscale_radiations(row, ds_solar, horizon_da, n_digits, file_pattern):
+        # insrt here downscaling routine for sw and lw
+        # save file final file
         pt_id = np.int(row.point_id)
-        print('Downscaling LW, SW for point: {} out of {}'.format(pt_id+1,
-                                                                  df_centroids.point_id.max()+1))
+        print(f'Downscaling LW, SW for point: {pt_id+1}')
 
         down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), chunks='auto', engine='h5netcdf')
         surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), chunks='auto', engine='h5netcdf')
@@ -407,16 +370,20 @@ def downscale_climate(project_directory,
         down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
 
-        ds_list.append(down_pt)
-
         num = str(pt_id).zfill(n_digits)
-        path_list.append(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}')
+        down_pt.to_netcdf(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}', engine='h5netcdf')
 
         down_pt = None
         surf_interp = None
-    xr.save_mfdataset(ds_list, path_list, engine='h5netcdf')
-    ds_list = None
-    path_list = None
+
+
+    fun_param = zip()  # construct here tuple to feed pool function's argument
+    pool = Pool(n_core)
+    pool.starmap(pt_downscale_radiations, fun_param)
+    pool.close()
+    pool.join()
+    pool = None
+
 
     clear_files(f'{project_directory}outputs/tmp')
 
