@@ -156,9 +156,37 @@ def downscale_climate(project_directory,
     ds_surf = ds_surf.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
     ds_plev = ds_plev.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
 
-    # ============ Loop over each point ======================================
-    # Loop over each points (lat,lon) for which to downscale climate variable using Toposcale method
+    # ============ Distribute each point on cores ======================================
 
+    #------------------------------------ IN CONSTRUCTION
+    # Replace for loop below by a function
+    print('WARNING: Feature not finished')
+
+    def downscale_interp():
+        # insrt here downscaling routine for t,q,u,v,tp,p
+        # save file to tmp/
+
+
+    fun_param = zip()
+    pool = Pool(n_core)
+    pool.starmap(downscale_interp, fun_param)
+    pool.close()
+    pool.join()
+
+    def downscale_radiations():
+        # insrt here downscaling routine for sw and lw
+        # save file final file
+
+    fun_param = zip()
+    pool = Pool(n_core)
+    pool.starmap(downscale_radiations, fun_param)
+    pool.close()
+    pool.join()
+
+
+    ##############################################################################################
+    #       OLD CODE
+    #############################################################################################
 
     dataset = []
     dpt_list = []
@@ -167,7 +195,6 @@ def downscale_climate(project_directory,
     surf_list = []
 
     n_digits = len(str(df_centroids.index.max()))
-
     for i, row in df_centroids.iterrows():
         pt_id = np.int(row.point_id)
         print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(pt_id+1, df_centroids.index.max()+1))
