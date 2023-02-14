@@ -53,7 +53,7 @@ import numpy as np
 import sys, time
 from TopoPyScale import meteo_util as mu
 from multiprocessing.dummy import Pool as ThreadPool
-import multiprocessing as mproc
+import multiprocessing as Pool
 import os
 
 # Physical constants
@@ -68,7 +68,7 @@ def clear_files(path):
             os.unlink(os.path.join(dirpath, filename))
         print(f'{path} cleaned')
 
-def parallelize_downscaling(n_threads):
+def parallelize_downscaling(n_core):
     '''
     WARNING: this function is a draft. Implementaiton not finished
 
@@ -80,7 +80,7 @@ def parallelize_downscaling(n_threads):
     '''
     print('WARNING: Feature not finished')
     fun_param = zip()
-    pool = ThreadPool(n_threads)
+    pool = Pool(n_core)
     pool.starmap(downscale_climate, fun_param)
     pool.close()
     pool.join()

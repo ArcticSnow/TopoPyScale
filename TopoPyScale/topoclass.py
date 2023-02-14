@@ -595,7 +595,7 @@ class Topoclass(object):
         """
         if variables is None:
             variables = list(self.downscaled_pts.keys())
-
+            
         te.to_netcdf(self.downscaled_pts[variables], f'{self.config.project.directory}outputs/' + file_out, variables)
         print('---> File {} saved'.format(file_out))
 
