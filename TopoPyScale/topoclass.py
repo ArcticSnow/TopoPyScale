@@ -593,7 +593,9 @@ class Topoclass(object):
             file_out (str): name of export file
             variables (list str): list of variable to export. Default exports all variables
         """
-
+        if variables is None:
+            variables = list(self.downscaled_pts.keys())
+            
         te.to_netcdf(self.downscaled_pts[variables], f'{self.config.project.directory}outputs/' + file_out, variables)
         print('---> File {} saved'.format(file_out))
 
