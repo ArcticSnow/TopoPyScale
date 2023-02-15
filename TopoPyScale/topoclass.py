@@ -425,7 +425,8 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate[self.config.project.climate].timestep,
                                      self.config.climate.precip_lapse_rate,
-                                     fname)
+                                     fname,
+                                     self.config.project.CPU_cores)
 
             # Concatenate time-splitted outputs along time-dimension
             n_digits = len(str(self.toposub.df_centroids.index.max()))
@@ -463,7 +464,8 @@ class Topoclass(object):
                                  self.config.toposcale.LW_terrain_contribution,
                                  self.config.climate[self.config.project.climate].timestep,
                                  self.config.climate.precip_lapse_rate,
-                                 self.config.outputs.file.downscaled_pt)
+                                 self.config.outputs.file.downscaled_pt,
+                                 self.config.project.CPU_cores)
 
         self.downscaled_pts = ta.read_downscaled(self.config.project.directory + 'outputs/downscaled/' + self.config.outputs.file.downscaled_pt)
         # update plotting class variables
