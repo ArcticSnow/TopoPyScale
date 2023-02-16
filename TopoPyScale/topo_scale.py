@@ -53,7 +53,8 @@ import numpy as np
 import sys, time
 from TopoPyScale import meteo_util as mu
 from multiprocessing import Pool
-import os
+from multiprocessing.dummy import Pool as ThreadPool
+import os, glob
 
 # Physical constants
 g = 9.81    #  Acceleration of gravity [ms^-1]
@@ -100,6 +101,7 @@ def downscale_climate(project_directory,
     """
     global pt_downscale_interp
     global pt_downscale_radiations
+    global _subset_climate_dataset
 
     print('\n---> Downscaling climate to list of points using TopoScale')
     clear_files(f'{project_directory}outputs/tmp')
@@ -110,44 +112,77 @@ def downscale_climate(project_directory,
 
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, closed='left')
-    ds_plev = xr.open_mfdataset(project_directory + 'inputs/climate/PLEV*.nc', parallel=True, chunks='auto').sel(time=tvec.values)
-    ds_surf = xr.open_mfdataset(project_directory + 'inputs/climate/SURF*.nc', parallel=True, chunks='auto').sel(time=tvec.values)
 
-    # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
-    # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
-    # https://code.mpimet.mpg.de/boards/1/topics/8961
-    # https://confluence.ecmwf.int/display/CUSF/ERA5+CDS+requests+which+return+a+mixture+of+ERA5+and+ERA5T+data
-    try:
-        # in case of there being an expver dimension and it has two or more values, select first value
-        expverN = ds_plev["expver"].values[0]
-        # create new datset when this dimoension only has a single value
-        ds_plev = ds_plev.sel(expver=expverN)
-        # finally this drops the coordinate
-        ds_plev = ds_plev.drop("expver")
-    except:
-        print("No ERA5T  PRESSURE data present with additional dimension <expver>")
+    flist_PLEV = glob.glob('inputs/climate/PLEV*.nc')
+    flist_SURF = glob.glob('inputs/climate/SURF*.nc')
 
-    try:
-        # in case of there being an expver dimension and it has two or more values, select first value
-        expverN = ds_surf["expver"].values[0]
-        # create new datset when this dimoension only has a single value
-        ds_surf = ds_surf.sel(expver=expverN)
-        # finally this drops the coordinate
-        ds_surf = ds_surf.drop("expver")
-    except:
-        print("No ERA5T SURFACE data present with additional dimension <expver>")
+    flist_PLEV.sort()
+    flist_SURF.sort()
 
-    # ============ Convert lat lon to projected coordinates ==================
-    trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
-    nxv,  nyv = np.meshgrid(ds_surf.longitude.values, ds_surf.latitude.values)
-    nlons, nlats = trans.transform(nxv, nyv)
-    ds_surf = ds_surf.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
-    ds_plev = ds_plev.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
+    def _open_dataset_climate(flist):
 
-    # ============ Distribute each point on cores ======================================
+        ds__list = []
+        for file in flist:
+            ds__list.append(xr.open_dataset(file))
 
-    # Replace for loop below by a function
-    print('WARNING: Feature not finished')
+        ds_ = xr.concat(ds__list, dim='time')
+        # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
+        # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
+        # https://code.mpimet.mpg.de/boards/1/topics/8961
+        # https://confluence.ecmwf.int/display/CUSF/ERA5+CDS+requests+which+return+a+mixture+of+ERA5+and+ERA5T+data
+        try:
+            # in case of there being an expver dimension and it has two or more values, select first value
+            expverN = ds_["expver"].values[0]
+            # create new datset when this dimoension only has a single value
+            ds_ = ds_.sel(expver=expverN)
+            # finally this drops the coordinate
+            ds_ = ds_.drop("expver")
+        except:
+            print("No ERA5T  PRESSURE data present with additional dimension <expver>")
+
+        trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
+        nxv,  nyv = np.meshgrid(ds_.longitude.values, ds_.latitude.values)
+        nlons, nlats = trans.transform(nxv, nyv)
+        ds_ = ds_.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
+        return ds_
+
+    def _subset_climate_dataset(ds_, row, type='plev', pt_id=0):
+        print('Preparing {} for point {}'.format(type, row.name))
+        # =========== Extract the 3*3 cells centered on a given point ============
+        ind_lat = np.abs(ds_.latitude - row.y).argmin()
+        ind_lon = np.abs(ds_.longitude - row.x).argmin()
+        ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc')
+
+    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+
+    row_list = []
+    ds_list = []
+    for _, row in df_centroids.iterrows():
+        row_list.append(row)
+        ds_list.append(ds_plev)
+
+    fun_param = zip(ds_list, row_list,  ['plev']*len(row_list), range(0,len(row_list))) # construct here the tuple that goes into the pooling for arguments
+    tpool = ThreadPool(n_core)
+    tpool.starmap(_subset_climate_dataset, fun_param)
+    tpool.close()
+    tpool.join()
+    tpool = None
+    fun_param = None
+    ds_plev = None
+
+    ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
+    ds_list = []
+    for _, row in df_centroids.iterrows():
+        ds_list.append(ds_surf)
+
+    fun_param = zip(ds_list, row_list, ['surf']*len(row_list), range(0,len(row_list))) # construct here the tuple that goes into the pooling for arguments
+    tpool = ThreadPool(n_core)
+    tpool.starmap(_subset_climate_dataset, fun_param)
+    tpool.close()
+    tpool.join()
+    tpool = None
+    fun_param = None
+    ds_surf = None
 
     # Preparing list to feed into Pooling
     surf_pt_list = []
@@ -156,16 +191,6 @@ def downscale_climate(project_directory,
     horizon_da_list = []
     row_list = []
     meta_list = []
-
-
-    for i, row in df_centroids.iterrows():
-        print('Preparing point {}'.format(row.name))
-        # =========== Extract the 3*3 cells centered on a given point ============
-        ind_lat = np.abs(ds_surf.latitude - row.y).argmin()
-        ind_lon = np.abs(ds_surf.longitude - row.x).argmin()
-        ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_surf_pt_{i}.nc')
-        ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_plev_pt_{i}.nc')
-
     for i, row in df_centroids.iterrows():
         surf_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_surf_pt_{i}.nc'))
         plev_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_plev_pt_{i}.nc'))
