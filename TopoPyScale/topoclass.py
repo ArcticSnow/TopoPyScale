@@ -429,23 +429,26 @@ class Topoclass(object):
                                      self.config.project.CPU_cores)
 
             # Concatenate time-splitted outputs along time-dimension
-            # TODO: recode this section without mfdataset() but instead use system like topo_scale.py
+            # TODO: modify code below to concatenate to be parallelized.
             n_digits = len(str(self.toposub.df_centroids.index.max()))
             ds_list = []
             out_path_list = []
-            tmp_path_list = []
+
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
                 num = str(pt_id).zfill(n_digits)
                 f_pattern = f'{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}*'
-                tmp_path_list.append(f_pattern)
-                #pdb.set_trace()
-                ds = xr.open_mfdataset(f'{self.config.project.directory}outputs/downscaled/{f_pattern}')
-                ds_list.append(ds)
-                file = f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}.nc'
-                out_path_list.append(file)
+                flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{f_pattern}')
+                flist.sort()
+
+                ds_list = []
+                for file in flist:
+                    ds_list.append(xr.open_dataset(file, engine='h5netcdf'))
+
+                fout = f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}.nc'
+                ds = xr.concat(ds_list, dim='time')
+                ds.to_netcdf(fout, engine='h5netcdf')
                 ds = None
-            xr.save_mfdataset(ds_list, out_path_list, engine='h5netcdf')
 
             # Delete time slice files.
             for fpat in self.time_splitter.downscaled_flist:

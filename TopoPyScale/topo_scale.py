@@ -54,11 +54,44 @@ import sys, time
 from TopoPyScale import meteo_util as mu
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
+import multiprocessing as mproc
 import os, glob
 
 # Physical constants
 g = 9.81    #  Acceleration of gravity [ms^-1]
 R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
+
+def multicore_pooling(fun, fun_param, n_cores):
+    '''
+    Function to perform multiprocessing on n_cores
+    Args:
+        fun (obj): function to distribute
+        fun_param zip(list): zip list of functino arguments
+        n_core (int): number o cores
+    '''
+    if num_cores is None:
+        n_cores = mproc.cpu_count() - 2
+        print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
+
+    pool = Pool(n_cores)
+    pool.starmap(fun, fun_param)
+    pool.close()
+    pool.join()
+    pool = None
+
+def multithread_pooling(fun, fun_param, n_threads):
+    '''
+    Function to perform multiprocessing on n_threads
+    Args:
+        fun (obj): function to distribute
+        fun_param zip(list): zip list of functino arguments
+        n_core (int): number of threads
+    '''
+    tpool = ThreadPool(n_threads)
+    tpool.starmap(fun, fun_param)
+    tpool.close()
+    tpool.join()
+    tpool = None
 
 def clear_files(path):
     # Clear outputs/tmp/ folder
@@ -151,7 +184,8 @@ def downscale_climate(project_directory,
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_.latitude - row.y).argmin()
         ind_lon = np.abs(ds_.longitude - row.x).argmin()
-        ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc')
+        ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf')
+        ds_ = None
 
     ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
 
@@ -162,11 +196,7 @@ def downscale_climate(project_directory,
         ds_list.append(ds_plev)
 
     fun_param = zip(ds_list, row_list,  ['plev']*len(row_list), range(0,len(row_list))) # construct here the tuple that goes into the pooling for arguments
-    tpool = ThreadPool(n_core)
-    tpool.starmap(_subset_climate_dataset, fun_param)
-    tpool.close()
-    tpool.join()
-    tpool = None
+    multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
 
@@ -176,11 +206,7 @@ def downscale_climate(project_directory,
         ds_list.append(ds_surf)
 
     fun_param = zip(ds_list, row_list, ['surf']*len(row_list), range(0,len(row_list))) # construct here the tuple that goes into the pooling for arguments
-    tpool = ThreadPool(n_core)
-    tpool.starmap(_subset_climate_dataset, fun_param)
-    tpool.close()
-    tpool.join()
-    tpool = None
+    multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_surf = None
 
@@ -192,8 +218,8 @@ def downscale_climate(project_directory,
     row_list = []
     meta_list = []
     for i, row in df_centroids.iterrows():
-        surf_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_surf_pt_{i}.nc'))
-        plev_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_plev_pt_{i}.nc'))
+        surf_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_surf_pt_{i}.nc', engine='h5netcdf'))
+        plev_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_plev_pt_{i}.nc', engine='h5netcdf'))
         ds_solar_list.append(ds_solar.sel(point_id=row.name))
         horizon_da_list.append(horizon_da)
         row_list.append(row)
@@ -317,13 +343,10 @@ def downscale_climate(project_directory,
         surf_interp.to_netcdf(project_directory + 'outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
         down_pt = None
         surf_interp = None
+        top, bot = None, None
 
     fun_param = zip(row_list, plev_pt_list, surf_pt_list, meta_list) # construct here the tuple that goes into the pooling for arguments
-    pool = Pool(n_core)
-    pool.starmap(pt_downscale_interp, fun_param)
-    pool.close()
-    pool.join()
-    pool = None
+    multicore_pooling(pt_downscale_interp, fun_param, n_core)
     fun_param = None
     plev_pt_list = None
     surf_pt_list = None
@@ -337,8 +360,8 @@ def downscale_climate(project_directory,
         file_pattern = meta.get('file_pattern')
         print(f'Downscaling LW, SW for point: {pt_id+1}')
 
-        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)))#, chunks='auto', engine='h5netcdf')
-        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)))#, chunks='auto', engine='h5netcdf')
+        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
+        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
 
 
         # ======== Longwave downward radiation ===============
@@ -415,16 +438,16 @@ def downscale_climate(project_directory,
         num = str(pt_id).zfill(n_digits)
         down_pt.to_netcdf(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}', engine='h5netcdf')
 
-        down_pt = None
-        surf_interp = None
-
+        # Clear memory
+        down_pt, surf_interp = None, None
+        ds_solar = None
+        kt , ka, kd, sunset = None, None, None, None
+        sunset = None
+        horizon = None
+        shade = None
 
     fun_param = zip(row_list, ds_solar_list, horizon_da_list, meta_list)  # construct here tuple to feed pool function's argument
-    pool = Pool(n_core)
-    pool.starmap(pt_downscale_radiations, fun_param)
-    pool.close()
-    pool.join()
-    pool = None
+    multicore_pooling(pt_downscale_radiations, fun_param, n_core)
     fun_param = None
     ds_solar_list = None
     horizon_da_list = None
@@ -445,7 +468,13 @@ def read_downscaled(path='outputs/down_pt*.nc'):
     Returns:
         dataset: merged dataset readily to use and loaded in chuncks via Dask
     """
-    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=True)
+    flist = glob.glob(path)
+    flist.sort()
+
+    ds_list = []
+    for file in flist:
+       ds_list.append(xr.open_dataset(file))
+    down_pts = xr.concat(ds_list, dim='point_id')
     return down_pts
 
 
