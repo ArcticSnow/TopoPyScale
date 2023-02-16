@@ -429,6 +429,7 @@ class Topoclass(object):
                                      self.config.project.CPU_cores)
 
             # Concatenate time-splitted outputs along time-dimension
+            # TODO: recode this section without mfdataset() but instead use system like topo_scale.py
             n_digits = len(str(self.toposub.df_centroids.index.max()))
             ds_list = []
             out_path_list = []

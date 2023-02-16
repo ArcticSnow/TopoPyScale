@@ -325,6 +325,8 @@ def downscale_climate(project_directory,
     pool.join()
     pool = None
     fun_param = None
+    plev_pt_list = None
+    surf_pt_list = None
 
 
     def pt_downscale_radiations(row, ds_solar, horizon_da, meta):
@@ -424,6 +426,8 @@ def downscale_climate(project_directory,
     pool.join()
     pool = None
     fun_param = None
+    ds_solar_list = None
+    horizon_da_list = None
 
     clear_files(f'{project_directory}outputs/tmp')
 
