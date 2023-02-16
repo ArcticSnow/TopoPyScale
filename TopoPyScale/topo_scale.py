@@ -110,8 +110,8 @@ def downscale_climate(project_directory,
 
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, closed='left')
-    ds_plev = xr.open_mfdataset(project_directory + 'inputs/climate/PLEV*.nc', parallel=True).sel(time=tvec.values)
-    ds_surf = xr.open_mfdataset(project_directory + 'inputs/climate/SURF*.nc', parallel=True).sel(time=tvec.values)
+    ds_plev = xr.open_mfdataset(project_directory + 'inputs/climate/PLEV*.nc', parallel=True, chunks='auto').sel(time=tvec.values)
+    ds_surf = xr.open_mfdataset(project_directory + 'inputs/climate/SURF*.nc', parallel=True, chunks='auto').sel(time=tvec.values)
 
     # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
     # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
@@ -146,9 +146,6 @@ def downscale_climate(project_directory,
 
     # ============ Distribute each point on cores ======================================
 
-    #------------------------------------ IN CONSTRUCTION
-    # note: have a look at: https://github.com/ArcticSnow/TopoPyScale/blob/tc_pool/TopoPyScale/topo_scale.py
-
     # Replace for loop below by a function
     print('WARNING: Feature not finished')
 
@@ -164,8 +161,8 @@ def downscale_climate(project_directory,
     for i, row in df_centroids.iterrows():
         print('Preparing point {}'.format(row.name))
         # =========== Extract the 3*3 cells centered on a given point ============
-        ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
-        ind_lon = np.abs(ds_surf.longitude-row.x).argmin()
+        ind_lat = np.abs(ds_surf.latitude - row.y).argmin()
+        ind_lon = np.abs(ds_surf.longitude - row.x).argmin()
         ds_surf.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_surf_pt_{i}.nc')
         ds_plev.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_plev_pt_{i}.nc')
 
