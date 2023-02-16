@@ -382,7 +382,7 @@ class Topoclass(object):
         """
         fname = self.config.project.directory + 'outputs/'+ self.config.outputs.file.da_horizon
         if os.path.isfile(fname):
-            self.da_horizon = xr.open_dataarray(fname, chunks='auto', engine='h5netcdf')
+            self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         else:
             self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
