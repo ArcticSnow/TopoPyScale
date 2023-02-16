@@ -69,7 +69,7 @@ def multicore_pooling(fun, fun_param, n_cores):
         fun_param zip(list): zip list of functino arguments
         n_core (int): number o cores
     '''
-    if num_cores is None:
+    if n_cores is None:
         n_cores = mproc.cpu_count() - 2
         print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
 
