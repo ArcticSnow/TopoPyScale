@@ -3,13 +3,16 @@ Tools to download and compare Downsclaed timeseries to observation
 All observation in folder inputs/obs/
 S. Filhol December 2021
 """
-import requests, os, glob
-import pandas as pd
-import numpy as np
-import xarray as xr
 import warnings
-warnings.filterwarnings("ignore")
+from pathlib import Path
 
+import glob
+import os
+import pandas as pd
+import requests
+import xarray as xr
+
+warnings.filterwarnings("ignore")
 
 
 def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST_API_CLIENTID')):
@@ -34,7 +37,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
     - convert df to xarray dataset with stn_id, time as coordinates
     """
     endpoint = 'https://frost.met.no/observations/v0.jsonld'
-    
+
     df_out = pd.DataFrame()
     for source in sources:
         print('.............................................')
@@ -47,7 +50,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
             }
 
             # Issue an HTTP GET request
-            r = requests.get(endpoint, parameters, auth=(client_id,''))
+            r = requests.get(endpoint, parameters, auth=(client_id, ''))
             json = r.json()
             # Check if the request worked, print out any errors
             if r.status_code == 200:
@@ -55,7 +58,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
                 print('-> got VOI: {}'.format(var))
                 df = pd.DataFrame()
                 for i in range(len(data)):
-                    row = pd.DataFrame(data[i]['observations']) # [:1] # raw data = [:1]; corrected = [1:]
+                    row = pd.DataFrame(data[i]['observations'])  # [:1] # raw data = [:1]; corrected = [1:]
                     row['referenceTime'] = data[i]['referenceTime']
                     row['sourceId'] = data[i]['sourceId']
                     df = df.append(row)
@@ -68,8 +71,9 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
                 print('..... Error with variable {}! Returned status code {}'.format(var, r.status_code))
                 print('..... Reason: %s' % json['error']['reason'])
                 print('---> {} for {} skipped'.format(var, source))
-    
+
     return df_out
+
 
 def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     """
@@ -83,8 +87,8 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
         dataset: dataset will all data organized in timeseries and station number
 
     """
-    df_obs = pd.concat(map(pd.read_pickle, glob.glob(os.path.join('', path + fnames))))
-    df = pd.pivot_table(df_obs, columns=['elementId'],values=['value'], index=['sourceId', 'referenceTime'])
+    df_obs = pd.concat(map(pd.read_pickle, glob.glob(Path(('', path + fnames))))
+    df = pd.pivot_table(df_obs, columns=['elementId'], values=['value'], index=['sourceId', 'referenceTime'])
     ds = df.xs('value', axis=1, level=0).to_xarray()
     return ds
 
@@ -132,17 +136,17 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
             'year': years,
             'month': months,
             'day': ['01', '02', '03',
-				 '04', '05', '06',
-				 '07', '08', '09',
-				 '10', '11', '12',
-				 '13', '14', '15',
-				 '16', '17', '18',
-				 '19', '20', '21',
-				 '22', '23', '24',
-				 '25', '26', '27',
-				 '28', '29', '30',
-				 '31'
-				 ],
+                    '04', '05', '06',
+                    '07', '08', '09',
+                    '10', '11', '12',
+                    '13', '14', '15',
+                    '16', '17', '18',
+                    '19', '20', '21',
+                    '22', '23', '24',
+                    '25', '26', '27',
+                    '28', '29', '30',
+                    '31'
+                    ],
             'area': bbox,
             'format': 'zip',
         },
@@ -160,7 +164,8 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
         print(f'ERROR: Invalid target path\n\t target path used: {target_path}')
 
 
-def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/surf*subset_csv*.csv', path='./inputs/observations'):
+def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/surf*subset_csv*.csv',
+                                  path='./inputs/observations'):
     """
     Function to parse WMO files formated from CDS database. parse in single station file
 
@@ -190,23 +195,23 @@ def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/
 
     df = pd.read_csv(fname)
     for stn in df.station_name.unique():
-        dd = df.loc[df.station_name==stn]
+        dd = df.loc[df.station_name == stn]
         dd['time'] = pd.to_datetime(dd.date_time, utc=True)
-        de = dd.pivot(index='time', columns=['observed_variable'],values=[ 'observation_value'])
+        de = dd.pivot(index='time', columns=['observed_variable'], values=['observation_value'])
         de = de.droplevel(level=0, axis=1)
 
         ds = xr.Dataset(coords=dict(
-            time = de.index,
-            reference_time = pd.to_datetime('1970-01-01T00:00:00Z'),
-            latitude = dd.latitude.unique()[0],
-            longitude = dd.longitude.unique()[0],
-            station_name = stn,
-            station_id = dd.primary_station_id.unique()[0]
+            time=de.index,
+            reference_time=pd.to_datetime('1970-01-01T00:00:00Z'),
+            latitude=dd.latitude.unique()[0],
+            longitude=dd.longitude.unique()[0],
+            station_name=stn,
+            station_id=dd.primary_station_id.unique()[0]
         ))
-        ds.time.attrs = {'units':'ns'}
+        ds.time.attrs = {'units': 'ns'}
         for col in de.columns:
             ds[col] = ('time', de[col])
-            ds[col].attrs = {'units': dd.loc[dd.observed_variable==col].units.unique()[0], 'standard_name': col}
+            ds[col].attrs = {'units': dd.loc[dd.observed_variable == col].units.unique()[0], 'standard_name': col}
 
         stn_f = stn.replace(' ', '_')
         foutput = f'{stn_f}_{dd.time.min().strftime("%Y%m%d")}_{dd.time.max().strftime("%Y%m%d")}.nc'
@@ -216,31 +221,24 @@ def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/
         de = None
         ds = None
 
-
-
-
     # add here logic
-
 
     # store each observation by stations with
 
 
-
-
-
 if __name__ == "__main__":
-	#=================== code ========================
-	df_stn = pd.read_csv('inputs/dem/station_list.csv')
-	voi = ['air_temperature',
-	       'sum(precipitation_amount PT12H)',
-	       'wind_speed',
-	       'wind_from_direction',
-	       'relative_humidity',
-	       'air_pressure_at_sea_level']
-	sources = df_stn.stn_number.unique()
+    # =================== code ========================
+    df_stn = pd.read_csv('inputs/dem/station_list.csv')
+    voi = ['air_temperature',
+           'sum(precipitation_amount PT12H)',
+           'wind_speed',
+           'wind_from_direction',
+           'relative_humidity',
+           'air_pressure_at_sea_level']
+    sources = df_stn.stn_number.unique()
 
-	dates = ['2018-01-01', '2019-01-01', '2020-01-01', '2021-01-01', '2021-08-31']
-	for i, start in enumerate(dates[:-1]):
-	    print('---> Downloading year {} {}'.format(start, dates[i+1]))
-	    df = get_metno_obs(sources, voi, start, dates[i+1], os.getenv('FROST_API_CLIENTID'))
-	    df.to_pickle('inputs/climate/metno_obs{}_{}.pckl'.format(start, dates[i+1]))
+    dates = ['2018-01-01', '2019-01-01', '2020-01-01', '2021-01-01', '2021-08-31']
+    for i, start in enumerate(dates[:-1]):
+        print('---> Downloading year {} {}'.format(start, dates[i + 1]))
+        df = get_metno_obs(sources, voi, start, dates[i + 1], os.getenv('FROST_API_CLIENTID'))
+        df.to_pickle('inputs/climate/metno_obs{}_{}.pckl'.format(start, dates[i + 1]))
