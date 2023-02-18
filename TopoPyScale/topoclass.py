@@ -52,7 +52,7 @@ class Topoclass(object):
             raise ValueError('ERROR: config file does not exist. Check path.')
 
         # define directories
-        project_dir = Path('test')
+        project_dir = Path(self.config.project.directory)
         output_dir = Path(project_dir, 'outputs')
         output_tmp = Path(output_dir, 'tmp')
         downscaled_dir = Path(output_dir, 'downscaled')
