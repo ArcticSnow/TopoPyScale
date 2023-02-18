@@ -87,7 +87,7 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
         dataset: dataset will all data organized in timeseries and station number
 
     """
-    df_obs = pd.concat(map(pd.read_pickle, glob.glob(Path(('', path + fnames))))
+    df_obs = pd.concat(map(pd.read_pickle, glob.glob(Path(('', path + fnames)))))
     df = pd.pivot_table(df_obs, columns=['elementId'], values=['value'], index=['sourceId', 'referenceTime'])
     ds = df.xs('value', axis=1, level=0).to_xarray()
     return ds

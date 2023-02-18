@@ -62,7 +62,7 @@ class Topoclass(object):
         climate_tmp = Path(climate_dir, 'tmp')
 
         # create paths if they do not exist
-        for path in [output_dir, output_tmp, downscaled_dir, input_dir, dem_dir climate_dir, climate_tmp]:
+        for path in [output_dir, output_tmp, downscaled_dir, input_dir, dem_dir, climate_dir, climate_tmp]:
             if not path.exists():
                 path.mkdir()
 
