@@ -90,7 +90,7 @@ class Topoclass(object):
                 print("---> no ensemble directory to clean")
         # check if tree directory exists. If not create it
 
-        self.config.dem.filepath = Path(self.config.dem.path + self.config.dem.file)
+        self.config.dem.filepath = Path(self.config.dem.path, self.config.dem.file)
         if not self.config.dem.filepath.is_file():
             if self.config.project.extent is not None:
                 self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))

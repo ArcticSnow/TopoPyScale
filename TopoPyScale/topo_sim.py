@@ -8,6 +8,8 @@ TODO:
 import os
 import glob
 import re
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 import rasterio
@@ -440,9 +442,9 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
 
     ds.attrs["units"] = units  # add epsg here
     if var == "ta" or var=="tas" or var=="TA":
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+        ds.to_netcdf(Path(wdir, 'outputs', f"{str(mytime[0].values).split('-')[0]}{str(mytime[0].values).split('-')[1]}.nc"), mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     else:
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+        ds.to_netcdf(Path(wdir, 'outputs', f'{str(mytime[0].values).split("-")[0]}{str(mytime[0].values).split("-")[1]}.nc'), mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
 
     # comp = dict(zlib=True, complevel=5)
     # encoding = {var: comp for var in ds.data_vars}

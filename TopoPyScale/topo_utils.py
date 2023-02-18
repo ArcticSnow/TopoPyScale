@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import pyproj
 import rasterio
@@ -62,8 +64,8 @@ def FsmPlot_ensemble(wdir, simvar, sampleN):
 
     """
     sampleNpad = "{:0>2}".format(sampleN)
-    myensemble = glob.glob(wdir + "/fsm_sims/sim_ENS"+"*"+"_FSM_pt_"+str(sampleNpad)+".txt")
-    lp = pd.read_csv(wdir+"/listpoints.csv")
+    myensemble = glob.glob(Path(wdir, f"fsm_sims/sim_ENS*_FSM_pt_{sampleNpad}.txt"))
+    lp = pd.read_csv(Path(wdir, "listpoints.csv"))
 
 
     ax = plt.subplot(1, 1, 1)

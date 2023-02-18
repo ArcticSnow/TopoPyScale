@@ -11,6 +11,8 @@ TODO:
 
 import sys
 import os
+from pathlib import Path
+
 
 def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
     """
@@ -35,7 +37,7 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
 
 
         # use STRM DEM for extent of interest, buffer arg "margin" enbles us to crop projected DEM back to a rectangle defined by extentNSWE (projected)
-        cmd_1 = 'eio --product SRTM1 clip -o {} --bounds {} {} {} {} --margin {}'.format(dem_dir + 'dem_SRTM1.tif',
+        cmd_1 = 'eio --product SRTM1 clip -o {} --bounds {} {} {} {} --margin {}'.format(Path(dem_dir, 'dem_SRTM1.tif'),
                                                                                          xmin,
                                                                                          ymin,
                                                                                          xmax,
@@ -60,7 +62,7 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
                                                                                                                  ymin,
                                                                                                                  xmax,
                                                                                                                  ymax,
-                                                                                               dem_dir + 'dem_SRTM1.tif',
+                                                                                               Path(dem_dir, 'dem_SRTM1.tif'),
                                                                                                dem_dir  + dem_file,
                                                                                                                )
         # as cmd-2 but without crop
@@ -77,7 +79,7 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
     elif ans == '2':
         # use STRM DEM for extent of interest
 
-        cmd_1 = 'eio --product SRTM3 clip -o {} --bounds {} {} {} {} --margin {}'.format(dem_dir + 'dem_SRTM3.tif' ,
+        cmd_1 = 'eio --product SRTM3 clip -o {} --bounds {} {} {} {} --margin {}'.format(Path(dem_dir, 'dem_SRTM3.tif'),
                                                                                          xmin,
                                                                                          ymin,
                                                                                          xmax,
@@ -95,8 +97,8 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
                                                                                                                  ymin,
                                                                                                                  xmax,
                                                                                                                  ymax,
-                                                                                               dem_dir + 'dem_SRTM3.tif',
-                                                                                               dem_dir + dem_file,
+                                                                                               Path(dem_dir, 'dem_SRTM3.tif'),
+                                                                                               Path(dem_dir, dem_file),
                                                                                                                )
 
         os.system(cmd_2)

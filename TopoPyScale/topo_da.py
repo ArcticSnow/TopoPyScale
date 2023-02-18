@@ -9,6 +9,8 @@ TODO:
 import os
 import glob
 import re
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
@@ -170,7 +172,7 @@ def construct_HX(wdir, startDA, endDA):
         ensembleRes: 2D pandas dataframe with dims cols (samples * ensembles) and rows (days / simulation timesteps)
 
     """
-    a = glob.glob(wdir + "/fsm_sims/sim_ENS*")
+    a = glob.glob(Path(wdir,  "fsm_sims/sim_ENS*"))
 
     # Natural sort to get correct order ensemb * samples
     def natural_sort(l):
@@ -297,14 +299,13 @@ def pymodis_download(wdir, vert, horiz, STARTDATE, ENDDATE):
 
     USER = "jfiddes"  # os.getenv('user')
     PWD = "sT0kkang!"  # os.getenv('pwd')
-    MODPATH = wdir + "/modis/"
+    MODPATH = Path(wdir, "modis")
     HOST = "https://n5eil01u.ecs.nsidc.org/"
     FOLDER = "MOST"
     PRODUCT = "MOD10A1F.061"
-    RAWPATH = MODPATH + "/raw/"
-    os.makedirs(MODPATH, exist_ok=True)
-    os.makedirs(RAWPATH, exist_ok=True)
-    os.makedirs(MODPATH + "/transformed/", exist_ok=True)
+    RAWPATH = Path(MODPATH, "raw")
+    RAWPATH.mkdir(exist_ok=True)
+    Path(MODPATH, 'transformed').mkdir(parents=True, exist_ok=True)
 
     hreg = ("h" + f"{horiz:02d}")  # re.compile("h2[4]")
     vreg = ("v" + f"{vert:02d}")  # re.compile("v0[5]")
@@ -353,8 +354,8 @@ def process_modis(wdir, epsg, bbox, layer=0):
         Docs: https://nsidc.org/sites/nsidc.org/files/technical-references/C6.1_MODIS_Snow_User_Guide.pdf
     """
 
-    MODPATH = wdir + "/modis/"
-    RAWPATH = MODPATH + "/raw/"
+    MODPATH = Path(wdir, "modis")
+    RAWPATH = Path(MODPATH , "raw")
 
     # list all downloaded hdf files
     files = glob.glob(RAWPATH + "/*.hdf")
@@ -395,7 +396,7 @@ def extract_fsca_timeseries(wdir, plot=True):
         df_sort: dataframe of julian dates and fSCA values
     """
 
-    files = glob.glob(wdir + "/modis/transformed/*.tif")
+    files = glob.glob(Path(wdir, "modis/transformed/*.tif"))
     data = []
     juldates = []
     for file in files:
@@ -858,7 +859,7 @@ def fsca_plots(wdir, plotDay, df_mean):
     juldate = str(year)+str(doy)
 
 
-    modis_file = glob.glob(wdir + "modis/transformed/MOD10A1F.A" + juldate + "*")
+    modis_file = glob.glob(Path(wdir, f"modis/transformed/MOD10A1F.A{juldate}*"))
 
     src = rio.open(modis_file[0])
     fig, (axrgb, axhist) = plt.subplots(1, 2, figsize=(14,7))
@@ -986,7 +987,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     juldate = str(year)+str(doy)
 
     # plot modis
-    modis_file = glob.glob(wdir + "modis/transformed/MOD10A1F.A" + juldate + "*")
+    modis_file = glob.glob(Path(wdir,f"modis/transformed/MOD10A1F.A{juldate}*"))
     src = rio.open(modis_file[0])
     rio.plot.show(src, ax=axmod1,vmin=0, vmax=100)
     cbar1 = plt.imshow(src.read(1), cmap='viridis', vmin=0, vmax=100)
@@ -1062,7 +1063,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     plt.show()
 
 def build_modis_cube(wdir):
-    geotiff_list_unsorted = glob.glob(wdir + "modis/transformed/MOD10A1F.A*")
+    geotiff_list_unsorted = glob.glob(Path(wdir, "modis/transformed/MOD10A1F.A*"))
     # Natural sort to get correct order ensemb * samples
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()

@@ -5,6 +5,8 @@ Retrieve ecmwf data with cdsapi.
 - S. Filhol adapted in 2021
 
 """
+from pathlib import Path
+
 # !/usr/bin/env python
 import pandas as pd
 from datetime import datetime
@@ -58,10 +60,10 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	df['year'] = df.dates.dt.year
 	if surf_plev == 'surf':
 		df['dataset'] = df.dates.apply(lambda x: 'reanalysis-era5-single-levels' if x.year >= 1979 else 'reanalysis-era5-single-levels-preliminary-back-extension')
-		df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
+		df['target_file'] = df.dates.apply(lambda x: Path(eraDir, f"SURF_{x.year:04d}{x.month:02d}.nc"))
 	elif surf_plev == 'plev':
 		df['dataset'] = df.dates.apply(lambda x: 'reanalysis-era5-pressure-levels' if x.year >= 1979 else 'reanalysis-era5-pressure-levels-preliminary-back-extension')
-		df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
+		df['target_file'] = df.dates.apply(lambda x: Path(eraDir, f"PLEV_{x.year:04d}{x.month:02d}.nc"))
 		loc_list = []
 		loc_list.extend([plevels]*df.shape[0])
 		df['plevels'] = loc_list
@@ -79,11 +81,11 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 
 	if df.file_exist.sum() > 0:
 		print("ECWMF {} data found:".format(surf_plev.upper()))
-		print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
+		print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.name))
 
 	if (df.file_exist == 0).sum() > 0:
 		print("Downloading {} from ECWMF:".format(surf_plev.upper()))
-		print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
+		print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.name))
 
 	download = df.loc[df.file_exist == 0]
 	if download.shape[0] > 0:
