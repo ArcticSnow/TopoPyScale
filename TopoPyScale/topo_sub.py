@@ -53,7 +53,6 @@ def scale_df(df_param,
         dataframe: scaled data
     """
     feature_list = features.keys()
-    print('---> Scaling data prior to clustering')
     df_scaled = pd.DataFrame(scaler.fit_transform(df_param[feature_list].values),
                              columns=df_param[feature_list].columns,
                              index=df_param[feature_list].index)
