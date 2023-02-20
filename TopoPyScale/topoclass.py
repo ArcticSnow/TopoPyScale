@@ -11,29 +11,26 @@ project/
     -> output/
 
 """
-import glob
-import os
-import re
-import shutil
-import sys
+import glob, os, sys, shutil
+import pdb
 from pathlib import Path
-
-import matplotlib.pyplot as plt
-import numpy as np
+import re
+from munch import DefaultMunch
 import pandas as pd
 import xarray as xr
-from munch import DefaultMunch
-from sklearn.preprocessing import StandardScaler
-
-from TopoPyScale import fetch_dem as fd
+import numpy as np
+import matplotlib.pyplot as plt
 from TopoPyScale import fetch_era5 as fe
-from TopoPyScale import solar_geom as sg
-from TopoPyScale import topo_export as te
-from TopoPyScale import topo_obs as tpo
 from TopoPyScale import topo_param as tp
-from TopoPyScale import topo_plot as tpl
-from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_sub as ts
+from TopoPyScale import fetch_dem as fd
+from TopoPyScale import solar_geom as sg
+from TopoPyScale import topo_scale as ta
+from TopoPyScale import topo_export as te
+from TopoPyScale import topo_plot as tpl
+from TopoPyScale import topo_obs as tpo
+
+from sklearn.preprocessing import StandardScaler
 
 
 class Topoclass(object):
@@ -398,7 +395,7 @@ class Topoclass(object):
         """
         fname = self.config.project.directory + 'outputs/' + self.config.outputs.file.da_horizon
         if os.path.isfile(fname):
-            self.da_horizon = xr.open_dataarray(fname, chunks='auto', engine='h5netcdf')
+            self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         else:
             self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
@@ -450,12 +447,12 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate[self.config.project.climate].timestep,
                                      self.config.climate.precip_lapse_rate,
-                                     fname)
+                                     fname,
+                                     self.config.project.CPU_cores)
 
             # Concatenate time-splitted outputs along time-dimension
+            # TODO: modify code below to concatenate to be parallelized.
             n_digits = len(str(self.toposub.df_centroids.index.max()))
-            ds_list = []
-            out_path_list = []
 
             # clean directory from files with the same downscaled output file pattern (so they get replaced)
             f_pattern_regex = f_pattern.replace('*', '\d+')
@@ -469,12 +466,13 @@ class Topoclass(object):
                 print(f'Concatenating point {pt_id}')
                 num = str(pt_id).zfill(n_digits)
                 filename = Path(f_pattern.replace('*', num))
-                ds = xr.open_mfdataset(Path(downscaled_dir, f'{filename.stem}*').as_posix())
-                ds_list.append(ds)
-                file = Path(downscaled_dir, filename)
-                out_path_list.append(file)
+                flist = sorted([file for file in downscaled_dir.glob(f'**/{filename.stem}*')])
+                ds_list = [xr.open_dataset(file, engine='h5netcdf') for file in flist]
+
+                fout = Path(downscaled_dir, filename)
+                ds = xr.concat(ds_list, dim='time')
+                ds.to_netcdf(fout, engine='h5netcdf')
                 del ds
-            xr.save_mfdataset(ds_list, out_path_list, engine='h5netcdf')
 
             # Delete time slice files.
             for fpat in self.time_splitter.downscaled_flist:
@@ -494,7 +492,8 @@ class Topoclass(object):
                                  self.config.toposcale.LW_terrain_contribution,
                                  self.config.climate[self.config.project.climate].timestep,
                                  self.config.climate.precip_lapse_rate,
-                                 self.config.outputs.file.downscaled_pt)
+                                 self.config.outputs.file.downscaled_pt,
+                                 self.config.project.CPU_cores)
 
         self.downscaled_pts = ta.read_downscaled(
             self.config.project.directory + 'outputs/downscaled/' + self.config.outputs.file.downscaled_pt)
