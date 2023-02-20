@@ -458,7 +458,7 @@ class Topoclass(object):
                 [file for file in Path(self.config.project.directory).glob('**/*') if re.match(f_pattern, file.name)])
             for file in existing_files:
                 file.unlink()
-                print(file.name, 'removed.')
+                print(f'existing file {file.name} removed.')
 
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
