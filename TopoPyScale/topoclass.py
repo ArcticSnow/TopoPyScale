@@ -382,7 +382,7 @@ class Topoclass(object):
         """
         fname = self.config.project.directory + 'outputs/'+ self.config.outputs.file.da_horizon
         if os.path.isfile(fname):
-            self.da_horizon = xr.open_dataarray(fname, chunks='auto', engine='h5netcdf')
+            self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         else:
             self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
@@ -425,25 +425,30 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate[self.config.project.climate].timestep,
                                      self.config.climate.precip_lapse_rate,
-                                     fname)
+                                     fname,
+                                     self.config.project.CPU_cores)
 
             # Concatenate time-splitted outputs along time-dimension
+            # TODO: modify code below to concatenate to be parallelized.
             n_digits = len(str(self.toposub.df_centroids.index.max()))
             ds_list = []
             out_path_list = []
-            tmp_path_list = []
+
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
                 num = str(pt_id).zfill(n_digits)
                 f_pattern = f'{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}*'
-                tmp_path_list.append(f_pattern)
-                #pdb.set_trace()
-                ds = xr.open_mfdataset(f'{self.config.project.directory}outputs/downscaled/{f_pattern}')
-                ds_list.append(ds)
-                file = f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}.nc'
-                out_path_list.append(file)
+                flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{f_pattern}')
+                flist.sort()
+
+                ds_list = []
+                for file in flist:
+                    ds_list.append(xr.open_dataset(file, engine='h5netcdf'))
+
+                fout = f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}.nc'
+                ds = xr.concat(ds_list, dim='time')
+                ds.to_netcdf(fout, engine='h5netcdf')
                 ds = None
-            xr.save_mfdataset(ds_list, out_path_list, engine='h5netcdf')
 
             # Delete time slice files.
             for fpat in self.time_splitter.downscaled_flist:
@@ -463,7 +468,8 @@ class Topoclass(object):
                                  self.config.toposcale.LW_terrain_contribution,
                                  self.config.climate[self.config.project.climate].timestep,
                                  self.config.climate.precip_lapse_rate,
-                                 self.config.outputs.file.downscaled_pt)
+                                 self.config.outputs.file.downscaled_pt,
+                                 self.config.project.CPU_cores)
 
         self.downscaled_pts = ta.read_downscaled(self.config.project.directory + 'outputs/downscaled/' + self.config.outputs.file.downscaled_pt)
         # update plotting class variables
