@@ -16,7 +16,6 @@ import os
 import re
 import shutil
 import sys
-from ctypes import Union
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -427,7 +426,8 @@ class Topoclass(object):
         f_pattern = self.config.outputs.file.downscaled_pt
 
         if '*' not in f_pattern:
-            raise ValueError(f'The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
+            raise ValueError(
+                f'The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
 
         if self.config.project.split.IO:
             for i, start in enumerate(self.time_splitter.start_list):
