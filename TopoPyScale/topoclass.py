@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import sys
+from ctypes import Union
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -300,7 +301,7 @@ class Topoclass(object):
                 self.toposub.df_centroids[var] = tmp[var]
         self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.ds_param['cluster_labels'] = (
-        ["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
+            ["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
         # update file
         fname = self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param
@@ -422,6 +423,12 @@ class Topoclass(object):
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
+        downscaled_dir = Path(self.config.project.directory, 'outputs', 'downscaled')
+        f_pattern = self.config.outputs.file.downscaled_pt
+
+        if '*' not in f_pattern:
+            raise ValueError(f'The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
+
         if self.config.project.split.IO:
             for i, start in enumerate(self.time_splitter.start_list):
                 print()
@@ -449,13 +456,11 @@ class Topoclass(object):
             n_digits = len(str(self.toposub.df_centroids.index.max()))
             ds_list = []
             out_path_list = []
-            tmp_path_list = []
 
-            # clean directory from files with the same output file pattern (so they get replaced)
-            f_pattern = self.config.outputs.file.downscaled_pt
-            f_pattern = f_pattern.replace('*', '\d+')
+            # clean directory from files with the same downscaled output file pattern (so they get replaced)
+            f_pattern_regex = f_pattern.replace('*', '\d+')
             existing_files = sorted(
-                [file for file in Path(self.config.project.directory).glob('**/*') if re.match(f_pattern, file.name)])
+                [file for file in downscaled_dir.glob('**/*') if re.match(f_pattern_regex, file.name)])
             for file in existing_files:
                 file.unlink()
                 print(f'existing file {file.name} removed.')
@@ -463,14 +468,12 @@ class Topoclass(object):
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
                 num = str(pt_id).zfill(n_digits)
-                f_pattern = f'{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}*'
-                tmp_path_list.append(f_pattern)
-                #pdb.set_trace()
-                ds = xr.open_mfdataset(f'{self.config.project.directory}outputs/downscaled/{f_pattern}')
+                filename = Path(f_pattern.replace('*', num))
+                ds = xr.open_mfdataset(Path(downscaled_dir, f'{filename.stem}*').as_posix())
                 ds_list.append(ds)
-                file = f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt.split("*")[0]}{num}.nc'
+                file = Path(downscaled_dir, filename)
                 out_path_list.append(file)
-                ds = None
+                del ds
             xr.save_mfdataset(ds_list, out_path_list, engine='h5netcdf')
 
             # Delete time slice files.
