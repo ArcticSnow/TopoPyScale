@@ -652,10 +652,14 @@ class Topoclass(object):
         Args:
             fname: filename of the netcdf 
         """
+        try:
+            labels = self.toposub.ds_param.cluster_labels
+        except Exception:
+            labels = None
 
         te.to_musa(ds=self.downscaled_pts,
                    df_pts=self.toposub.df_centroids,
-                   da_label=self.toposub.ds_param.cluster_labels,
+                   da_label=labels,
                    fname_met=fname_met,
                    fname_labels=fname_labels,
                    path=self.config.project.directory + 'outputs/',
