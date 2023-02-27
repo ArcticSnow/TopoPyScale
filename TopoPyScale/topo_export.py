@@ -85,6 +85,8 @@ def to_musa(ds,
     Returns:
         Save downscaled timeseries and toposub cluster mapping
     """
+    if da_label is not None:
+    	da_label.to_netcdf(path + fname_labels)
 
     da_label.to_netcdf(path + fname_labels)
 
