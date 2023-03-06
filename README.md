@@ -6,7 +6,7 @@
 <a href="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87"><img src="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87/status.svg"></a>
 
 # TopoPyScale
-Pure Python version of Toposcale packaged as a Pypi library. Toposcale is an original idea of Joel Fiddes to perform topography-based downscaling of climate data to the hillslope scale.
+Python version of Toposcale packaged as a Pypi library. Toposcale is an original idea of Joel Fiddes to perform topography-based downscaling of climate data to the hillslope scale.
 
 Documentation avalaible: https://topopyscale.readthedocs.io
 
@@ -63,17 +63,16 @@ Validation (4) and Gap filling (4) are future implementation.
 ## Installation
 
 ```bash
-conda install mamba -n base -c conda-forge
-mamba create -n downscaling ipython numpy pandas xarray matplotlib netcdf4 ipykernel scikit-learn rasterio gdal pyproj
+conda create -n downscaling python=3.8 ipython
 conda activate downscaling
-pip install cdsapi
-pip install h5netcdf
-pip install topocalc
-pip install pvlib
-pip install elevation
-pip install configobj
-pip install lazydocs
 
+# Recomended way to install dependencies:
+conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4 h5netcdf rasterio pyproj dask
+
+# OPTION 1 (Pypi release):
+pip install TopoPyScale
+
+# OPTION 2 (development):
 cd github  # navigate to where you want to clone TopoPyScale
 git clone git@github.com:ArcticSnow/TopoPyScale.git
 pip install -e TopoPyScale    #install a development version
@@ -82,6 +81,9 @@ pip install -e TopoPyScale    #install a development version
 #            OPTIONAL: if using jupyter lab
 # add this new Python kernel to your jupyter lab PATH
 python -m ipykernel install --user --name downscaling
+
+# Tool for generating documentation from code docstring
+pip install lazydocs
 ```
 
 Then you need to setup your `cdsapi` with the Copernicus API key system. Follow [this tutorial](https://cds.climate.copernicus.eu/api-how-to#install-the-cds-api-key) after creating an account with [Copernicus](https://cds.climate.copernicus.eu/). On Linux, create a file `nano ~/.cdsapirc` with inside:
