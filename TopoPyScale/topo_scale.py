@@ -184,8 +184,14 @@ def downscale_climate(project_directory,
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_.latitude - row.y).argmin()
         ind_lon = np.abs(ds_.longitude - row.x).argmin()
-        ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf')
+        #from remote_pdb import set_trace
+        #set_trace()
+        ds_tmp = ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).copy()
+        # convert geopotential height to elevation (in m), normalizing by g
+        ds_tmp['z'] = ds_tmp.z/g
+        ds_tmp.to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf')
         ds_ = None
+        ds_tmp = None
 
     ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
 
@@ -195,7 +201,7 @@ def downscale_climate(project_directory,
         row_list.append(row)
         ds_list.append(ds_plev)
 
-    fun_param = zip(ds_list, row_list,  ['plev']*len(row_list), range(0,len(row_list))) # construct here the tuple that goes into the pooling for arguments
+    fun_param = zip(ds_list, row_list,  ['plev'] * len(row_list), range(0, len(row_list))) # construct here the tuple that goes into the pooling for arguments
     multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
@@ -261,11 +267,11 @@ def downscale_climate(project_directory,
         surf_interp = dww.sum(['longitude', 'latitude'], keep_attrs=True)    # compute horizontal inverse weighted horizontal interpolation
 
         # ========= Converting z from [m**2 s**-2] to [m] asl =======
-        plev_interp.z.values = plev_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
-        plev_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}
+        #plev_interp.z.values = plev_interp.z.values / g
+        #plev_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}
 
-        surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
-        surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
+        #surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
+        #surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
         # ============ Extract specific humidity (q) for both dataset ============
         surf_interp = mu.dewT_2_q_magnus(surf_interp, mu.var_era_surf)
@@ -277,9 +283,11 @@ def downscale_climate(project_directory,
             })
 
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
-            print("---> WARNING: Point {} is {} m lower than the 1000hPa geopotential\n=> "
+            print("---> WARNING: Point {} is {} m lower than the {} hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation".
-                  format(i, np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values),0)))
+                  format(i,
+                         np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values),0),
+                         plev_interp.isel(level=-1).level.data))
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = plev_interp.isel(level=ind_z_top)
 
