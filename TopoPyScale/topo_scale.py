@@ -189,7 +189,10 @@ def downscale_climate(project_directory,
         ds_tmp = ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).copy()
         # convert geopotential height to elevation (in m), normalizing by g
         ds_tmp['z'] = ds_tmp.z/g
-        ds_tmp.to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf')
+
+        comp = dict(zlib=True, complevel=5)
+        encoding = {var: comp for var in ds_tmp.data_vars}
+        ds_tmp.to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf', encoding=encoding)
         ds_ = None
         ds_tmp = None
 
@@ -201,11 +204,10 @@ def downscale_climate(project_directory,
         row_list.append(row)
         ds_list.append(ds_plev)
 
-    fun_param = zip(ds_list, row_list,  ['plev'] * len(row_list), range(0, len(row_list))) # construct here the tuple that goes into the pooling for arguments
+    fun_param = zip(ds_list, row_list,  ['plev'] * len(row_list), df_centroids.index.values) # construct here the tuple that goes into the pooling for arguments
     multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
-
     ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
     ds_list = []
     for _, row in df_centroids.iterrows():
@@ -347,8 +349,14 @@ def downscale_climate(project_directory,
         down_pt = down_pt.drop(['theta_pos', 'theta_neg', 'month'])
 
         print(f'---> Storing point {pt_id} to outputs/tmp/')
-        down_pt.to_netcdf(project_directory + 'outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
-        surf_interp.to_netcdf(project_directory + 'outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
+
+        comp = dict(zlib=True, complevel=5)
+        encoding = {var: comp for var in down_pt.data_vars}
+        down_pt.to_netcdf(project_directory + 'outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf', encoding=encoding)
+
+        comp = dict(zlib=True, complevel=5)
+        encoding = {var: comp for var in surf_interp.data_vars}
+        surf_interp.to_netcdf(project_directory + 'outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf', encoding=encoding)
         down_pt = None
         surf_interp = None
         top, bot = None, None
@@ -444,7 +452,9 @@ def downscale_climate(project_directory,
         down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
 
         num = str(pt_id).zfill(n_digits)
-        down_pt.to_netcdf(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}', engine='h5netcdf')
+        comp = dict(zlib=True, complevel=5)
+        encoding = {var: comp for var in down_pt.data_vars}
+        down_pt.to_netcdf(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}', engine='h5netcdf', encoding=encoding, mode='a')
 
         # Clear memory
         down_pt, surf_interp = None, None
@@ -460,7 +470,7 @@ def downscale_climate(project_directory,
     ds_solar_list = None
     horizon_da_list = None
 
-    clear_files(f'{project_directory}outputs/tmp')
+    #clear_files(f'{project_directory}outputs/tmp')
 
     # print timer to console
     print('---> Downscaling finished in {}s'.format(np.round(time.time()-start_time), 1))
