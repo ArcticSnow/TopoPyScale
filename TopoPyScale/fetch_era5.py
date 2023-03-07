@@ -53,7 +53,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 					'6H': ['00:00', '06:00', '12:00', '18:00']}
 
 	df = pd.DataFrame()
-	df['dates'] = pd.date_range(startDate, endDate, freq='M')
+	# date_range will make sure to include the month of the latest date (endDate) provided
+	df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
 	df['month'] = df.dates.dt.month
 	df['year'] = df.dates.dt.year
 	if surf_plev == 'surf':
