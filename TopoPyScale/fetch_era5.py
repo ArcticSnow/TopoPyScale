@@ -145,7 +145,7 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time):
 		 'product_type': product,
 		 "area": bbox,
 		 'year': year,
-		 'month': month,
+		 'month': '%02d'%(month),
 		 'day': ['01', '02', '03',
 				 '04', '05', '06',
 				 '07', '08', '09',
@@ -195,7 +195,7 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
 			],
 			'pressure_level': plevels,
 			'year': year,
-			'month': month,
+			'month': '%02d'%(month),
 			'day': [
 				'01', '02', '03',
 				'04', '05', '06',
