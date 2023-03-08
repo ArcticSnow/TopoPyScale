@@ -63,7 +63,7 @@ Validation (4) and Gap filling (4) are future implementation.
 ## Installation
 
 ```bash
-conda create -n downscaling python=3.8 ipython
+conda create -n downscaling python=3.9 ipython
 conda activate downscaling
 
 # Recomended way to install dependencies:
