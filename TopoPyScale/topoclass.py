@@ -625,7 +625,7 @@ class Topoclass(object):
             variables (list str): list of variable to export. Default exports all variables
         """
         if variables is None:
-            if (self.config.outputs.variables.lower() == 'all') or (self.config.outputs.variables is None):
+            if (type(self.config.outputs.variables) is not list) or (self.config.outputs.variables is None):
                 variables = list(self.downscaled_pts.keys())
             else:
                 variables = self.config.outputs.variables
