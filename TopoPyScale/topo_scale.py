@@ -352,6 +352,17 @@ def downscale_climate(project_directory,
         down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v**2)
         down_pt = down_pt.drop(['theta_pos', 'theta_neg', 'month'])
 
+        down_pt.t.attrs = {'units': 'K', 'long_name': 'Temperature', 'standard_name': 'air_temperature'}
+        down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
+        down_pt.u.attrs = {'units': 'm s**-1', 'long_name': 'U component of wind', 'standard_name': 'eastward_wind'}
+        down_pt.v.attrs = {'units': 'm s**-1', 'long_name': 'V component of wind', 'standard_name': 'eastward_wind'}
+        down_pt.o.attrs = {'units': 'bar', 'long_name': 'Pression atmospheric', 'standard_name': 'pression_atmospheric'}
+
+        down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
+        down_pt.ws.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
+        down_pt.tp.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation', 'standard_name': 'precipitation'}
+        down_pt.precip_lapse_rate.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation after lapse-rate correction', 'standard_name': 'precipitation_after_lapse-rate_correction'}
+
         print(f'---> Storing point {pt_id} to outputs/tmp/')
 
         comp = dict(zlib=True, complevel=5)
@@ -449,11 +460,11 @@ def downscale_climate(project_directory,
         down_pt = down_pt.drop(['level']).round(5)
 
         # adding metadata
-        down_pt.LW.attrs = {'units': 'W/m**2', 'standard_name': 'Longwave radiations downward'}
+        down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards','standard_name': 'longwave_radiation_downward'}
         down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
         down_pt = down_pt.drop(['SW_direct_tmp'])
-        down_pt.SW.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward'}
-        down_pt.SW_diffuse.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave diffuse radiations downward'}
+        down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards', 'standard_name': 'shortwave_radiation_downward'}
+        down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards', 'standard_name': 'shortwave_diffuse_radiation_downward'}
 
         num = str(pt_id).zfill(n_digits)
         comp = dict(zlib=True, complevel=5)
