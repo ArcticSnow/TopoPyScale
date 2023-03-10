@@ -268,12 +268,14 @@ def timeseries_means_period(df, start_date, end_date):
     #     index=False)
 
 
-def topo_map(df_mean, outname="outputmap.tif"):
+
+def topo_map(df_mean,  mydtype, outname="outputmap.tif"):
     """
     Function to map results to toposub clusters generating map results.
 
     Args:
         df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
+        mydtype: HS (maybeGST) needs "float32" other vars can use "int16" to save space
 
     Here
     's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
@@ -285,7 +287,7 @@ def topo_map(df_mean, outname="outputmap.tif"):
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
     nclust = len(df_mean)
-    lookup = np.arange(nclust, dtype=np.uint16)
+    lookup = np.arange(nclust, dtype=mydtype)
 
     for i in range(0, nclust):
         lookup[i] = df_mean[i]
@@ -294,6 +296,7 @@ def topo_map(df_mean, outname="outputmap.tif"):
         # Read as numpy array
         array = src.read()
         profile = src.profile
+        profile["dtype"] = mydtype
 
         # Reclassify in a single operation using broadcasting
         array = lookup[array]
@@ -303,19 +306,20 @@ def topo_map(df_mean, outname="outputmap.tif"):
 
     with rasterio.open(outname, 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(profile["dtype"] ))
 
     src = rasterio.open(outname)
     plt.imshow(src.read(1), cmap='viridis')
     plt.colorbar()
     plt.show()
 
-def topo_map_headless(df_mean, outname="outputmap.tif"):
+def topo_map_headless(df_mean,  mydtype, outname="outputmap.tif"):
     """
     Headless server version of Function to map results to toposub clusters generating map results.
 
     Args:
         df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
+        mydtype: HS (maybeGST) needs "float32" other vars can use "int16" to save space
 
     Here
     's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
@@ -327,7 +331,7 @@ def topo_map_headless(df_mean, outname="outputmap.tif"):
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
     nclust = len(df_mean)
-    lookup = np.arange(nclust, dtype=np.uint16)
+    lookup = np.arange(nclust, dtype=mydtype)
 
     for i in range(0, nclust):
         lookup[i] = df_mean[i]
@@ -336,6 +340,7 @@ def topo_map_headless(df_mean, outname="outputmap.tif"):
         # Read as numpy array
         array = src.read()
         profile = src.profile
+        profile["dtype"] = mydtype
 
         # Reclassify in a single operation using broadcasting
         array = lookup[array]
@@ -345,7 +350,7 @@ def topo_map_headless(df_mean, outname="outputmap.tif"):
 
     with rasterio.open(outname, 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(profile["dtype"] ))
 
 
 def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
