@@ -290,7 +290,7 @@ def topo_map(df_mean, outname="outputmap.tif"):
     for i in range(0, nclust):
         lookup[i] = df_mean[i]
 
-    with rasterio.open('landform.tif') as src:
+    with rasterio.open('outputs/landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
@@ -341,8 +341,8 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
         lookup2D[:, i] = ds_var[i, :]
 
     from osgeo import gdal
-    inputFile = "landform.tif"
-    outputFile = "landform_newres.tif"
+    inputFile = "outputs/landform.tif"
+    outputFile = "outputs/landform_newres.tif"
 
     # check if new_res is declared - if so resample landform and therefore output
     if new_res is not None:
@@ -357,9 +357,9 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
                        yRes=yres,
                        resampleAlg=resample_alg)
         del ds
-        landformfile = "landform_newres.tif"
+        landformfile = "outputs/landform_newres.tif"
     else:
-        landformfile = "landform.tif"
+        landformfile = "outputs/landform.tif"
 
 
     with rasterio.open(landformfile) as src:
