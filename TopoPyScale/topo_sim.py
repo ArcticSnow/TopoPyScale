@@ -268,12 +268,14 @@ def timeseries_means_period(df, start_date, end_date):
     #     index=False)
 
 
-def topo_map(df_mean, outname="outputmap.tif"):
+
+def topo_map(df_mean,  mydtype, outname="outputmap.tif"):
     """
     Function to map results to toposub clusters generating map results.
 
     Args:
         df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
+        mydtype: HS (maybeGST) needs "float32" other vars can use "int16" to save space
 
     Here
     's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
@@ -285,15 +287,16 @@ def topo_map(df_mean, outname="outputmap.tif"):
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
     nclust = len(df_mean)
-    lookup = np.arange(nclust, dtype=np.uint16)
+    lookup = np.arange(nclust, dtype=mydtype)
 
     for i in range(0, nclust):
         lookup[i] = df_mean[i]
 
-    with rasterio.open('landform.tif') as src:
+    with rasterio.open('outputs/landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
+        profile["dtype"] = mydtype
 
         # Reclassify in a single operation using broadcasting
         array = lookup[array]
@@ -303,12 +306,51 @@ def topo_map(df_mean, outname="outputmap.tif"):
 
     with rasterio.open(outname, 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(profile["dtype"] ))
 
     src = rasterio.open(outname)
     plt.imshow(src.read(1), cmap='viridis')
     plt.colorbar()
     plt.show()
+
+def topo_map_headless(df_mean,  mydtype, outname="outputmap.tif"):
+    """
+    Headless server version of Function to map results to toposub clusters generating map results.
+
+    Args:
+        df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
+        mydtype: HS (maybeGST) needs "float32" other vars can use "int16" to save space
+
+    Here
+    's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
+    s answer:
+    https://gis.stackexchange.com/questions/163007/raster-reclassify-using-python-gdal-and-numpy
+    """
+
+    # Build a "lookup array" where the index is the original value and the value
+    # is the reclassified value.  Setting all of the reclassified values is cheap
+    # because the memory is only allocated once for the lookup array.
+    nclust = len(df_mean)
+    lookup = np.arange(nclust, dtype=mydtype)
+
+    for i in range(0, nclust):
+        lookup[i] = df_mean[i]
+
+    with rasterio.open('outputs/landform.tif') as src:
+        # Read as numpy array
+        array = src.read()
+        profile = src.profile
+        profile["dtype"] = mydtype
+
+        # Reclassify in a single operation using broadcasting
+        array = lookup[array]
+
+    # rasterio.plot.show(array, cmap='viridis')
+    # plt.show()
+
+    with rasterio.open(outname, 'w', **profile) as dst:
+        # Write to disk
+        dst.write(array.astype(profile["dtype"] ))
 
 
 def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
@@ -341,8 +383,8 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
         lookup2D[:, i] = ds_var[i, :]
 
     from osgeo import gdal
-    inputFile = "landform.tif"
-    outputFile = "landform_newres.tif"
+    inputFile = "outputs/landform.tif"
+    outputFile = "outputs/landform_newres.tif"
 
     # check if new_res is declared - if so resample landform and therefore output
     if new_res is not None:
@@ -357,9 +399,9 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
                        yRes=yres,
                        resampleAlg=resample_alg)
         del ds
-        landformfile = "landform_newres.tif"
+        landformfile = "outputs/landform_newres.tif"
     else:
-        landformfile = "landform.tif"
+        landformfile = "outputs/landform.tif"
 
 
     with rasterio.open(landformfile) as src:

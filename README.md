@@ -21,25 +21,21 @@ Kristoffer Aalstad has a Matlab implementation: https://github.com/krisaalstad/T
 ## Contribution Workflow
 **Please follow these simple rules:**
 1. a bug -> fix it! 
-2. an idea or a bug you cannot fix? -> create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) if none doesn't already exist. If one exist, then add material to tit.
-3. wanna develop a new feature/idea? -> create a new branch. Do the development. Merge with main branch when accomplished.
-4. Create release version when significant improvements and bug fixes have been done. Coordinate with others
+2. an idea or a bug you cannot fix? -> create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) if none doesn't already exist. If one exist, then add material to it.
+3. wanna develop a new feature/idea? -> create a new branch. Go wild. Merge with main branch when accomplished.
+4. Create release version when significant improvements and bug fixes have been done. Coordinate with others on [Discussions](https://github.com/ArcticSnow/TopoPyScale/discussions)
 
 **Create a new release:**
 Follow procedure and conventions described in: https://www.youtube.com/watch?v=Ob9llA_QhQY
 
-And check out our Slack: tscaleworkspace.slack.com
+Our forum is now on [Github Discussions](https://github.com/ArcticSnow/TopoPyScale/discussions). Come visit!
 
-Contributors to the current version (2021) are:
-- Simon Filhol
-- Joel Fiddes
-- Kristoffer Aalstad
 
 ## Design
 
 1. Inputs
     - Climate data from reanalysis (ERA5, etc)
-    - Climate data from future projections (CORDEX) (not avail.)
+    - Climate data from future projections (CORDEX) (TBD)
     - DEM from local source, or fetch from public repository: SRTM, ArcticDEM, ASTER
 2. Run TopoScale
     - compute derived values (from DEM)
@@ -56,7 +52,7 @@ Contributors to the current version (2021) are:
     - validation to local observation timeseries
     - plotting
 5. Gap filling algorithm
-    - random forest temporal gap filling
+    - random forest temporal gap filling (TBD)
 
 Validation (4) and Gap filling (4) are future implementation.
 
