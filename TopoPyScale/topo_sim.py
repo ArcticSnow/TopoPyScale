@@ -310,6 +310,43 @@ def topo_map(df_mean, outname="outputmap.tif"):
     plt.colorbar()
     plt.show()
 
+def topo_map_headless(df_mean, outname="outputmap.tif"):
+    """
+    Headless server version of Function to map results to toposub clusters generating map results.
+
+    Args:
+        df_mean (dataframe): an array of values to map to dem same length as number of toposub clusters
+
+    Here
+    's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
+    s answer:
+    https://gis.stackexchange.com/questions/163007/raster-reclassify-using-python-gdal-and-numpy
+    """
+
+    # Build a "lookup array" where the index is the original value and the value
+    # is the reclassified value.  Setting all of the reclassified values is cheap
+    # because the memory is only allocated once for the lookup array.
+    nclust = len(df_mean)
+    lookup = np.arange(nclust, dtype=np.uint16)
+
+    for i in range(0, nclust):
+        lookup[i] = df_mean[i]
+
+    with rasterio.open('outputs/landform.tif') as src:
+        # Read as numpy array
+        array = src.read()
+        profile = src.profile
+
+        # Reclassify in a single operation using broadcasting
+        array = lookup[array]
+
+    # rasterio.plot.show(array, cmap='viridis')
+    # plt.show()
+
+    with rasterio.open(outname, 'w', **profile) as dst:
+        # Write to disk
+        dst.write(array.astype(rasterio.int16))
+
 
 def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
     """
