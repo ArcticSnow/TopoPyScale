@@ -72,7 +72,7 @@ def multicore_pooling(fun, fun_param, n_cores):
     if n_cores is None:
         n_cores = mproc.cpu_count() - 2
         print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
-    elif n_cores >= mproc.cpu_count():
+    elif n_cores > mproc.cpu_count():
         n_cores = mproc.cpu_count() - 2
         print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
 
