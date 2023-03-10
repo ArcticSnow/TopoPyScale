@@ -238,7 +238,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
 
     #n_digits = len(str(ds.point_id.values.max()))
     # always set this as 3  simplifies parsing files later on
-    n_digits = 3
+    n_digits = 2
 
     for pt in ds.point_id.values:
         foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
