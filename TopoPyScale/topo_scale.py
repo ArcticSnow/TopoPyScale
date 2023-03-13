@@ -150,8 +150,8 @@ def downscale_climate(project_directory,
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, closed='left')
 
-    flist_PLEV = glob.glob('inputs/climate/PLEV*.nc')
-    flist_SURF = glob.glob('inputs/climate/SURF*.nc')
+    flist_PLEV = glob.glob(f'{project_directory}inputs/climate/PLEV*.nc')
+    flist_SURF = glob.glob(f'{project_directory}inputs/climate/SURF*.nc')
 
     flist_PLEV.sort()
     flist_SURF.sort()
@@ -196,11 +196,20 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in ds_tmp.data_vars}
-        ds_tmp.to_netcdf(f'outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf', encoding=encoding)
+        ds_tmp.to_netcdf(f'{project_directory}outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf', encoding=encoding)
         ds_ = None
         ds_tmp = None
 
-    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    ds_plev = _open_dataset_climate(flist_PLEV)
+    # Check tvec is within time perdio of ds_plev or return error
+    if ds_plev.time.min() > tvec.min():
+        print(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
+        return
+    elif ds_plev.time.max() < tvec.max():
+        print(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
+        return
+    else:
+        ds_plev = ds_plev.sel(time=tvec.values)
 
     row_list = []
     ds_list = []
@@ -230,8 +239,8 @@ def downscale_climate(project_directory,
     row_list = []
     meta_list = []
     for i, row in df_centroids.iterrows():
-        surf_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_surf_pt_{i}.nc', engine='h5netcdf'))
-        plev_pt_list.append(xr.open_dataset(f'outputs/tmp/ds_plev_pt_{i}.nc', engine='h5netcdf'))
+        surf_pt_list.append(xr.open_dataset(f'{project_directory}outputs/tmp/ds_surf_pt_{i}.nc', engine='h5netcdf'))
+        plev_pt_list.append(xr.open_dataset(f'{project_directory}outputs/tmp/ds_plev_pt_{i}.nc', engine='h5netcdf'))
         ds_solar_list.append(ds_solar.sel(point_id=row.name))
         horizon_da_list.append(horizon_da)
         row_list.append(row)
@@ -391,8 +400,8 @@ def downscale_climate(project_directory,
         file_pattern = meta.get('file_pattern')
         print(f'Downscaling LW, SW for point: {pt_id+1}')
 
-        down_pt = xr.open_dataset('outputs/tmp/down_pt_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
-        surf_interp = xr.open_dataset('outputs/tmp/surf_interp_{}.nc'.format(str(pt_id).zfill(n_digits)), engine='h5netcdf')
+        down_pt = xr.open_dataset('{}outputs/tmp/down_pt_{}.nc'.format(project_directory, str(pt_id).zfill(n_digits)), engine='h5netcdf')
+        surf_interp = xr.open_dataset('{}outputs/tmp/surf_interp_{}.nc'.format(project_directory, str(pt_id).zfill(n_digits)), engine='h5netcdf')
 
 
         # ======== Longwave downward radiation ===============
