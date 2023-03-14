@@ -511,6 +511,15 @@ class Topoclass(object):
         latN = self.config.project.extent.get('latN') + 0.4
         latS = self.config.project.extent.get('latS') - 0.4
 
+        # if keyword exists in config set realtime to value (True/False)
+        if self.config.climate[self.config.project.climate].realtime:
+            realtime=self.config.climate[self.config.project.climate].realtime
+        # else set realtime to False
+        else:
+            realtime=False
+
+
+
         # retreive ERA5 surface data
         fe.retrieve_era5(
             self.config.climate[self.config.project.climate].product,
@@ -521,7 +530,7 @@ class Topoclass(object):
             self.config.climate[self.config.project.climate].timestep,
             self.config.climate[self.config.project.climate].download_threads,
             surf_plev='surf',
-            realtime=self.config.climate[self.config.project.climate].realtime
+            realtime=realtime
         )
         # retrieve era5 plevels
         fe.retrieve_era5(
@@ -534,7 +543,7 @@ class Topoclass(object):
             self.config.climate[self.config.project.climate].download_threads,
             surf_plev='plev',
             plevels=self.config.climate[self.config.project.climate].plevels,
-            realtime=self.config.climate[self.config.project.climate].realtime
+            realtime=realtime
         )
 
     def get_WMO_observations(self):
