@@ -520,7 +520,8 @@ class Topoclass(object):
             latN, latS, lonE, lonW,
             self.config.climate[self.config.project.climate].timestep,
             self.config.climate[self.config.project.climate].download_threads,
-            surf_plev='surf'
+            surf_plev='surf',
+            realtime=self.config.climate[self.config.project.climate].realtime
         )
         # retrieve era5 plevels
         fe.retrieve_era5(
@@ -533,6 +534,7 @@ class Topoclass(object):
             self.config.climate[self.config.project.climate].download_threads,
             surf_plev='plev',
             plevels=self.config.climate[self.config.project.climate].plevels,
+            realtime=self.config.climate[self.config.project.climate].realtime
         )
 
     def get_WMO_observations(self):
