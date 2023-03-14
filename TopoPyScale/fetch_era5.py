@@ -13,8 +13,9 @@ from dateutil.relativedelta import *
 import glob
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
+from datetime import datetime, timedelta
 
-def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None):
+def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False):
 	""" Sets up era5 surface retrieval.
 	* Creates list of year/month pairs to iterate through. 
 	* MARS retrievals are most efficient when subset by time. 
@@ -118,6 +119,15 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		#else:
 		#	sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
 
+	if realtime:
+		if surf_plev == 'surf':
+			# redownload current month to catch missing days in realtime mode.
+			era5_realtime_surf(eraDir, df.dataset[0], df.bbox[0], df.product_type[0])
+
+		if surf_plev == 'plev':
+			# redownload current month to catch missing days in realtime mode.
+			era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
+
 def era5_request_surf(dataset, year, month, bbox, target, product, time):
 	"""CDS surface api call
 
@@ -214,3 +224,91 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
 		},
 		target)
 	print(target + " complete")
+
+
+def era5_realtime_surf(eraDir, dataset, bbox, product ):
+	# a small routine thaty simply redownloads the current month
+	# this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
+	# a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
+
+	# get current month
+	currentMonth = datetime.now().month 
+	currentYear = datetime.now().year 
+	print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
+
+	time = ['00:00', '01:00', '02:00',
+							 '03:00', '04:00', '05:00',
+							 '06:00', '07:00', '08:00',
+							 '09:00', '10:00', '11:00',
+							 '12:00', '13:00', '14:00',
+							 '15:00', '16:00', '17:00',
+							 '18:00', '19:00', '20:00',
+							 '21:00', '22:00', '23:00']
+
+	target = eraDir +"/SURF_%04d%02d.nc" % (currentYear, currentMonth)
+	era5_request_surf(dataset, currentYear, currentMonth, bbox, target, product, time)
+
+
+def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
+	# a small routine thaty simply redownloads the current month
+	# this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
+	# a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
+
+	# get current month
+	currentMonth = datetime.now().month
+	currentYear = datetime.now().year
+	print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
+
+	time = ['00:00', '01:00', '02:00',
+							 '03:00', '04:00', '05:00',
+							 '06:00', '07:00', '08:00',
+							 '09:00', '10:00', '11:00',
+							 '12:00', '13:00', '14:00',
+							 '15:00', '16:00', '17:00',
+							 '18:00', '19:00', '20:00',
+							 '21:00', '22:00', '23:00']
+
+	target = eraDir + "/PLEV_%04d%02d.nc" % (currentYear, currentMonth)
+	plevels = plevels
+	era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
+
+
+def return_latest_date():
+	# method to return latest full date available in CDS
+	
+
+	c = cdsapi.Client()
+
+	# how to retrieve latest date that era5 data is available
+	try:
+	    # this will always fail but return the latest date in error message
+	    # should be a cleaner way of doing this with api?
+
+		c = cdsapi.Client()
+
+		# Retrieve the list of available files for the ERA5 dataset
+		res = c.retrieve("reanalysis-era5-single-levels", {
+		    "variable": "2m_temperature",
+		    "product_type": "reanalysis",
+		    "format": "json"
+		})
+
+	except Exception as e:
+	    # Extract the latest date from the exception object
+	    exc_type = type(e).__name__
+	    exc_msg = str(e)
+	    print(f"Caught {exc_type} with message '{exc_msg}'")
+
+	# Example string representing a date and time within a string
+	date_string = exc_msg
+	# Define the format string to match the input string
+	format_string = 'the request you have submitted is not valid. None of the data you have requested is available yet, please revise the period requested. The latest date available for this dataset is: %Y-%m-%d %H:%M:%S.%f.' 
+	# Parse the date string and create a datetime object
+	latest_date = datetime.strptime(date_string, format_string)
+
+	if latest_date.hour < 23:
+		# Subtract one day from the datetime object
+		latest_date = latest_date - timedelta(days=1)
+		# Print the updated datetime object
+
+	return(latest_date)
