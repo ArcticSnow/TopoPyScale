@@ -4,6 +4,10 @@
 [![GitHub license](https://img.shields.io/github/license/ArcticSnow/TopoPyScale)](https://github.com/ArcticSnow/TopoPyScale/blob/main/LICENSE)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/ArcticSnow/TopoPyScale)
 <a href="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87"><img src="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87/status.svg"></a>
+[![][docs-dev-img]][docs-dev-url]
+
+[docs-dev-img]: https://img.shields.io/badge/docs-latest-blue.svg
+[docs-dev-url]: https://topopyscale.readthedocs.io
 
 # TopoPyScale
 Python version of Toposcale packaged as a Pypi library. Toposcale is an original idea of Joel Fiddes to perform topography-based downscaling of climate data to the hillslope scale.
