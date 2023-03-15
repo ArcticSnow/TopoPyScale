@@ -502,28 +502,29 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
 
 def agg_stats(df ):
     # generate aggregated stats from the simulation
+    # USAGE:
+    # HS = sim.agg_by_var_fsm(6)
+    # SWE = sim.agg_by_var_fsm(5)
+    # HSdf = agg_stats(HS)
+    # SWEdf = agg_stats(SWE)
+    # pddf = pd.concat([HSdf, SWEdf], axis=1)
+    # avSnow.to_csv('avSnow.csv')
+    #
+    # from matplotlib import pyplot as plt
+    # from matplotlib.backends.backend_pdf import PdfPages
+    #
+    # with PdfPages("plots2.pdf") as pdf:
+    #         pddf.plot( subplots=True)
+    #         plt.legend()
+    #         pdf.savefig()  # saves the current figure into a pdf page
+    #         plt.close()
+
     lp = pd.read_csv('listpoints.csv')
 
     weighteddf = df * lp.members
     dfagg = np.sum(weighteddf, 1)/ np.sum(lp.members)
     return (dfagg)
 
-
-HS = sim.agg_by_var_fsm(6)
-SWE = sim.agg_by_var_fsm(5)
-HSdf = agg_stats(HS)
-SWEdf = agg_stats(SWE)
-pddf = pd.concat([HSdf, SWEdf], axis=1)
-avSnow.to_csv('avSnow.csv')
-
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-
-with PdfPages("plots2.pdf") as pdf:
-        pddf.plot( subplots=True)
-        plt.legend()
-        pdf.savefig()  # saves the current figure into a pdf page
-        plt.close()
 
 
 
