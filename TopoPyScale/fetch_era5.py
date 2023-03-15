@@ -276,7 +276,7 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
 def return_latest_date():
 	# method to return latest full date available in CDS
 	
-
+	print("WARNING: Ignore the following warning - this is due to requesting todays date with the intention to harvest the date returned in error message. There must be a cleaner way to get latest date....")
 	c = cdsapi.Client()
 
 	# how to retrieve latest date that era5 data is available
