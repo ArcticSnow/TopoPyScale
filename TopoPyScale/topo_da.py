@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 import copy
 import rasterio as rio
 from osgeo import gdal
-import osr
+from osgeo import osr 
 from scipy.interpolate import interp1d
 from TopoPyScale import topo_sim as sim
 from datetime import datetime
@@ -397,6 +397,7 @@ def extract_fsca_timeseries(wdir, plot=True):
 
     files = glob.glob(wdir + "/modis/transformed/*.tif")
     data = []
+    doy = []
     juldates = []
     for file in files:
         with rio.open(file) as src:
@@ -406,16 +407,18 @@ def extract_fsca_timeseries(wdir, plot=True):
 
             mymean = np.mean(array)
             juldate = file.split(".")[1].split("A")[1]
+            mydoy = juldate[4:7]   
 
         data.append(mymean)
         juldates.append(juldate)
+        doy.append(mydoy)
 
     # convert to fSCA
     fsca = (-0.01 + (1.45 * np.array(data)))
     fsca[fsca <= 0] = 0
     fsca[fsca > 100] = 100
 
-    d = {'dates': juldates, 'fSCA': fsca}
+    d = {'dates': juldates, 'fSCA': fsca, 'DOY': doy}
     df = pd.DataFrame(data=d)
     df_sort = df.sort_values("dates")
     # add datetime object
