@@ -98,7 +98,7 @@ def fsm_sim(nlstfile, fsm_exec):
     os.remove(nlstfile)
 
 
-def agg_by_var_fsm(ncol):
+def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -119,7 +119,7 @@ def agg_by_var_fsm(ncol):
     """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
-    a = glob.glob("./fsm_sims/sim_FSM_pt*")
+    a = glob.glob(fsm_path+"/sim_FSM_pt*")
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -528,8 +528,8 @@ def agg_stats(df ):
     dfagg = np.sum(weighteddf, 1)/ np.sum(lp.members)
     return (dfagg)
 
-def climatology(ncol):
-    HS = agg_by_var_fsm(ncol)
+def climatology(ncol, fsm_path):
+    HS = agg_by_var_fsm(ncol, fsm_path)
     HSdf = agg_stats(HS)
     
     # Group the DataFrame by day of the year and calculate the mean
