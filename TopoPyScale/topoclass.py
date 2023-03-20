@@ -256,6 +256,7 @@ class Topoclass(object):
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param,
                                                          method=method)
 
+
     def extract_topo_cluster_param(self):
         """
         Function to segment a DEM in clusters and retain only the centroids of each cluster.
@@ -326,6 +327,12 @@ class Topoclass(object):
 
             else:
                 print('ERROR: Extraction method not available')
+
+
+            self.toposub.df_centroids['lon'], self.toposub.df_centroids['lat'] = tp.convert_epsg_pts(self.toposub.df_centroids.x,
+                                                                                              self.toposub.df_centroids.y,
+                                                                                              self.config.dem.epsg,
+                                                                                              4326)
 
             # Store dataframe to pickle
             self.toposub.df_centroids.to_pickle(

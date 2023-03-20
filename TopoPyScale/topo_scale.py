@@ -1,6 +1,5 @@
 """
 Toposcale functionalities
-
 S. Filhol, Oct 2021
 
 ======= Organization of input data to Toposcale ======
@@ -20,7 +19,6 @@ solar_geom (nb_points * time * 2)
 surface_climate_data (spatial + time + var)
 plevels_climate_data (spatial + time + var + plevel)
 
-
 ======= Dataset naming convention:  =========
 ds_surf => dataset direct from ERA5 single level surface
 ds_plev => dataset direct from ERA5 pressure levels
@@ -35,14 +33,6 @@ top => closest pressure level above the point (lat,lon,elev) for each timesep
 bot => closest pressure level below the point (lat,lon,elev) for each timesep
 
 down_pt => downscaled data time series (t, u, v, q, LW, SW, tp)
-
-TODO:
-- check that transformation from r,t to q for plevels is working fine
-- add metadata to all newly created variables in datasets ds_psurf, ds_plevel, down_pt
-- upscale method for all points in df_centroids:
-    - method (1) simply using a for loop over each row
-    - method (2) concatenate 3*3 grid along an additional dimension to process all points in one go.
-
 """
 import pdb
 
@@ -177,17 +167,17 @@ def downscale_climate(project_directory,
         except:
             print("No ERA5T  PRESSURE data present with additional dimension <expver>")
 
-        trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
-        nxv,  nyv = np.meshgrid(ds_.longitude.values, ds_.latitude.values)
-        nlons, nlats = trans.transform(nxv, nyv)
-        ds_ = ds_.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
+        #trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
+        #nxv,  nyv = np.meshgrid(ds_.longitude.values, ds_.latitude.values)
+        #nlons, nlats = trans.transform(nxv, nyv)
+        #ds_ = ds_.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
         return ds_
 
     def _subset_climate_dataset(ds_, row, type='plev', pt_id=0):
         print('Preparing {} for point {}'.format(type, row.name))
         # =========== Extract the 3*3 cells centered on a given point ============
-        ind_lat = np.abs(ds_.latitude - row.y).argmin()
-        ind_lon = np.abs(ds_.longitude - row.x).argmin()
+        ind_lat = np.abs(ds_.latitude - row.lat).argmin()
+        ind_lon = np.abs(ds_.longitude - row.lon).argmin()
         #from remote_pdb import set_trace
         #set_trace()
         ds_tmp = ds_.isel(latitude=[ind_lat-1, ind_lat, ind_lat+1], longitude=[ind_lon-1, ind_lon, ind_lon+1]).copy()
@@ -201,7 +191,7 @@ def downscale_climate(project_directory,
         ds_tmp = None
 
     ds_plev = _open_dataset_climate(flist_PLEV)
-    # Check tvec is within time perdio of ds_plev or return error
+    # Check tvec is within time period of ds_plev.time or return error
     if ds_plev.time.min() > tvec.min():
         print(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
         return
@@ -245,8 +235,8 @@ def downscale_climate(project_directory,
         horizon_da_list.append(horizon_da)
         row_list.append(row)
         meta_list.append({'interp_method':interp_method,
-                         'lw_terrain_flag':lw_terrain_flag,
-                         'tstep':tstep_dict.get(tstep),
+                          'lw_terrain_flag':lw_terrain_flag,
+                          'tstep':tstep_dict.get(tstep),
                           'n_digits':n_digits,
                           'file_pattern':file_pattern})
 
@@ -258,7 +248,13 @@ def downscale_climate(project_directory,
         interp_method = meta.get('interp_method')
         n_digits = meta.get('n_digits')
 
-        Xs, Ys = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
+        # convert gridcells coordinates from WGS84 to DEM projection
+        lons, lats = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
+        trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
+        Xs, Ys = trans.transform(lons.flatten(), lats.flatten())
+        Xs = Xs.reshape(lons.shape)
+        Ys = Ys.reshape(lons.shape)
+
         dist = np.sqrt((row.x - Xs)**2 + (row.y - Ys)**2)
         if interp_method == 'idw':
             idw = 1/(dist**2)
