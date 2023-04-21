@@ -268,7 +268,7 @@ def timeseries_means_period(df, start_date, end_date):
     #     index=False)
 
 
-def topo_map(df_mean, outname="outputmap.tif"):
+def topo_map(df_mean, mydtype, outname="outputmap.tif"):
     """
     Function to map results to toposub clusters generating map results.
 
@@ -285,7 +285,7 @@ def topo_map(df_mean, outname="outputmap.tif"):
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
     nclust = len(df_mean)
-    lookup = np.arange(nclust, dtype=np.uint16)
+    lookup = np.arange(nclust, dtype=mydtype)
 
     for i in range(0, nclust):
         lookup[i] = df_mean[i]
@@ -303,7 +303,7 @@ def topo_map(df_mean, outname="outputmap.tif"):
 
     with rasterio.open(outname, 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(mydtype))
 
     src = rasterio.open(outname)
     plt.imshow(src.read(1), cmap='viridis')
@@ -405,7 +405,7 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
 
 
 
-def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydtype):
+def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydtype,newfile, outname=None):
     # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
 
     # # coords
@@ -439,11 +439,10 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
         )
 
     ds.attrs["units"] = units  # add epsg here
-    if var == "ta" or var=="tas" or var=="TA":
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+    if newfile == True:
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+"_"+outname+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     else:
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
-
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+"_"+outname+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     # comp = dict(zlib=True, complevel=5)
     # encoding = {var: comp for var in ds.data_vars}
     # ds.to_netcdf(filename, encoding=encoding)
