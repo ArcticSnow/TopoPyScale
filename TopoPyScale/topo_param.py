@@ -114,7 +114,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
                               },
                               dims=["y", "x"]
                               )
-            dw = xr.core.weighted.DatasetWeighted(ds_param_pt, da_idw)
+            dw = xr.Dataset.weighted(ds_param_pt, da_idw)
             d_mini = dw.sum(['x', 'y'], keep_attrs=True)
             df_pts.loc[i, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
                                                                                                    d_mini.slope.values,
