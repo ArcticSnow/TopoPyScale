@@ -150,7 +150,7 @@ def downscale_climate(project_directory,
     n_digits = len(str(df_centroids.index.max()))
 
     for i, row in df_centroids.iterrows():
-        pt_id = np.int(row.point_id)
+        pt_id = np.int64(row.point_id)
         print('Downscaling t,q,u,v,tp,p for point: {} out of {}'.format(pt_id+1, df_centroids.index.max()+1))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_surf.latitude-row.y).argmin()
@@ -264,7 +264,7 @@ def downscale_climate(project_directory,
     ds_list = []
     path_list = []
     for i, row in df_centroids.iterrows():
-        pt_id = np.int(row.point_id)
+        pt_id = np.int64(row.point_id)
         print('Downscaling LW, SW for point: {} out of {}'.format(pt_id+1,
                                                                   df_centroids.point_id.max()+1))
 
