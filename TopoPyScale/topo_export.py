@@ -107,8 +107,8 @@ def to_musa(ds,
     fo.rh.attrs = {'units':'kg/kg', 'standard_name':'rh', 'long_name':'Near Surface Relative Humidity', '_FillValue': -9999999.0}
     fo.ws.attrs = {'units':'m/s', 'standard_name':'ws', 'long_name':'Wind Speed', '_FillValue': -9999999.0}
     fo.precip.attrs = {'units':'mm/s', 'standard_name':'precip', 'long_name':'Precipitation', '_FillValue': -9999999.0}
-    fo.sw.attrs = {'units':'W/m2', 'standard_name':'sw', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
-    fo.lw.attrs = {'units':'W/m2', 'standard_name':'lw', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+    fo.sw.attrs = {'units':'W/m^2', 'standard_name':'sw', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+    fo.lw.attrs = {'units':'W/m^2', 'standard_name':'lw', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
     fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
 
     fo.attrs = {'title':'Forcing for MuSa assimilation scheme',
@@ -188,8 +188,8 @@ def to_cryogrid(ds,
         fo.wind.attrs = {'units':'m/s', 'standard_name':'wind', 'long_name':'Wind Speed', '_FillValue': -9999999.0}
         fo.rainfall.attrs = {'units':'mm/day', 'standard_name':'rainfall', 'long_name':'Rainfall Rate', '_FillValue': -9999999.0}
         fo.snowfall.attrs = {'units':'mm/day', 'standard_name':'snowfall', 'long_name':'Snowfall Rate', '_FillValue': -9999999.0}
-        fo.Sin.attrs = {'units':'W/m2', 'standard_name':'Sin', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
-        fo.Lin.attrs = {'units':'W/m2', 'standard_name':'Lin', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+        fo.Sin.attrs = {'units':'W/m^2', 'standard_name':'Sin', 'long_name':'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+        fo.Lin.attrs = {'units':'W/m^2', 'standard_name':'Lin', 'long_name':'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
         fo.p.attrs = {'units':'Pa', 'standard_name':'p', 'long_name':'Surface Pressure', '_FillValue': -9999999.0}
 
         fo.attrs = {'title':'Forcing for Cryogrid Community model',
