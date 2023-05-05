@@ -210,13 +210,13 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-    if ncol == 4:
-        varname = "rof"
     if ncol == 5:
-        varname = "hs"
+        varname = "rof"
     if ncol == 6:
-        varname = "swe"
+        varname = "hs"
     if ncol == 7:
+        varname = "swe"
+    if ncol == 8:
         varname = "gst"
 
     # add timestamp
@@ -356,13 +356,15 @@ def topo_map_headless(df_mean,  mydtype, outname="outputmap.tif"):
         dst.write(array.astype(profile["dtype"] ))
 
 
-def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
+def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     """
     Function to map forcing to toposub clusters generating gridded forcings
 
     Args:
         ds_var: single variable of ds eg. mp.downscaled_pts.t
-        new_res: optional parameter to resample output to (in units of projection
+        n_decimals (int): number of decimal to round vairable. default 2
+        dtype (str): dtype to export raster. default 'float32'
+        new_res (float): optional parameter to resample output to (in units of projection
 
     Return:
         grid_stack: stack of grids with dimension Time x Y x X
@@ -377,7 +379,7 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
     nclust = ds_var.shape[0]
-    lookup = np.arange(nclust, dtype=mydtype)
+    lookup = np.arange(nclust, dtype=dtype)
 
     # replicate looup through timedimens (dims Time X sample )
     lookup2D = np.tile(lookup, (ds_var.shape[1], 1))
@@ -430,9 +432,9 @@ def topo_map_forcing(ds_var, round_dp, mydtype, new_res=None):
 
     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
     try:
-        grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , round_dp)# transpose to Time x Y x X
+        grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , n_decimals)# transpose to Time x Y x X
     except: # the case where we gen annual grids (no time dimension)
-        grid_stack = np.round(array2.squeeze(), round_dp)  # transpose to Time x Y x X
+        grid_stack = np.round(array2.squeeze(), n_decimals)  # transpose to Time x Y x X
     return grid_stack, lats, lons
 
     # # rasterio.plot.show(array, cmap='viridis')
@@ -485,22 +487,15 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
 
     ds.attrs["units"] = units  # add epsg here
     if var == "ta" or var=="tas" or var=="TA":
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc",
+                      mode="w",
+                      encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5}},
+                      engine='h5netcdf')
     else:
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
-
-    # comp = dict(zlib=True, complevel=5)
-    # encoding = {var: comp for var in ds.data_vars}
-    # ds.to_netcdf(filename, encoding=encoding)
-    #     {"my_variable": {"dtype": "int16", "scale_factor": 0.1, "zlib": True}, ...}
-
-    # compression experiment (array 357 x 250 x 100)
-    # complevel, time(s), size (mb)
-    # 5, 2.75, 11.4
-    # 6, 6.45, 10.7
-    # 9, 50.08, 10.0
-
-    # Conclusion: use 5!
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc",
+                      mode="a",
+                      encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5}},
+                      engine='h5netcdf')
 
 
 def agg_stats(df ):
