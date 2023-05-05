@@ -167,10 +167,6 @@ def downscale_climate(project_directory,
         except:
             print("No ERA5T  PRESSURE data present with additional dimension <expver>")
 
-        #trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
-        #nxv,  nyv = np.meshgrid(ds_.longitude.values, ds_.latitude.values)
-        #nlons, nlats = trans.transform(nxv, nyv)
-        #ds_ = ds_.assign_coords({"latitude": nlats[:, 0], "longitude": nlons[0, :]})
         return ds_
 
     def _subset_climate_dataset(ds_, row, type='plev', pt_id=0):
