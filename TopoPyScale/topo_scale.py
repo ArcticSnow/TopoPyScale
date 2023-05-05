@@ -364,7 +364,7 @@ def downscale_climate(project_directory,
         down_pt.p.attrs = {'units': 'bar', 'long_name': 'Pression atmospheric', 'standard_name': 'pression_atmospheric'}
 
         down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
-        down_pt.ws.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
+        down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
         down_pt.tp.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation', 'standard_name': 'precipitation'}
         down_pt.precip_lapse_rate.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation after lapse-rate correction', 'standard_name': 'precipitation_after_lapse-rate_correction'}
 
