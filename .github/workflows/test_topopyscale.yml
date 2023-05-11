@@ -20,7 +20,9 @@ jobs:
         echo $CONDA/bin >> $GITHUB_PATH
     - name: Install dependencies
       run: |
-        conda env update --file environment.yml --name base
+        pip install mamba
+        mamba env update --file environment.yml
+        conda activate downscaling
     - name: Install TopoPyscale main development branch
       run: |
         pip install -e .
