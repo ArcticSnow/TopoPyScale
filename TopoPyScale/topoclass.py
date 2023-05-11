@@ -74,11 +74,11 @@ class Topoclass(object):
         if not os.path.exists('/'.join((self.config.project.directory, 'outputs/'))):
             os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
 
-        self.config.climate.path = self.config.project.directory + 'inputs/climate/'
-        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/climate/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'inputs/climate')))
-        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/climate/tmp/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'inputs/climate/tmp')))
+        self.config.climate.path = self.config.climate[self.config.project.climate].path
+        if not os.path.exists(self.config.climate.path):
+            os.makedirs(self.config.climate.path)
+        if not os.path.exists('/'.join((self.config.climate.path, '/tmp/'))):
+            os.makedirs('/'.join((self.config.climate.path, '/tmp')))
         if not os.path.exists('/'.join((self.config.project.directory, 'outputs/tmp/'))):
             os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')))
         if not os.path.exists('/'.join((self.config.project.directory, 'outputs/downscaled'))):
@@ -444,6 +444,7 @@ class Topoclass(object):
                     self.config.project.directory + 'outputs/' + self.time_splitter.ds_solar_flist[i])
 
                 ta.downscale_climate(self.config.project.directory,
+                                     self.config.climate.path,
                                      self.toposub.df_centroids,
                                      self.da_horizon,
                                      self.ds_solar,
