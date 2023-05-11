@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install mamba
-        mamba env update --file environment.yml
+        mamba env update -f environment.yml
         conda activate downscaling
     - name: Install TopoPyscale main development branch
       run: |
