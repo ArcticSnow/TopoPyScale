@@ -62,13 +62,23 @@ Validation (4) and Gap filling (4) are future implementation.
 
 ## Installation
 
+We have now added an environments.yml file to handle versions of depencencies that are tested with the current codebase, to use this run:
+
+`conda env create -f environment.yml`
+
+Alternatively you can follow this method for dependencies (to be deprecated):
+
 ```bash
 conda create -n downscaling python=3.9 ipython
 conda activate downscaling
 
 # Recomended way to install dependencies:
 conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4 h5netcdf rasterio pyproj dask rioxarray
+```
 
+Then install the code:
+
+```
 # OPTION 1 (Pypi release):
 pip install TopoPyScale
 
