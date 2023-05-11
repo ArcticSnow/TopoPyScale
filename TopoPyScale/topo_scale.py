@@ -97,6 +97,7 @@ def clear_files(path):
 
 
 def downscale_climate(project_directory,
+                      era5_directory,
                       df_centroids,
                       horizon_da,
                       ds_solar,
@@ -140,8 +141,8 @@ def downscale_climate(project_directory,
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
-    flist_PLEV = (f'{project_directory}inputs/climate/PLEV*.nc')
-    flist_SURF = (f'{project_directory}inputs/climate/SURF*.nc')
+    flist_PLEV = (f'{era5_directory}/PLEV*.nc')
+    flist_SURF = (f'{era5_directory}/SURF*.nc')
 
 
     def _open_dataset_climate(flist):
