@@ -22,6 +22,7 @@ jobs:
       run: |
         conda install mamba -n base -c conda-forge
         if conda info --envs | grep -q downscaling; then echo "downscaling already exists" | conda env update --file environment.yml; else mamba env create -f environment.yml; fi
+        conda init bash
         conda activate downscaling
     - name: Install TopoPyscale main development branch
       run: |
