@@ -138,21 +138,19 @@ def downscale_climate(project_directory,
     n_digits = len(str(df_centroids.index.max()))
 
     # =========== Open dataset with Dask =================
-    tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, closed='left')
+    tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
-    flist_PLEV = glob.glob(f'{project_directory}inputs/climate/PLEV*.nc')
-    flist_SURF = glob.glob(f'{project_directory}inputs/climate/SURF*.nc')
+    flist_PLEV = (f'{project_directory}inputs/climate/PLEV*.nc')
+    flist_SURF = (f'{project_directory}inputs/climate/SURF*.nc')
 
-    flist_PLEV.sort()
-    flist_SURF.sort()
 
     def _open_dataset_climate(flist):
+    
 
-        ds__list = []
-        for file in flist:
-            ds__list.append(xr.open_dataset(file))
+        ds_ = xr.open_mfdataset(flist, parallel=True)
 
-        ds_ = xr.concat(ds__list, dim='time')
+
+
         # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
         # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
         # https://code.mpimet.mpg.de/boards/1/topics/8961
@@ -186,7 +184,7 @@ def downscale_climate(project_directory,
         ds_ = None
         ds_tmp = None
 
-    ds_plev = _open_dataset_climate(flist_PLEV)
+    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
     # Check tvec is within time period of ds_plev.time or return error
     if ds_plev.time.min() > tvec.min():
         print(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
@@ -237,7 +235,7 @@ def downscale_climate(project_directory,
                           'file_pattern':file_pattern})
 
     def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
-        pt_id = np.int(row.point_id)
+        pt_id = np.int32(row.point_id)
         print(f'Downscaling t,q,p,tp,ws,wd for point: {pt_id+1}')
 
         # ====== Horizontal interpolation ====================
@@ -387,7 +385,7 @@ def downscale_climate(project_directory,
     def pt_downscale_radiations(row, ds_solar, horizon_da, meta):
         # insrt here downscaling routine for sw and lw
         # save file final file
-        pt_id = np.int(row.point_id)
+        pt_id = np.int32(row.point_id)
         n_digits = meta.get('n_digits')
         file_pattern = meta.get('file_pattern')
         print(f'Downscaling LW, SW for point: {pt_id+1}')
