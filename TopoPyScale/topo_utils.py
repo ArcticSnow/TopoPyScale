@@ -41,10 +41,10 @@ def FsmSnowParser(file, freq="1H", resample=False):
     return (df)
 
 
-def FsmPlot(df):
-    df.plot(subplots=True)
-    plt.title("Sample=" + str(sampleN) + " Elev=" + str(np.round(lp.elevation[sampleN])))
-    plt.show()
+#def FsmPlot(df):
+#    df.plot(subplots=True)
+#    plt.title("Sample=" + str(sampleN) + " Elev=" + str(np.round(lp.elevation[sampleN])))
+#    plt.show()
 
 def FsmPlot_ensemble(wdir, simvar, sampleN):
     """

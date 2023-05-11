@@ -310,7 +310,7 @@ def pymodis_download(wdir, vert, horiz, STARTDATE, ENDDATE):
     hreg = ("h" + f"{horiz:02d}")  # re.compile("h2[4]")
     vreg = ("v" + f"{vert:02d}")  # re.compile("v0[5]")
     TILE = hreg + vreg
-    print("Downloading " + product + " from " + STARTDATE + " to " + ENDDATE)
+    print("Downloading " + PRODUCT + " from " + STARTDATE + " to " + ENDDATE)
     os.system("modis_download.py -U " +
               USER +
               " -P " + PWD +
@@ -877,7 +877,7 @@ def fsca_plots(wdir, plotDay, df_mean):
     for i in range(0, nclust):
         lookup[i] = df_mean[i]
 
-    with rasterio.open('landform.tif') as src:
+    with rio.open('landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
@@ -894,7 +894,7 @@ def fsca_plots(wdir, plotDay, df_mean):
 
     with rio.open('output_raster.tif', 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(rio.int16))
 
     src1 = rio.open("output_raster.tif")
     rio.plot.show(src1, ax=axhist)
@@ -1003,7 +1003,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     for i in range(0, nclust):
         lookup[i] = df_mean_open[i]
 
-    with rasterio.open('landform.tif') as src:
+    with rio.open('landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
@@ -1015,12 +1015,12 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         #array[array > 0] = 1
 
 
-    # rasterio.plot.show(array, cmap='viridis')
+    # rio.plot.show(array, cmap='viridis')
     # plt.show()
 
     with rio.open('output_raster.tif', 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(rio.int16))
 
     src1 = rio.open("output_raster.tif")
     rio.plot.show(src1, ax=axopen)
@@ -1040,7 +1040,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     for i in range(0, nclust):
         lookup[i] = df_mean_da[i]
 
-    with rasterio.open('landform.tif') as src:
+    with rio.open('landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
@@ -1052,12 +1052,12 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         #array[array > 0] = 1
 
 
-    # rasterio.plot.show(array, cmap='viridis')
+    # rio.plot.show(array, cmap='viridis')
     # plt.show()
 
     with rio.open('output_raster.tif', 'w', **profile) as dst:
         # Write to disk
-        dst.write(array.astype(rasterio.int16))
+        dst.write(array.astype(rio.int16))
 
     src1 = rio.open("output_raster.tif")
     rio.plot.show(src1, ax=axda)
@@ -1128,6 +1128,7 @@ def getModisbbox(Npixel, arr):
     bbox = [xmax,xmin, ymax, ymin]
     return bbox
 
+'''
 def getSamples_inModisPixel(map_path):
     """
     Identify samples that exist within a single bbox and proportianal cover. This can be used to construct a modelled fSCA in a MODIS pixel
@@ -1145,12 +1146,12 @@ def getSamples_inModisPixel(map_path):
     # # project
     # x2, y2 = proj.transform(x_coord, y_coord)
     # open map
-    dataset = rasterio.open(map_path)
+    dataset = rio.open(map_path)
     # get pixel x+y of the coordinate
     py, px = dataset.index(x2, y2)
     # create 1x1px window of the pixel
-    window = rasterio.windows.Window(px - 1 // 2, py - 1 // 2, 1, 1)
+    window = rio.windows.Window(px - 1 // 2, py - 1 // 2, 1, 1)
     # read rgb values of the window
     clip = dataset.read(window=window)
     return (int(clip))
-
+'''

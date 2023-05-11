@@ -569,7 +569,7 @@ class Topoclass(object):
         df['year'] = df.dates.dt.year
 
         bbox = [latS, lonW, latN, lonE]
-        for year in years:
+        for year in df.year.unique():
             # API only accept one year request
             tpo.fetch_WMO_insitu_observations(years=year,
                                               months=list(df.month.unique().astype(str)),
