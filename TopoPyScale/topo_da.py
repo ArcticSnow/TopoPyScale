@@ -20,6 +20,7 @@ from scipy.interpolate import interp1d
 from TopoPyScale import topo_sim as sim
 from datetime import datetime
 import xarray as xr
+import rioxarray
 
 
 # import gdal
@@ -1077,7 +1078,7 @@ def build_modis_cube(wdir):
     mydates = [lname.split('.A')[1].split(".h")[0] for lname in geotiff_list]
     time_var = xr.Variable('time', mydates)
     # Load in and concatenate all individual GeoTIFFs
-    geotiffs_da = xr.concat([xr.open_rasterio(i) for i in geotiff_list], dim=time_var)
+    geotiffs_da = xr.concat([rioxarray.open_rasterio(i) for i in geotiff_list], dim=time_var)
     # Covert our xarray.DataArray into a xarray.Dataset
     geotiffs_ds = geotiffs_da.to_dataset('band')
     # Rename the variable to a more useful name
