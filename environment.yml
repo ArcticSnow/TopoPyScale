@@ -11,19 +11,6 @@ dependencies:
   - asttokens=2.0.5
   - attr=2.5.1
   - attrs=23.1.0
-  - aws-c-auth=0.6.26
-  - aws-c-cal=0.5.26
-  - aws-c-common=0.8.17
-  - aws-c-compression=0.2.16
-  - aws-c-event-stream=0.2.20
-  - aws-c-http=0.7.7
-  - aws-c-io=0.13.21
-  - aws-c-mqtt=0.8.6
-  - aws-c-s3=0.2.8
-  - aws-c-sdkutils=0.1.9
-  - aws-checksums=0.1.14
-  - aws-crt-cpp=0.19.9
-  - aws-sdk-cpp=1.10.57
   - backcall=0.2.0
   - blosc=1.21.3
   - bokeh=3.1.0
@@ -46,6 +33,7 @@ dependencies:
   - curl=8.0.1
   - cycler=0.11.0
   - cytoolz=0.12.0
+  - dask==2023.4.1
   - dask-core=2023.4.1
   - dbus=1.13.6
   - decorator=5.1.1
@@ -180,6 +168,7 @@ dependencies:
   - openssl=3.1.0
   - orc=1.8.3
   - packaging=23.1
+  - pandas==2.0.0
   - parquet-cpp=1.5.1
   - parso=0.8.3
   - partd=1.4.0
@@ -245,6 +234,7 @@ dependencies:
   - urllib3=2.0.2
   - wcwidth=0.2.5
   - wheel=0.38.4
+  - xarray==2023.4.1
   - xcb-util=0.4.0
   - xcb-util-image=0.4.0
   - xcb-util-keysyms=0.4.0
@@ -279,7 +269,6 @@ dependencies:
       - certifi==2022.12.7
       - charset-normalizer==3.1.0
       - configobj==5.0.8
-      - dask==2023.4.0
       - docopt==0.6.2
       - entrypoints==0.4
       - fasteners==0.18
@@ -295,7 +284,6 @@ dependencies:
       - numcodecs==0.11.0
       - numpy==1.24.2
       - numpy-groupies==0.9.20
-      - pandas==2.0.0
       - platformdirs==3.5.0
       - pooch==1.7.0
       - pvlib==0.9.5
@@ -309,6 +297,4 @@ dependencies:
       - topocalc==0.5.0
       - tqdm==4.65.0
       - webob==1.8.7
-      - xarray==2023.4.1
       - zarr==2.14.2
-prefix: /home/joel/anaconda3/envs/downscaling
