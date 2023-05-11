@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install mamba
-        mamba env update -f environment.yml
+        if conda info --envs | grep -q downscaling; then echo "downscaling already exists" | conda env update --file environment.yml; else mamba env create -f environment.yml; fi
         conda activate downscaling
     - name: Install TopoPyscale main development branch
       run: |
