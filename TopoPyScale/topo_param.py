@@ -20,7 +20,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import os
 from TopoPyScale import topo_export as te
-
+import rioxarray
 
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
     """
@@ -138,7 +138,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
 
     """
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
-    ds = xr.open_rasterio(dem_file).to_dataset('band')
+    ds = rioxarray.open_rasterio(dem_file).to_dataset('band')
     ds = ds.rename({1: 'elevation'})
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
@@ -182,7 +182,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
          
     """
     print('\n---> Computing horizons with {} degree increments'.format(azimuth_inc))
-    ds = xr.open_rasterio(dem_file).to_dataset('band')
+    ds = rioxarray.open_rasterio(dem_file).to_dataset('band')
     ds = ds.rename({1: 'elevation'})
     dx = ds.x.diff('x').median().values
 
