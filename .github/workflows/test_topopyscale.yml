@@ -26,6 +26,7 @@ jobs:
         # conda activate downscaling
     - name: Install TopoPyscale main development branch
       run: |
+        conda activate downscaling
         pip install -e .
     - name: Lint with flake8
       run: |
