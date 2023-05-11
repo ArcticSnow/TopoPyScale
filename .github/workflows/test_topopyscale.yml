@@ -39,4 +39,4 @@ jobs:
     - name: Run TopoPyScale example
       run: |
         git clone https://github.com/ArcticSnow/TopoPyScale_examples.git
-        python ~/TopoPyScale_examples/ex1_norway/pipeline.py
+        python TopoPyScale_examples/ex1_norway/pipeline.py
