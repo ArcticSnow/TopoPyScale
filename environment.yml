@@ -231,7 +231,6 @@ dependencies:
   - tzdata=2023c
   - ucx=1.14.0
   - unicodedata2=15.0.0
-  - urllib3=2.0.2
   - wcwidth=0.2.5
   - wheel=0.38.4
   - xarray==2023.4.1
