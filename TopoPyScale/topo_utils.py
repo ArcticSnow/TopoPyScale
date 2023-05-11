@@ -20,6 +20,7 @@ def FsmMetParser(file, freq="1h", resample=False):
     df.columns = ['ISWR', 'ILWR', 'Sf', 'Rf', 'TA', 'RH', 'VW', 'P']
 
     if resample == "TRUE":
+        print('ERROR: line 24 to be fixed!')
         #df = df.resample(freq).apply(resample_func)
 
     return (df)
