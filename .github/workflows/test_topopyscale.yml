@@ -43,3 +43,7 @@ jobs:
       run: |
         conda install pytest
         pytest
+    - name: Run TopoPyScale example
+      run: |
+        git clone https://github.com/ArcticSnow/TopoPyScale_examples.git
+        python TopoPyScale_examples/ex1_norway/pipeline.py
