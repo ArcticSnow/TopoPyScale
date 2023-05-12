@@ -5,6 +5,7 @@
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/ArcticSnow/TopoPyScale)
 <a href="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87"><img src="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87/status.svg"></a>
 [![][docs-dev-img]][docs-dev-url]
+![Test](https://github.com/ArcticSnow/TopoPyScale/actions/workflows/test_topopyscale.yml/badge.svg)
 
 [docs-dev-img]: https://img.shields.io/badge/docs-latest-blue.svg
 [docs-dev-url]: https://topopyscale.readthedocs.io

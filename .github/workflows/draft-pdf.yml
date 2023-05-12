@@ -2,6 +2,7 @@ on: [push]
 
 jobs:
   paper:
+    if: "contains(github.event.commits[0].message, '[trigger pdf]')"
     runs-on: ubuntu-latest
     name: Paper Draft
     steps:
