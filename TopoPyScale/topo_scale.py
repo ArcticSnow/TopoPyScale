@@ -66,6 +66,10 @@ def multicore_pooling(fun, fun_param, n_cores):
         n_cores = mproc.cpu_count() - 2
         print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
 
+    # make sure it will run on one core at least
+    if n_cores == 0:
+        n_cores = 1
+
 
     pool = Pool(n_cores)
     pool.starmap(fun, fun_param)
