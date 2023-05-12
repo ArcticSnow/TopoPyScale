@@ -44,6 +44,7 @@ class Topoclass(object):
             with open(config_file, 'r') as f:
                 self.config = DefaultMunch.fromYAML(f)
 
+
             if self.config.project.directory is None:
                 self.config.project.directory = os.getcwd() + '/'
 
