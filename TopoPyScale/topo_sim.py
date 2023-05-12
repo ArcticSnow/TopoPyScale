@@ -98,7 +98,24 @@ def fsm_sim(nlstfile, fsm_exec):
     os.remove(nlstfile)
 
 
-def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
+def read_pt_fsm(fname):
+    '''
+    Function to load FSM simulation output into a pandas dataframe
+    Args:
+        fname (str): path to simulation file to open
+
+    Returns:
+        pandas dataframe
+    '''
+    fsm = pd.read_csv(fname,
+                  delim_whitespace=True, header=None)
+    fsm.columns = ['year', 'month', 'day', 'hour', 'albedo', 'runoff', 'snd', 'swe', 't_surface', 't_soil']
+    fsm['time'] = pd.to_datetime(fsm.year.astype(str) +'-' +  fsm.month.astype(str) +'-' + fsm.day.astype(str))
+    fsm.set_index('time', inplace=True)
+    return fsm
+
+
+def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -121,10 +138,24 @@ def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob(fsm_path+"/sim_FSM_pt*")
 
+
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
         def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(l, key=alphanum_key)
+
+    fsm_columns = {'alb':4,
+                   'rof':5,
+                   'snd':6,
+                   'swe':7,
+                   'gst':8.,
+                   'tsl':9}
+
+    if ncol is None and var is not None:
+        if var in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
+            ncol = int(fsm_columns.get(var))
+        else:
+            print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
 
     file_list = natural_sort(a)
 
@@ -142,27 +173,22 @@ def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
     # efficient way to parse multifile
     data = []
     for file_path in file_list:
+
         data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)])
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-    if ncol == 4:
-        varname = "rof"
-    if ncol == 5:
-        varname = "hs"
-    if ncol == 6:
-        varname = "swe"
-    if ncol == 7:
-        varname = "gst"
+
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
+    print(f'Variable {list(fsm_columns)[ncol-4]} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
-def agg_by_var_fsm_ensemble(ncol, W):
+def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -171,6 +197,7 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     Args:
         ncol (int): column number of variable to extract
+        W ():
     Returns: 
         NULL ( file written to disk)
 
@@ -184,6 +211,18 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob("./fsm_sims/sim_ENS*_FSM_pt*")
+    fsm_columns = {'alb':4,
+                   'rof':5,
+                   'snd':6,
+                   'swe':7,
+                   'gst':8.,
+                   'tsl':9}
+    if ncol is None and var is not None:
+        if var in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
+            ncol = int(fsm_columns.get(var))
+        else:
+            print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
+
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -210,14 +249,6 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-    if ncol == 5:
-        varname = "rof"
-    if ncol == 6:
-        varname = "hs"
-    if ncol == 7:
-        varname = "swe"
-    if ncol == 8:
-        varname = "gst"
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
@@ -236,6 +267,7 @@ def agg_by_var_fsm_ensemble(ncol, W):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
+    print(f'Variable {list(fsm_columns)[ncol-4]} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
