@@ -43,8 +43,9 @@ class Topoclass(object):
         try:
             with open(config_file, 'r') as f:
                 self.config = DefaultMunch.fromYAML(f)
-                if self.config.project.directory is None:
-                    self.config.project.directory = os.getcwd() + '/'
+
+            if self.config.project.directory is None:
+                self.config.project.directory = os.getcwd() + '/'
 
         except IOError:
             print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
