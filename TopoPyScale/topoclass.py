@@ -43,8 +43,11 @@ class Topoclass(object):
         try:
             with open(config_file, 'r') as f:
                 self.config = DefaultMunch.fromYAML(f)
+                if self.config.project.directory is None:
+                    self.config.project.directory = os.getcwd()
+
         except IOError:
-            print('ERROR: config file does not exist. Check path.')
+            print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
         if self.config.outputs.file.clean_outputs:
             # remove outputs directory because if results already exist this causes concat of netcdf files
