@@ -39,4 +39,5 @@ jobs:
     - name: Run TopoPyScale example
       run: |
         git clone https://github.com/ArcticSnow/TopoPyScale_examples.git
-        python TopoPyScale_examples/ex1_norway_finse/pipeline.py
+        cd TopoPyScale_examples/ex1_norway_finse/
+        python pipeline_test.py
