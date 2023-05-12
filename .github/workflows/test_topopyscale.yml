@@ -25,7 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         conda install mamba -n base -c conda-forge
-        conda env update --file environment.yml --name base
+        mamba env update --file environment.yml --name base
     - name: Install TopoPyscale main development branch
       run: |
         pip install -e .
