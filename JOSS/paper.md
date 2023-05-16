@@ -22,7 +22,7 @@ authors:
     orcid: 0000-0002-2475-3731
     affiliation: 1
 affiliations:
- - name: University of Oslo, Norway
+ - name: Department of Geosciences, University of Oslo, Norway
    index: 1
  - name: WSL Institute for Snow and Avalanche Research SLF, Switzerland
    index: 2
