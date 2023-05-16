@@ -55,9 +55,9 @@ Global climate reanalyses and projections are available worldwide for the past a
 | 2 m Air Temperature          | t         | K                  | Horizontal and vertical interpolation                        |
 | 2 m Air atmospheric pressure | p         | bar                | Horizontal and vertical interpolation                        |
 | 10 m Wind speed              | ws        | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
-| 10 mWind direction           | wd        | degree             | Horizontal and vertical interpolation                        |
-| 10 mWind U-component         | u         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
-| 10 mWind V-component         | v         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
+| 10 m Wind direction          | wd        | degree             | Horizontal and vertical interpolation                        |
+| 10 m Wind U-component        | u         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
+| 10 m Wind V-component        | v         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
 | 2 m Specific air humidity    | q         | kg.kg<sup>-1</sup> | Horizontal and vertical interpolation                        |
 | Precipitation rate           | tp        | mm.hr<sup>-1</sup> | Horizontal and vertical interpolation (optional: lapse-rate) |
 | Longwave radiation           | LW        | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
@@ -68,11 +68,11 @@ Global climate reanalyses and projections are available worldwide for the past a
 
 # Working examples
 
-The repository [TopoPyScale_examples](https://github.com/ArcticSnow/TopoPyScale_examples) provides applications of TopoPyScale to three independent regions:
+The repository [TopoPyScale_examples](https://github.com/ArcticSnow/TopoPyScale_examples) provides applications of `TopoPyScale` to three independent regions:
 
-- The site of [Finse](https://www.mn.uio.no/geo/english/research/groups/latice/infrastructure/) in Southern Norway. Located at 1200m above sea level, Finse is equipped with a wide range of instrumentation for atmospheric and hydrological studies since 2016. In this example *TopoPyScale* is run for the weather station location.
+- The site of [Finse](https://www.mn.uio.no/geo/english/research/groups/latice/infrastructure/) in Southern Norway. Located at 1200m above sea level, Finse is equipped with a wide range of instrumentation for atmospheric and hydrological studies since 2016. In this example `TopoPyScale` is run for the weather station location.
 - The mountain range of Retezat in the Romanian Carpathian mountains. This is an example for applying the *TopoSUB* subroutine for spatialized downscaling.
-- The area of Davos, Switzerland, specifically selected for studies on snow distribution and avalanches. This example shows how *TopoPyScale* can be combined within the same workflow as the snowmodel FSM.
+- The area of Davos, Switzerland, specifically selected for studies on snow distribution and avalanches. This example shows how `TopoPyScale` can be combined within the same workflow as the snowmodel FSM.
 
 # Acknowledgements
 
