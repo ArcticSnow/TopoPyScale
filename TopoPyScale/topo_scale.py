@@ -41,6 +41,7 @@ import xarray as xr
 from pyproj import Transformer
 import numpy as np
 import sys, time
+import datetime as dt
 from TopoPyScale import meteo_util as mu
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
@@ -468,6 +469,9 @@ def downscale_climate(project_directory,
         down_pt = down_pt.drop(['SW_direct_tmp'])
         down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards', 'standard_name': 'shortwave_radiation_downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards', 'standard_name': 'shortwave_diffuse_radiation_downward'}
+        down_pt.attrs = {'title':'Downscaled timeseries with TopoPyScale',
+                         'Create with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                         'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         num = str(pt_id).zfill(n_digits)
         comp = dict(zlib=True, complevel=5)
@@ -504,13 +508,8 @@ def read_downscaled(path='outputs/down_pt*.nc'):
     Returns:
         dataset: merged dataset readily to use and loaded in chuncks via Dask
     """
-    flist = glob.glob(path)
-    flist.sort()
 
-    ds_list = []
-    for file in flist:
-       ds_list.append(xr.open_dataset(file))
-    down_pts = xr.concat(ds_list, dim='point_id')
+    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=True)
     return down_pts
 
 
