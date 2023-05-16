@@ -50,19 +50,19 @@ Global climate reanalyses and projections are available worldwide for the past a
 
 **Table 1:** Default output variables of `TopoPyScale` (based on ERA5).
 
-| Name                       | Variable  | Unit               | Downscaling type                                             |
-| -------------------------- | --------- | ------------------ | ------------------------------------------------------------ |
-| Air Temperature            | t         | K                  | Horizontal and vertical interpolation                        |
-| Air atmospheric pressure   | p         | bar                | Horizontal and vertical interpolation                        |
-| Wind speed                 | ws        | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
-| Wind direction             | wd        | degree             | Horizontal and vertical interpolation                        |
-| Wind U-component           | u         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
-| Wind V-component           | v         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
-| Specific air humidity      | q         | kg.kg<sup>-1</sup> | Horizontal and vertical interpolation                        |
-| Precipitation rate         | tp        | mm.hr<sup>-1</sup> | Horizontal and vertical interpolation (optional: lapse-rate) |
-| Longwave radiation         | LW        | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
-| Shortwave radiation        | SW        | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
-| Direct shortwave radiation | SW_direct | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
+| Name                         | Variable  | Unit               | Downscaling type                                             |
+| ---------------------------- | --------- | ------------------ | ------------------------------------------------------------ |
+| 2 m Air Temperature          | t         | K                  | Horizontal and vertical interpolation                        |
+| 2 m Air atmospheric pressure | p         | bar                | Horizontal and vertical interpolation                        |
+| 10 m Wind speed              | ws        | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
+| 10 mWind direction           | wd        | degree             | Horizontal and vertical interpolation                        |
+| 10 mWind U-component         | u         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
+| 10 mWind V-component         | v         | m.s<sup>-1</sup>   | Horizontal and vertical interpolation                        |
+| 2 m Specific air humidity    | q         | kg.kg<sup>-1</sup> | Horizontal and vertical interpolation                        |
+| Precipitation rate           | tp        | mm.hr<sup>-1</sup> | Horizontal and vertical interpolation (optional: lapse-rate) |
+| Longwave radiation           | LW        | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
+| Shortwave radiation          | SW        | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
+| Direct shortwave radiation   | SW_direct | W.m<sup>-2</sup>   | Geometrical and atmospheric correction                       |
 
 
 
