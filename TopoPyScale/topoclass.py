@@ -490,6 +490,7 @@ class Topoclass(object):
 
         else:
             ta.downscale_climate(self.config.project.directory,
+                                 self.config.climate.path,
                                  self.toposub.df_centroids,
                                  self.da_horizon,
                                  self.ds_solar,
