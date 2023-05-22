@@ -102,6 +102,8 @@ def clear_files(path):
 
 
 def downscale_climate(project_directory,
+                      climate_directory,
+                      downscaled_directory,
                       df_centroids,
                       horizon_da,
                       ds_solar,
@@ -145,8 +147,8 @@ def downscale_climate(project_directory,
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
-    flist_PLEV = (f'{project_directory}inputs/climate/PLEV*.nc')
-    flist_SURF = (f'{project_directory}inputs/climate/SURF*.nc')
+    flist_PLEV = glob.glob(f'{climate_directory}/PLEV*.nc')
+    flist_SURF = glob.glob(f'{climate_directory}/SURF*.nc')
 
 
     def _open_dataset_climate(flist):
@@ -476,8 +478,7 @@ def downscale_climate(project_directory,
         num = str(pt_id).zfill(n_digits)
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}', engine='h5netcdf', encoding=encoding, mode='a')
-
+        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}',engine='h5netcdf', encoding=encoding, mode='a')
         # Clear memory
         down_pt, surf_interp = None, None
         ds_solar = None

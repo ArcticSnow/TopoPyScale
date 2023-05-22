@@ -51,13 +51,15 @@ class Topoclass(object):
         except IOError:
             print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
+        output_dir = Path(self.config.project.directory, 'outputs')
+
         if self.config.outputs.file.clean_outputs:
             # remove outputs directory because if results already exist this causes concat of netcdf files
             try:
-                shutil.rmtree(self.config.project.directory + '/outputs/')
+                shutil.rmtree(output_dir)
                 print('---> Output directory cleaned')
             except:
-                os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
+                os.makedirs(output_dir)
 
         # remove output fsm directory
         if self.config.outputs.file.clean_FSM:
@@ -73,25 +75,29 @@ class Topoclass(object):
                 print("---> Ensemble directory cleaned")
             except:
                 print("---> no ensemble directory to clean")
+
+        # directory where to store the downscaled data
+        if self.config.outputs.directory:
+            self.config.outputs.downscaled = Path(self.config.outputs.directory)
+        else:
+            self.config.outputs.downscaled = Path(output_dir, 'downscaled')
+        os.makedirs(self.config.outputs.downscaled, exist_ok=True)
+
+        # climate path
+        if os.path.isabs(self.config.climate.era5.path):
+            self.config.climate.path = self.config.climate.era5.path
+        else:
+            self.config.climate.path = '/'.join((self.config.project.directory, 'inputs/climate/'))
+
         # check if tree directory exists. If not create it
-        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'inputs/')))
-        if not os.path.exists('/'.join((self.config.project.directory, 'outputs/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'outputs/')))
+        os.makedirs(self.config.climate.path, exist_ok=True)
+        os.makedirs('/'.join((self.config.project.directory, 'inputs/climate/tmp')), exist_ok=True)
+        os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')), exist_ok=True)
+        os.makedirs('/'.join((self.config.project.directory, 'outputs/downscaled')), exist_ok=True)
 
-        self.config.climate.path = self.config.project.directory + 'inputs/climate/'
-        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/climate/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'inputs/climate')))
-        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/climate/tmp/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'inputs/climate/tmp')))
-        if not os.path.exists('/'.join((self.config.project.directory, 'outputs/tmp/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')))
-        if not os.path.exists('/'.join((self.config.project.directory, 'outputs/downscaled'))):
-            os.makedirs('/'.join((self.config.project.directory, 'outputs/downscaled')))
-
-        self.config.dem.path = self.config.project.directory + '/inputs/dem/'
-        if not os.path.exists('/'.join((self.config.project.directory, 'inputs/dem/'))):
-            os.makedirs('/'.join((self.config.project.directory, 'inputs/dem')))
+        if not self.config.dem.path:
+            self.config.dem.path = self.config.project.directory + '/inputs/dem/'
+        os.makedirs(self.config.dem.path, exist_ok=True)
 
         self.config.dem.filepath = self.config.dem.path + self.config.dem.file
         if not os.path.isfile(self.config.dem.filepath):
@@ -173,11 +179,11 @@ class Topoclass(object):
         else:
             print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
 
-        flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt}')
+        flist = glob.glob(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
         if len(flist) > 0:
             print('---> Loading downscaled points \n ...')
             self.downscaled_pts = xr.open_mfdataset(
-                f'{self.config.project.directory}outputs/downscaled/{self.config.outputs.file.downscaled_pt}',
+                  f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
                 concat_dim='point_id',
                 combine='nested',
                 parallel=True)
@@ -255,8 +261,9 @@ class Topoclass(object):
             **kwargs: pd.read_csv() parameters
         Returns:
         """
-        self.toposub.df_centroids = pd.read_csv(
-            self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file, **kwargs)
+        if not os.path.isabs(self.config.sampling.points.csv_file):
+            self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
+        self.toposub.df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
         self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
         self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param,
                                                          method=method)
@@ -431,7 +438,7 @@ class Topoclass(object):
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
-        downscaled_dir = Path(self.config.project.directory, 'outputs', 'downscaled')
+        downscaled_dir = self.config.outputs.downscaled
         f_pattern = self.config.outputs.file.downscaled_pt
 
         if '*' not in f_pattern:
@@ -449,6 +456,8 @@ class Topoclass(object):
                     self.config.project.directory + 'outputs/' + self.time_splitter.ds_solar_flist[i])
 
                 ta.downscale_climate(self.config.project.directory,
+                                     self.config.climate.path,
+                                     self.config.outputs.downscaled,
                                      self.toposub.df_centroids,
                                      self.da_horizon,
                                      self.ds_solar,
@@ -494,6 +503,8 @@ class Topoclass(object):
 
         else:
             ta.downscale_climate(self.config.project.directory,
+                                 self.config.climate.path,
+                                 self.config.outputs.downscaled,
                                  self.toposub.df_centroids,
                                  self.da_horizon,
                                  self.ds_solar,
