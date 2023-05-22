@@ -12,7 +12,6 @@ project/
 
 """
 import glob, os, sys, shutil
-import pdb
 from pathlib import Path
 import re
 from munch import DefaultMunch
@@ -518,8 +517,7 @@ class Topoclass(object):
                                  self.config.outputs.file.downscaled_pt,
                                  self.config.project.CPU_cores)
 
-        self.downscaled_pts = ta.read_downscaled(
-            self.config.project.directory + 'outputs/downscaled/' + self.config.outputs.file.downscaled_pt)
+        self.downscaled_pts = ta.read_downscaled(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 
@@ -664,7 +662,9 @@ class Topoclass(object):
             else:
                 variables = self.config.outputs.variables
 
-        te.to_netcdf(self.downscaled_pts[variables], f'{self.config.project.directory}outputs/' + file_out, variables)
+        out_path = Path(self.config.outputs.directory, 'outputs', file_out)
+
+        te.to_netcdf(self.downscaled_pts[variables], out_path, variables)
         print('---> File {} saved'.format(file_out))
 
     def to_snowpack(self, fname_format='smet_pt_*.smet'):
