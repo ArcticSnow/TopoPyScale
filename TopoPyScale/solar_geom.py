@@ -74,7 +74,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
             "elevation": (["point_id", "time"], np.deg2rad(arr_val[:, 2, :])),
         },
         coords={
-            "point_id": df_position.index,
+            "point_id": (("point_id"),df_position.index),
             "time": pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, inclusive='left'),
             "reference_time": pd.Timestamp(start_date),
         },
