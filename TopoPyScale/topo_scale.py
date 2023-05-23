@@ -97,7 +97,6 @@ def clear_files(path):
 
 
 def downscale_climate(project_directory,
-                      era5_directory,
                       df_centroids,
                       horizon_da,
                       ds_solar,
@@ -109,7 +108,8 @@ def downscale_climate(project_directory,
                       tstep='1H',
                       precip_lapse_rate_flag=True,
                       file_pattern='down_pt*.nc',
-                      n_core=4):
+                      n_core=4,
+                      era5_directory=None):
     """
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -140,6 +140,9 @@ def downscale_climate(project_directory,
 
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
+
+    if era5_directory == None:
+        era5_directory = project_directory+"/inputs/climate/"
 
     flist_PLEV = (f'{era5_directory}/PLEV*.nc')
     flist_SURF = (f'{era5_directory}/SURF*.nc')
