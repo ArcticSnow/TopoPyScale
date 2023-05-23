@@ -20,7 +20,8 @@ def FsmMetParser(file, freq="1h", resample=False):
     df.columns = ['ISWR', 'ILWR', 'Sf', 'Rf', 'TA', 'RH', 'VW', 'P']
 
     if resample == "TRUE":
-        df = df.resample(freq).apply(resample_func)
+        print('ERROR: line 24 to be fixed!')
+        #df = df.resample(freq).apply(resample_func)
 
     return (df)
 
@@ -36,15 +37,16 @@ def FsmSnowParser(file, freq="1H", resample=False):
     df.columns = ['albedo', 'Rof', 'HS', 'SWE', 'TS10', 'TS50']
 
     if resample == "TRUE":
-        df = df.resample(freq).apply(resample_func)
+        print('ERROR: line 39 to be fixed!')
+        #df = df.resample(freq).apply(resample_func)
 
     return (df)
 
 
-def FsmPlot(df):
-    df.plot(subplots=True)
-    plt.title("Sample=" + str(sampleN) + " Elev=" + str(np.round(lp.elevation[sampleN])))
-    plt.show()
+#def FsmPlot(df):
+#    df.plot(subplots=True)
+#    plt.title("Sample=" + str(sampleN) + " Elev=" + str(np.round(lp.elevation[sampleN])))
+#    plt.show()
 
 def FsmPlot_ensemble(wdir, simvar, sampleN):
     """
@@ -215,11 +217,11 @@ def val_plots():
 
     myfile = "/home/joel/sim/topoPyscale_davos/outputs/FSM_pt_00.txt"
     df = FsmMetParser(myfile)
-    FsmPlot(df)
+    #FsmPlot(df)
 
     myfile = "/home/joel/sim/topoPyscale_davos/fsm_sims/sim_ENS1_FSM_pt_00.txt"
     df = FsmSnowParser(myfile)
-    FsmPlot(df)
+    #FsmPlot(df)
 
 
 

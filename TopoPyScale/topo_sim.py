@@ -5,7 +5,7 @@ J. Fiddes, February 2022
 TODO:
 
 """
-import os
+import os, re
 import glob
 import re
 import pandas as pd
@@ -18,7 +18,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 from datetime import datetime
 from matplotlib.backends.backend_pdf import PdfPages
-
+import datetime as dt
 def fsm_nlst(nconfig, metfile, nave):
     """
     Function to generate namelist parameter file that is required to run the FSM model.
@@ -81,6 +81,82 @@ def fsm_nlst(nconfig, metfile, nave):
     f.close()
 
 
+def txt2ds(fname):
+    '''
+    Function to read a single FSM text file output as a xarray dataset
+    Args:
+        fname (str): filename
+
+    Returns:
+        xarray dataset of dimension (time, point_id)
+    '''
+    df = read_pt_fsm(fname)
+    point_id = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
+    print(f'---> Reading FSM data for point_id = {point_id}')
+
+    ds = xr.Dataset({
+        "albedo": (['time'], df.albedo.values),
+        "runoff":  (['time'], df.runoff.values),
+        "snd":  (['time'], df.snd.values),
+        "swe":  (['time'], df.swe.values),
+        "t_surface":  (['time'], df.t_surface.values),
+        "t_soil":  (['time'], df.t_soil.values),
+        },
+        coords={
+            "point_id": point_id,
+            "time": df.index,
+            "reference_time": pd.Timestamp(df.index[0])
+        })
+
+    return ds
+
+def to_dataset(fname_pattern='sim_FSM_pt*.txt', fsm_path = "./fsm_sims/"):
+    '''
+    Function to read FSM outputs of one simulation into a single dataset.
+    Args:
+        fname_pattern:
+        fsm_path:
+
+    Returns:
+
+    '''
+    fnames = glob.glob(fsm_path + fname_pattern)
+    fnames.sort()
+
+    ds = xr.concat([txt2ds(fname) for fname in fnames],'point_id')
+
+    ds.albedo.attrs = {'units':'ratio', 'standard_name':'albedo', 'long_name':'Surface Effective Albedo', '_FillValue': -9999999.0}
+    ds.runoff.attrs = {'units':'kg m-2', 'standard_name':'runoff', 'long_name':'Cumulated runoff from snow', '_FillValue': -9999999.0}
+    ds.snd.attrs = {'units':'m', 'standard_name':'snd', 'long_name':'Average snow depth', '_FillValue': -9999999.0}
+    ds.swe.attrs = {'units':'kg m-2', 'standard_name':'swe', 'long_name':'Average snow water equivalent', '_FillValue': -9999999.0}
+    ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_surface', 'long_name':'Average surface temperature', '_FillValue': -9999999.0}
+    ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_soil', 'long_name':'Average soil temperature at 20 cm depth', '_FillValue': -9999999.0}
+    ds.attrs = {'title':'FSM simulation outputs',
+                'source': 'Data downscaled with TopoPyScale and simulated with FSM',
+                'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+
+    return ds
+
+
+def read_pt_fsm(fname):
+    '''
+    Function to load FSM simulation output into a pandas dataframe
+    Args:
+        fname (str): path to simulation file to open
+
+    Returns:
+        pandas dataframe
+    '''
+    fsm = pd.read_csv(fname,
+                delim_whitespace=True,
+                header=0,
+                index_col='time',
+                parse_dates = {'time': [0, 1, 2, 3]},
+                date_format = '%Y %m %d %H.000')
+    fsm.columns = ['albedo', 'runoff', 'snd', 'swe', 't_surface', 't_soil']
+    return fsm
+
+
 def fsm_sim(nlstfile, fsm_exec):
     """
     Function to simulate the FSM model
@@ -98,7 +174,10 @@ def fsm_sim(nlstfile, fsm_exec):
     os.remove(nlstfile)
 
 
-def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
+
+
+
+def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -121,10 +200,24 @@ def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob(fsm_path+"/sim_FSM_pt*")
 
+
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
         def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(l, key=alphanum_key)
+
+    fsm_columns = {'alb':4,
+                   'rof':5,
+                   'snd':6,
+                   'swe':7,
+                   'gst':8.,
+                   'tsl':9}
+
+    if ncol is None and var is not None:
+        if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
+            ncol = int(fsm_columns.get(var))
+        else:
+            print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
 
     file_list = natural_sort(a)
 
@@ -142,27 +235,22 @@ def agg_by_var_fsm(ncol, fsm_path = "./fsm_sims"):
     # efficient way to parse multifile
     data = []
     for file_path in file_list:
+
         data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)])
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-    if ncol == 4:
-        varname = "rof"
-    if ncol == 5:
-        varname = "hs"
-    if ncol == 6:
-        varname = "swe"
-    if ncol == 7:
-        varname = "gst"
+
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
+    print(f'Variable {list(fsm_columns)[ncol-4]} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
-def agg_by_var_fsm_ensemble(ncol, W):
+def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -171,6 +259,7 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     Args:
         ncol (int): column number of variable to extract
+        W ():
     Returns: 
         NULL ( file written to disk)
 
@@ -184,6 +273,18 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob("./fsm_sims/sim_ENS*_FSM_pt*")
+    fsm_columns = {'alb':4,
+                   'rof':5,
+                   'snd':6,
+                   'swe':7,
+                   'gst':8.,
+                   'tsl':9}
+    if ncol is None and var is not None:
+        if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
+            ncol = int(fsm_columns.get(var))
+        else:
+            print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
+
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -210,14 +311,6 @@ def agg_by_var_fsm_ensemble(ncol, W):
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-    if ncol == 5:
-        varname = "rof"
-    if ncol == 6:
-        varname = "hs"
-    if ncol == 7:
-        varname = "swe"
-    if ncol == 8:
-        varname = "gst"
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
@@ -236,6 +329,7 @@ def agg_by_var_fsm_ensemble(ncol, W):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
+    print(f'Variable {list(fsm_columns)[ncol-4]} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 

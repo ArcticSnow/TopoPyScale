@@ -41,6 +41,7 @@ import xarray as xr
 from pyproj import Transformer
 import numpy as np
 import sys, time
+import datetime as dt
 from TopoPyScale import meteo_util as mu
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
@@ -65,6 +66,10 @@ def multicore_pooling(fun, fun_param, n_cores):
     elif n_cores > mproc.cpu_count():
         n_cores = mproc.cpu_count() - 2
         print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
+
+    # make sure it will run on one core at least
+    if n_cores == 0:
+        n_cores = 1
 
 
     pool = Pool(n_cores)
@@ -97,6 +102,8 @@ def clear_files(path):
 
 
 def downscale_climate(project_directory,
+                      climate_directory,
+                      downscaled_directory,
                       df_centroids,
                       horizon_da,
                       ds_solar,
@@ -108,8 +115,7 @@ def downscale_climate(project_directory,
                       tstep='1H',
                       precip_lapse_rate_flag=True,
                       file_pattern='down_pt*.nc',
-                      n_core=4,
-                      era5_directory=None):
+                      n_core=4):
     """
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -141,11 +147,8 @@ def downscale_climate(project_directory,
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
-    if era5_directory == None:
-        era5_directory = project_directory+"/inputs/climate/"
-
-    flist_PLEV = (f'{era5_directory}/PLEV*.nc')
-    flist_SURF = (f'{era5_directory}/SURF*.nc')
+    flist_PLEV = glob.glob(f'{climate_directory}/PLEV*.nc')
+    flist_SURF = glob.glob(f'{climate_directory}/SURF*.nc')
 
 
     def _open_dataset_climate(flist):
@@ -468,12 +471,14 @@ def downscale_climate(project_directory,
         down_pt = down_pt.drop(['SW_direct_tmp'])
         down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards', 'standard_name': 'shortwave_radiation_downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards', 'standard_name': 'shortwave_diffuse_radiation_downward'}
+        down_pt.attrs = {'title':'Downscaled timeseries with TopoPyScale',
+                         'Create with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                         'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         num = str(pt_id).zfill(n_digits)
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(f'{project_directory}outputs/downscaled/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}', engine='h5netcdf', encoding=encoding, mode='a')
-
+        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.split("*")[0]}{num}{file_pattern.split("*")[1]}',engine='h5netcdf', encoding=encoding, mode='a')
         # Clear memory
         down_pt, surf_interp = None, None
         ds_solar = None
@@ -504,13 +509,8 @@ def read_downscaled(path='outputs/down_pt*.nc'):
     Returns:
         dataset: merged dataset readily to use and loaded in chuncks via Dask
     """
-    flist = glob.glob(path)
-    flist.sort()
 
-    ds_list = []
-    for file in flist:
-       ds_list.append(xr.open_dataset(file))
-    down_pts = xr.concat(ds_list, dim='point_id')
+    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=True)
     return down_pts
 
 

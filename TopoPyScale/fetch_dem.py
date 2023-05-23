@@ -18,7 +18,7 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
 
     Args:
         dem_dir (str): path to dem folder
-        extent (list): list of spatial extent in lat-lon [latN, latS, lonW, lonE]
+        extent (dict): list of spatial extent in lat-lon [latN, latS, lonW, lonE]
         epsg (int): epsg projection code
         dem_file (str): filename of the downloaded DEM. must be myfile.tif
     """
