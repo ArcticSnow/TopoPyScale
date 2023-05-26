@@ -545,8 +545,89 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     # plt.show()
 
 
+def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
+    """
+    Function to map sim results to toposub clusters generating gridded results
 
-def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydtype):
+    Args:
+        ds_var: single variable of ds eg. mp.downscaled_pts.t
+        n_decimals (int): number of decimal to round vairable. default 2
+        dtype (str): dtype to export raster. default 'float32'
+        new_res (float): optional parameter to resample output to (in units of projection
+
+    Return:
+        grid_stack: stack of grids with dimension Time x Y x X
+
+    Here
+    's an approach for arbitrary reclassification of integer rasters that avoids using a million calls to np.where. Rasterio bits taken from @Aaron'
+    s answer:
+    https://gis.stackexchange.com/questions/163007/raster-reclassify-using-python-gdal-and-numpy
+    """
+
+    # Build a "lookup array" where the index is the original value and the value
+    # is the reclassified value.  Setting all of the reclassified values is cheap
+    # because the memory is only allocated once for the lookup array.
+    nclust = ds_var.shape[1]
+    lookup = np.arange(nclust, dtype=dtype)
+
+    # replicate looup through timedimens (dims Time X sample )
+    lookup2D = np.tile(lookup, (ds_var.shape[0], 1))
+
+    for i in range(0, nclust):
+        lookup2D[:, i] = ds_var[i]
+
+    from osgeo import gdal
+    inputFile = "outputs/landform.tif"
+    outputFile = "outputs/landform_newres.tif"
+
+    # check if new_res is declared - if so resample landform and therefore output
+    if new_res is not None:
+        xres = new_res
+        yres = new_res
+        resample_alg = gdal.GRA_NearestNeighbour
+
+        ds = gdal.Warp(destNameOrDestDS=outputFile,
+                       srcDSOrSrcDSTab=inputFile,
+                       format='GTiff',
+                       xRes=xres,
+                       yRes=yres,
+                       resampleAlg=resample_alg)
+        del ds
+        landformfile = "outputs/landform_newres.tif"
+    else:
+        landformfile = "outputs/landform.tif"
+
+    with rasterio.open(landformfile) as src:
+
+        # new res
+        # upscale_factor = src.res[0] / new_res
+        # # resample data to target shape
+        # array = src.read(
+        #     out_shape=(
+        #         src.count,
+        #         int(src.height * upscale_factor),
+        #         int(src.width * upscale_factor)
+        #     ),
+        #     resampling=Resampling.nearest
+        # )
+
+        # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out))
+        array = src.read()
+        min_E, min_N, max_E, max_N = src.bounds
+        lons = np.arange(min_E, max_E, src.res[0])
+        lats = np.arange(min_N, max_N, src.res[1])
+        lats = lats[::-1]
+
+    array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
+    try:
+        grid_stack = np.round(array2.squeeze().transpose(2, 0, 1), n_decimals)  # transpose to Time x Y x X
+    except:  # the case where we gen annual grids (no time dimension)
+        grid_stack = np.round(array2.squeeze(), n_decimals)  # transpose to Time x Y x X
+    return grid_stack, lats, lons
+
+
+
+def write_ncdf(wdir, grid_stack, var, units, mytime, lats, lons, mydtype,newfile, outname=None):
     # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
 
     # # coords
@@ -563,7 +644,7 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
         ds = xr.Dataset(
              {var: (("Time", "northing", "easting"), grid_stack)},
              coords={
-                 "Time":  mytime.data,
+                 "Time":  mytime,
                  "northing": lats,
                  "easting": lons
 
@@ -580,18 +661,10 @@ def write_ncdf(wdir, grid_stack, var, units, longname, mytime, lats, lons, mydty
         )
 
     ds.attrs["units"] = units  # add epsg here
-    if var == "ta" or var=="tas" or var=="TA":
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc",
-                      mode="w",
-                      encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5}},
-                      engine='h5netcdf')
+    if newfile == True:
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0]).split("-")[0]+str(mytime[0]).split("-")[1]+"_"+outname+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     else:
-        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0].values).split("-")[0]+str(mytime[0].values).split("-")[1]+".nc",
-                      mode="a",
-                      encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5}},
-                      engine='h5netcdf')
-
-
+        ds.to_netcdf( wdir + "/outputs/"+str(mytime[0]).split("-")[0]+str(mytime[0]).split("-")[1]+"_"+outname+".nc", mode="a", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
 def agg_stats(df ):
     # generate aggregated stats from the simulation
     # USAGE:
