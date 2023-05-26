@@ -15,6 +15,7 @@ import glob, os, sys, shutil
 from pathlib import Path
 import re
 from munch import DefaultMunch
+import shutil
 import pandas as pd
 import xarray as xr
 import numpy as np
@@ -43,22 +44,23 @@ class Topoclass(object):
             with open(config_file, 'r') as f:
                 self.config = DefaultMunch.fromYAML(f)
 
-
             if self.config.project.directory is None:
                 self.config.project.directory = os.getcwd() + '/'
 
         except IOError:
-            print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
+            print(
+                f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
-        output_dir = Path(self.config.project.directory, 'outputs')
+        self.config.outputs.path = Path(self.config.project.directory, 'outputs')
+        self.config.outputs.tmp_path = self.config.outputs.path / 'tmp'
 
         if self.config.outputs.file.clean_outputs:
             # remove outputs directory because if results already exist this causes concat of netcdf files
             try:
-                shutil.rmtree(output_dir)
+                shutil.rmtree(self.config.outputs.path)
                 print('---> Output directory cleaned')
             except:
-                os.makedirs(output_dir)
+                os.makedirs(self.config.outputs.path)
 
         # remove output fsm directory
         if self.config.outputs.file.clean_FSM:
@@ -79,20 +81,21 @@ class Topoclass(object):
         if self.config.outputs.directory:
             self.config.outputs.downscaled = Path(self.config.outputs.directory)
         else:
-            self.config.outputs.downscaled = Path(output_dir, 'downscaled')
-        os.makedirs(self.config.outputs.downscaled, exist_ok=True)
+            self.config.outputs.downscaled = self.config.outputs.path / 'downscaled'
 
         # climate path
         if os.path.isabs(self.config.climate.era5.path):
             self.config.climate.path = self.config.climate.era5.path
         else:
             self.config.climate.path = '/'.join((self.config.project.directory, 'inputs/climate/'))
+        self.config.climate.tmp_path = '/'.join((self.config.climate.path, 'tmp'))
 
         # check if tree directory exists. If not create it
         os.makedirs(self.config.climate.path, exist_ok=True)
-        os.makedirs('/'.join((self.config.project.directory, 'inputs/climate/tmp')), exist_ok=True)
-        os.makedirs('/'.join((self.config.project.directory, 'outputs/tmp')), exist_ok=True)
-        os.makedirs('/'.join((self.config.project.directory, 'outputs/downscaled')), exist_ok=True)
+        os.makedirs(self.config.climate.tmp_path, exist_ok=True)
+        os.makedirs(self.config.outputs.path, exist_ok=True)
+        os.makedirs(self.config.outputs.tmp_path, exist_ok=True)
+        os.makedirs(self.config.outputs.downscaled, exist_ok=True)
 
         if not self.config.dem.path:
             self.config.dem.path = self.config.project.directory + '/inputs/dem/'
@@ -182,7 +185,7 @@ class Topoclass(object):
         if len(flist) > 0:
             print('---> Loading downscaled points \n ...')
             self.downscaled_pts = xr.open_mfdataset(
-                  f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
+                f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
                 concat_dim='point_id',
                 combine='nested',
                 parallel=True)
@@ -262,11 +265,16 @@ class Topoclass(object):
         """
         if not os.path.isabs(self.config.sampling.points.csv_file):
             self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
-        self.toposub.df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
-        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int)
-        self.toposub.df_centroids = tp.extract_pts_param(self.toposub.df_centroids, self.toposub.ds_param,
-                                                         method=method)
-
+        df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
+        if self.config.sampling.points.ID_col:
+            df_centroids['point_id'] = df_centroids[self.config.sampling.points.ID_col]
+        else:
+            df_centroids['point_id'] = df_centroids.index + 1
+            n_digits = len(str(df_centroids.point_id.max()))
+            df_centroids['point_id'] = df_centroids.point_id.astype(str).str.zfill(n_digits)
+        df_centroids = tp.extract_pts_param(df_centroids, self.toposub.ds_param,
+                                            method=method)
+        self.toposub.df_centroids = df_centroids
 
     def extract_topo_cluster_param(self):
         """
@@ -329,6 +337,9 @@ class Topoclass(object):
         else:
             if self.config.sampling.method in ['points', 'point']:
                 self.extract_pts_param()
+                # if self.config.sampling.points.ID_col:
+                #     self.config.sampling.pt_names = list(
+                #         self.toposub.df_centroids[self.config.sampling.points.ID_col])
             elif self.config.sampling.method == 'toposub':
                 self.extract_topo_cluster_param()
             elif self.config.sampling.method == 'both':
@@ -339,11 +350,11 @@ class Topoclass(object):
             else:
                 print('ERROR: Extraction method not available')
 
-
-            self.toposub.df_centroids['lon'], self.toposub.df_centroids['lat'] = tp.convert_epsg_pts(self.toposub.df_centroids.x,
-                                                                                              self.toposub.df_centroids.y,
-                                                                                              self.config.dem.epsg,
-                                                                                              4326)
+            self.toposub.df_centroids['lon'], self.toposub.df_centroids['lat'] = tp.convert_epsg_pts(
+                self.toposub.df_centroids.x,
+                self.toposub.df_centroids.y,
+                self.config.dem.epsg,
+                4326)
 
             # Store dataframe to pickle
             self.toposub.df_centroids.to_pickle(
@@ -472,7 +483,6 @@ class Topoclass(object):
 
             # Concatenate time-splitted outputs along time-dimension
             # TODO: modify code below to concatenate to be parallelized.
-            n_digits = len(str(self.toposub.df_centroids.index.max()))
 
             # clean directory from files with the same downscaled output file pattern (so they get replaced)
             f_pattern_regex = f_pattern.replace('*', '\d+')
@@ -484,9 +494,8 @@ class Topoclass(object):
 
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
-                num = str(pt_id).zfill(n_digits)
-                filename = Path(f_pattern.replace('*', num))
-                flist = sorted([file for file in downscaled_dir.glob(f'**/{filename.stem}*')])
+                filename = Path(f_pattern.replace('*', pt_id))
+                flist = sorted([file for file in downscaled_dir.rglob(f'{filename.stem}_*')])
                 ds_list = [xr.open_dataset(file, engine='h5netcdf') for file in flist]
 
                 fout = Path(downscaled_dir, filename)
@@ -496,7 +505,7 @@ class Topoclass(object):
 
             # Delete time slice files.
             for fpat in self.time_splitter.downscaled_flist:
-                flist = glob.glob(f'{self.config.project.directory}outputs/downscaled/{fpat}')
+                flist = glob.glob(f'{self.config.outputs.downscaled}/{fpat}')
                 for file in flist:
                     os.remove(file)
 
@@ -517,9 +526,15 @@ class Topoclass(object):
                                  self.config.outputs.file.downscaled_pt,
                                  self.config.project.CPU_cores)
 
-        self.downscaled_pts = ta.read_downscaled(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
+        self.downscaled_pts = ta.read_downscaled(
+            f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
+
+        # delete tmp directories
+        if self.config.clean_up.delete_tmp_dirs:
+            shutil.rmtree(self.config.outputs.tmp_path, ignore_errors=True)
+            shutil.rmtree(self.config.climate.tmp_path, ignore_errors=True)
 
     def get_era5(self):
         """
@@ -534,12 +549,10 @@ class Topoclass(object):
 
         # if keyword exists in config set realtime to value (True/False)
         if self.config.climate[self.config.project.climate].realtime:
-            realtime=self.config.climate[self.config.project.climate].realtime
+            realtime = self.config.climate[self.config.project.climate].realtime
         # else set realtime to False
         else:
-            realtime=False
-
-
+            realtime = False
 
         # retreive ERA5 surface data
         fe.retrieve_era5(
@@ -662,7 +675,7 @@ class Topoclass(object):
             else:
                 variables = self.config.outputs.variables
 
-        out_path = Path(self.config.outputs.directory, 'outputs', file_out)
+        out_path = Path(self.config.outputs.path, file_out)
 
         te.to_netcdf(self.downscaled_pts[variables], out_path, variables)
         print('---> File {} saved'.format(file_out))
