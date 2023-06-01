@@ -627,7 +627,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
 
 
 
-def write_ncdf(wdir, grid_stack, var, units, mytime, lats, lons, mydtype,newfile, outname=None):
+def write_ncdf(wdir, grid_stack, var, units,epsg,  mytime, lats, lons, mydtype,newfile, outname=None):
     # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
 
     # # coords
@@ -660,7 +660,9 @@ def write_ncdf(wdir, grid_stack, var, units, mytime, lats, lons, mydtype,newfile
             },
         )
 
-    ds.attrs["units"] = units  # add epsg here
+    ds.attrs["units"] = units 
+    ds.attrs["units"] = epsg # add epsg here
+    
     if newfile == True:
         ds.to_netcdf( wdir + "/outputs/"+str(mytime[0]).split("-")[0]+str(mytime[0]).split("-")[1]+"_"+outname+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })
     else:
