@@ -297,7 +297,7 @@ def downscale_climate(project_directory,
 
         down_pt = xr.Dataset(coords={
             'time': plev_interp.time,
-            'point_id': pt_id
+            'point_id': pd.to_numeric(pt_id, errors='ignore')
         })
 
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
