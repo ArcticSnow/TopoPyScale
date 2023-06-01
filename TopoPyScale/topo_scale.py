@@ -157,7 +157,7 @@ def downscale_climate(project_directory,
 
     def _open_dataset_climate(flist):
 
-        ds_ = xr.open_mfdataset(flist, parallel=True)
+        ds_ = xr.open_mfdataset(flist, parallel=False)
 
         # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
         # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
