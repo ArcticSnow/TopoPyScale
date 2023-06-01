@@ -267,7 +267,7 @@ class Topoclass(object):
             self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
         df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
         if self.config.sampling.points.ID_col:
-            df_centroids['point_id'] = df_centroids[self.config.sampling.points.ID_col]
+            df_centroids['point_id'] = df_centroids[self.config.sampling.points.ID_col].astype(str)
         else:
             df_centroids['point_id'] = df_centroids.index + 1
             n_digits = len(str(df_centroids.point_id.max()))
