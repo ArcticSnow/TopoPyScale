@@ -12,7 +12,7 @@ TODO:
 import sys
 import os
 
-def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
+def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
     """
     Function to fetch DEM data from SRTM and potentially other sources
 
@@ -54,7 +54,11 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
 
         # target_epsg = input("---> provide target EPSG (default: 32632):") or '32645'
         # crop to extent defined by "-te <xmin ymin xmax ymax>" flag to ensure rectangulatr output with no NAs. -te_srs  states the epsg of crop parameeters (WGS84)
-        cmd_2 = 'gdalwarp -tr 30 30 -r bilinear -s_srs epsg:4326 -t_srs epsg:{} -te_srs epsg:{} -te {} {} {} {} {} {}'.format(dem_epsg,
+        if dem_resol is not None:
+            res = dem_resol
+        else:
+            res = 30
+        cmd_2 = 'gdalwarp -tr '+str(res) + ' ' + str(res) +  ' -r bilinear -s_srs epsg:4326 -t_srs epsg:{} -te_srs epsg:{} -te {} {} {} {} {} {}'.format(dem_epsg,
                                                                                                                 4326,
                                                                                                                  xmin,
                                                                                                                  ymin,
@@ -89,7 +93,11 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file):
         print('eio clean')
         #target_epsg = input("---> provide target EPSG (default: 32632):") or '32632'
 
-        cmd_2 = 'gdalwarp -tr 90 90 -r bilinear -s_srs epsg:4326 -t_srs epsg:{} -te_srs epsg:{} -te {} {} {} {} {} {}'.format(dem_epsg,
+        if dem_resol is not None:
+            res = dem_resol
+        else:
+            res = 90
+        cmd_2 = 'gdalwarp -tr ' +str(res) + ' ' + str(res) +   ' -r bilinear -s_srs epsg:4326 -t_srs epsg:{} -te_srs epsg:{} -te {} {} {} {} {} {}'.format(dem_epsg,
                                                                                                                 4326,
                                                                                                                  xmin,
                                                                                                                  ymin,
