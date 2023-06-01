@@ -11,26 +11,29 @@ project/
     -> output/
 
 """
-import glob, os, sys, shutil
-from pathlib import Path
+import glob
+import os
 import re
-from munch import DefaultMunch
 import shutil
+import sys
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import xarray as xr
-import numpy as np
-import matplotlib.pyplot as plt
-from TopoPyScale import fetch_era5 as fe
-from TopoPyScale import topo_param as tp
-from TopoPyScale import topo_sub as ts
-from TopoPyScale import fetch_dem as fd
-from TopoPyScale import solar_geom as sg
-from TopoPyScale import topo_scale as ta
-from TopoPyScale import topo_export as te
-from TopoPyScale import topo_plot as tpl
-from TopoPyScale import topo_obs as tpo
-
+from munch import DefaultMunch
 from sklearn.preprocessing import StandardScaler
+
+from TopoPyScale import fetch_dem as fd
+from TopoPyScale import fetch_era5 as fe
+from TopoPyScale import solar_geom as sg
+from TopoPyScale import topo_export as te
+from TopoPyScale import topo_obs as tpo
+from TopoPyScale import topo_param as tp
+from TopoPyScale import topo_plot as tpl
+from TopoPyScale import topo_scale as ta
+from TopoPyScale import topo_sub as ts
 
 
 class Topoclass(object):
@@ -267,7 +270,8 @@ class Topoclass(object):
             self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
         df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
         if self.config.sampling.points.ID_col:
-            df_centroids['point_id'] = df_centroids[self.config.sampling.points.ID_col].astype(str)
+            ID_col = df_centroids[self.config.sampling.points.ID_col]
+            df_centroids['point_id'] = pd.to_numeric(ID_col, errors='ignore').astype(str)
         else:
             df_centroids['point_id'] = df_centroids.index + 1
             n_digits = len(str(df_centroids.point_id.max()))
