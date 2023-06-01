@@ -320,7 +320,7 @@ class Topoclass(object):
             for var in df_param.drop(flist, axis=1).columns:
                 self.toposub.df_centroids[var] = tmp[var]
         n_digits = len(str(self.toposub.df_centroids.index.max()))
-        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).str.zfill(n_digits)
+        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).astype(str).str.zfill(n_digits)
         self.toposub.ds_param['cluster_labels'] = (
             ["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
