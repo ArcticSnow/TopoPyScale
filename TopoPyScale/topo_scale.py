@@ -532,5 +532,5 @@ def read_downscaled(path='outputs/down_pt*.nc'):
         dataset: merged dataset readily to use and loaded in chuncks via Dask
     """
 
-    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=True)
+    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=False)
     return down_pts
