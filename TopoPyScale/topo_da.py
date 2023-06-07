@@ -14,6 +14,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import copy
 import rasterio as rio
+from rasterio.plot import show
 from osgeo import gdal
 from osgeo import osr 
 from scipy.interpolate import interp1d
@@ -21,6 +22,7 @@ from TopoPyScale import topo_sim as sim
 from datetime import datetime
 import xarray as xr
 import rioxarray
+from scipy.special import logsumexp
 
 
 # import gdal
@@ -295,6 +297,7 @@ def get_modis_wrapper(vertmax, horizmax, vertmin, horizmin, startDate, endDate):
 
 def pymodis_download(wdir, vert, horiz, STARTDATE, ENDDATE):
     # http://www.pymodis.org/scripts/modis_download.html
+    # pip inpip install pyModis
 
     USER = "jfiddes"  # os.getenv('user')
     PWD = "sT0kkang!"  # os.getenv('pwd')
@@ -577,9 +580,7 @@ def particle_batch_smoother(Y, HX, R):
     w = LH / sum(LH)
 
 
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.special import logsumexp
+
 
 
 def EnKA(prior, obs, pred, alpha, R):
@@ -737,7 +738,7 @@ def PBS(obs, pred, R):
         residual = obs - pred
         llh = -0.5 * ((residual ** 2) * (1 / R))
     else:
-        residual = obs[:, None] - pred
+        residual = np.array(obs)[:, None] - pred
         # pdb.set_trace()
         llh = -0.5 * ((1 / R) @ (residual ** 2))
 
@@ -867,7 +868,7 @@ def fsca_plots(wdir, plotDay, df_mean):
     src = rio.open(modis_file[0])
     fig, (axrgb, axhist) = plt.subplots(1, 2, figsize=(14,7))
 
-    rio.plot.show(src, ax=axrgb,vmin=0, vmax=100)
+    show(src, ax=axrgb,vmin=0, vmax=100)
     cbar1 = plt.imshow(src.read(1), cmap='viridis', vmin=0, vmax=100)
     fig.colorbar(cbar1, ax=axrgb)
 
@@ -889,7 +890,7 @@ def fsca_plots(wdir, plotDay, df_mean):
         array[array > 0] = 1
 
 
-    # rasterio.plot.show(array, cmap='viridis')
+    # rasteshow(array, cmap='viridis')
     # plt.show()
 
     with rio.open('output_raster.tif', 'w', **profile) as dst:
@@ -897,7 +898,7 @@ def fsca_plots(wdir, plotDay, df_mean):
         dst.write(array.astype(rio.int16))
 
     src1 = rio.open("output_raster.tif")
-    rio.plot.show(src1, ax=axhist)
+    show(src1, ax=axhist)
     cbar2 = plt.imshow(src1.read(1), cmap='viridis')
     fig.colorbar(cbar2, ax=axhist)
     plt.show()
@@ -944,7 +945,7 @@ def fsca_plots(wdir, plotDay, df_mean):
 #         array[array > 0] = 1
 #
 #
-#     # rasterio.plot.show(array, cmap='viridis')
+#     # rasteshow(array, cmap='viridis')
 #     # plt.show()
 #
 #     with rio.open('output_raster.tif', 'w', **profile) as dst:
@@ -953,7 +954,7 @@ def fsca_plots(wdir, plotDay, df_mean):
 #
 #     if plot:
 #         src1 = rio.open("output_raster.tif")
-#         rio.plot.show(src1, ax=axhist)
+#         show(src1, ax=axhist)
 #         cbar2 = plt.imshow(src1.read(1), cmap='viridis')
 #         fig.colorbar(cbar2, ax=axhist)
 #         plt.show()
@@ -987,12 +988,12 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     dt = datetime.strptime(plotDay, "%Y-%m-%d")
     doy = dt.timetuple().tm_yday
     year = dt.year
-    juldate = str(year)+str(doy)
+    juldate = str(year)+str(f'{doy:03d}')
 
     # plot modis
-    modis_file = glob.glob(wdir + "modis/transformed/MOD10A1F.A" + juldate + "*")
+    modis_file = glob.glob(wdir + "/modis/transformed/MOD10A1F.A" + juldate + "*")
     src = rio.open(modis_file[0])
-    rio.plot.show(src, ax=axmod1,vmin=0, vmax=100)
+    show(src, ax=axmod1,vmin=0, vmax=100)
     cbar1 = plt.imshow(src.read(1), cmap='viridis', vmin=0, vmax=100)
     fig.colorbar(cbar1, ax=axmod1)
 
@@ -1003,7 +1004,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     for i in range(0, nclust):
         lookup[i] = df_mean_open[i]
 
-    with rio.open('landform.tif') as src:
+    with rio.open('outputs/landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
@@ -1015,7 +1016,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         #array[array > 0] = 1
 
 
-    # rio.plot.show(array, cmap='viridis')
+    # show(array, cmap='viridis')
     # plt.show()
 
     with rio.open('output_raster.tif', 'w', **profile) as dst:
@@ -1023,13 +1024,13 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         dst.write(array.astype(rio.int16))
 
     src1 = rio.open("output_raster.tif")
-    rio.plot.show(src1, ax=axopen)
+    show(src1, ax=axopen)
     cbar2 = plt.imshow(src1.read(1), cmap='viridis')
     fig.colorbar(cbar2, ax=axopen)
 
     # plot modis again
     src = rio.open(modis_file[0])
-    rio.plot.show(src, ax=axmod2,vmin=0, vmax=100)
+    show(src, ax=axmod2,vmin=0, vmax=100)
     cbar1 = plt.imshow(src.read(1), cmap='viridis', vmin=0, vmax=100)
     fig.colorbar(cbar1, ax=axmod2)
 
@@ -1040,7 +1041,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
     for i in range(0, nclust):
         lookup[i] = df_mean_da[i]
 
-    with rio.open('landform.tif') as src:
+    with rio.open('outputs/landform.tif') as src:
         # Read as numpy array
         array = src.read()
         profile = src.profile
@@ -1052,7 +1053,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         #array[array > 0] = 1
 
 
-    # rio.plot.show(array, cmap='viridis')
+    # show(array, cmap='viridis')
     # plt.show()
 
     with rio.open('output_raster.tif', 'w', **profile) as dst:
@@ -1060,7 +1061,7 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         dst.write(array.astype(rio.int16))
 
     src1 = rio.open("output_raster.tif")
-    rio.plot.show(src1, ax=axda)
+    show(src1, ax=axda)
     cbar2 = plt.imshow(src1.read(1), cmap='viridis')
     fig.colorbar(cbar2, ax=axda)
     plt.show()
