@@ -213,6 +213,29 @@ def to_cryogrid(ds,
         fo.to_netcdf(foutput, encoding=encod_dict)
         print('---> File {} saved'.format(foutput))
 
+def steepSnowReduce_all(snow, slope):
+    # ======================================================================================
+    # # linearly reduce snow to zero in steep slopes
+    # if steepSnowReduce=="TRUE": # make this an option if need that in future
+    # ======================================================================================
+
+    snowSMIN = 30.
+    snowSMAX = 80.
+
+    # partial snow removal
+    k = (snowSMAX - slope) / (snowSMAX - snowSMIN)
+
+    # no snow removal
+    a = slope < snowSMIN
+    k[~a] = 1
+
+    # all snow removal
+    a = slope > snowSMIN
+    k[~a] = 0
+
+    steepSnow = snow.transpose() * np.array(k).transpose()
+
+    return (steepSnow)
 
 def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     """
