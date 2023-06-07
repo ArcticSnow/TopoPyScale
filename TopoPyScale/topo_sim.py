@@ -662,8 +662,8 @@ def write_ncdf(wdir, grid_stack, var, units,epsg,res,  mytime, lats, lons, mydty
         )
 
     ds.attrs["units"] = units 
-    ds.attrs["epsg"] = epsg # add epsg here
-    ds.attrs["resolution"] = epsg # add epsg here
+    ds.attrs["epsg_code"] = epsg # add epsg here
+    ds.attrs["resolution_m"] = str(res) # add epsg here
 
     if newfile == True:
         ds.to_netcdf( wdir + "/outputs/"+str(mytime[0]).split("-")[0]+str(mytime[0]).split("-")[1]+"_"+outname+".nc", mode="w", encoding={var: {"dtype": mydtype, 'zlib': True, 'complevel': 5} })

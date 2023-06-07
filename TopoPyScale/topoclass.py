@@ -85,7 +85,7 @@ class Topoclass(object):
             self.config.outputs.downscaled = Path(self.config.outputs.directory)
         else:
             self.config.outputs.downscaled = self.config.outputs.path / 'downscaled'
-
+        
         # climate path
         if os.path.isabs(self.config.climate.era5.path):
             self.config.climate.path = self.config.climate.era5.path
