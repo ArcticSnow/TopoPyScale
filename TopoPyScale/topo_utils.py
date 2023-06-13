@@ -31,7 +31,7 @@ def FsmMetParser(file, freq="1h", resample=False):
     df = pd.read_csv(file, delim_whitespace=True,
                      header=None, index_col='datetime',
                      parse_dates={'datetime': [0, 1, 2, 3]},
-                     date_parser=lambda x: pd.datetime.strptime(x, '%Y %m %d %H'))
+                     date_format=('%Y %m %d %H'))
 
     df.columns = ['ISWR', 'ILWR', 'Sf', 'Rf', 'TA', 'RH', 'VW', 'P']
 

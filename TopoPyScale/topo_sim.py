@@ -169,9 +169,10 @@ def fsm_sim(nlstfile, fsm_exec):
     Returns: 
         NULL (FSM simulation file written to disk)
     """
-    print('Simulation done: ' + nlstfile)
+
     os.system(fsm_exec + ' < ' + nlstfile)
     os.remove(nlstfile)
+    print('Simulation done: ' + nlstfile)
 
 
 
