@@ -43,12 +43,14 @@ import numpy as np
 import sys, time
 import datetime as dt
 from TopoPyScale import meteo_util as mu
+from TopoPyScale import topo_utils as tu
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import os, glob
 from pathlib import Path
 from typing import Union
+
 
 # Physical constants
 g = 9.81  # Acceleration of gravity [ms^-1]
@@ -381,6 +383,12 @@ def downscale_climate(project_directory,
         down_pt.precip_lapse_rate.attrs = {'units': 'mm hr**-1',
                                            'long_name': 'Precipitation after lapse-rate correction',
                                            'standard_name': 'precipitation_after_lapse-rate_correction'}
+
+        ver_dict = tu.get_versionning()
+
+        down_pt.attrs = {{'title':'Downscale point using TopoPyScale',
+                          'package_verionning':ver_dict.__str__(),
+                          'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}}
 
         print(f'---> Storing point {pt_id} to outputs/tmp/')
 
