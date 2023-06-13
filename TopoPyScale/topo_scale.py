@@ -384,11 +384,8 @@ def downscale_climate(project_directory,
                                            'long_name': 'Precipitation after lapse-rate correction',
                                            'standard_name': 'precipitation_after_lapse-rate_correction'}
 
-        ver_dict = tu.get_versionning()
-
-        down_pt.attrs = {{'title':'Downscale point using TopoPyScale',
-                          'package_verionning':ver_dict.__str__(),
-                          'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}}
+        down_pt.attrs = {'title':'Downscale point using TopoPyScale',
+                          'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         print(f'---> Storing point {pt_id} to outputs/tmp/')
 
@@ -502,8 +499,11 @@ def downscale_climate(project_directory,
                             'standard_name': 'shortwave_radiation_downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
                                     'standard_name': 'shortwave_diffuse_radiation_downward'}
+        ver_dict = tu.get_versionning()
         down_pt.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
-                         'Create with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                         'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                          'package_version':ver_dict.get('package_version'),
+                          'git_commit': ver_dict.get('git_commit'),
                          'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         comp = dict(zlib=True, complevel=5)
