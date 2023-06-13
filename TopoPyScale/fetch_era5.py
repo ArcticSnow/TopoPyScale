@@ -273,42 +273,89 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
 	era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
 
 
-def return_latest_date():
-	# method to return latest full date available in CDS
-	
-	print("WARNING: Ignore the following warning - this is due to requesting todays date with the intention to harvest the date returned in error message. There must be a cleaner way to get latest date....")
-	c = cdsapi.Client()
+# def return_latest_date():
+# 	# method to return latest full date available in CDS
+#
+# 	print("WARNING: Ignore the following warning - this is due to requesting todays date with the intention to harvest the date returned in error message. There must be a cleaner way to get latest date....")
+# 	c = cdsapi.Client()
+#
+# 	# how to retrieve latest date that era5 data is available
+# 	try:
+# 	    # this will always fail but return the latest date in error message
+# 	    # should be a cleaner way of doing this with api?
+#
+# 		c = cdsapi.Client()
+#
+# 		# Retrieve the list of available files for the ERA5 dataset
+# 		res = c.retrieve("reanalysis-era5-single-levels", {
+# 		    "variable": "2m_temperature",
+# 		    "product_type": "reanalysis",
+# 		    "format": "json"
+# 		})
+#
+# 	except Exception as e:
+# 	    # Extract the latest date from the exception object
+# 	    exc_type = type(e).__name__
+# 	    exc_msg = str(e)
+# 	    print(f"Caught {exc_type} with message '{exc_msg}'")
+#
+# 	# Example string representing a date and time within a string
+# 	date_string = exc_msg
+# 	# Define the format string to match the input string
+# 	format_string = 'the request you have submitted is not valid. None of the data you have requested is available yet, please revise the period requested. The latest date available for this dataset is: %Y-%m-%d %H:%M:%S.%f.'
+# 	# Parse the date string and create a datetime object
+# 	latest_date = datetime.strptime(date_string, format_string)
+#
+# 	if latest_date.hour < 23:
+# 		# Subtract one day from the datetime object
+# 		latest_date = latest_date - timedelta(days=1)
+# 		# Print the updated datetime object
+#
+# 	return(latest_date)
 
-	# how to retrieve latest date that era5 data is available
-	try:
-	    # this will always fail but return the latest date in error message
-	    # should be a cleaner way of doing this with api?
+def return_last_fullday():
 
-		c = cdsapi.Client()
+	# Get current UTC time
+	current_time_utc = datetime.utcnow()
 
-		# Retrieve the list of available files for the ERA5 dataset
-		res = c.retrieve("reanalysis-era5-single-levels", {
-		    "variable": "2m_temperature",
-		    "product_type": "reanalysis",
-		    "format": "json"
-		})
+	# Round down to the nearest hour
+	rounded_time_utc = current_time_utc.replace(minute=0, second=0, microsecond=0)
 
-	except Exception as e:
-	    # Extract the latest date from the exception object
-	    exc_type = type(e).__name__
-	    exc_msg = str(e)
-	    print(f"Caught {exc_type} with message '{exc_msg}'")
+	# Get time 5 days ago in UTC
+	five_days_ago_utc = rounded_time_utc - timedelta(days=5)
 
-	# Example string representing a date and time within a string
-	date_string = exc_msg
-	# Define the format string to match the input string
-	format_string = 'the request you have submitted is not valid. None of the data you have requested is available yet, please revise the period requested. The latest date available for this dataset is: %Y-%m-%d %H:%M:%S.%f.' 
-	# Parse the date string and create a datetime object
-	latest_date = datetime.strptime(date_string, format_string)
+	# Format the time strings
+	current_time_utc_str = rounded_time_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+	five_days_ago_utc_str = five_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 
+
+	five_days_ago_utc = datetime.strptime(five_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
+	# if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
 	if latest_date.hour < 23:
-		# Subtract one day from the datetime object
-		latest_date = latest_date - timedelta(days=1)
-		# Print the updated datetime object
+		last_fullday_data = five_days_ago_utc - timedelta(days=1)
+	# Print the results
+	print("Current time (rounded down) in UTC:", current_time_utc_str)
+	print("Last ERA5T data in UTC:", five_days_ago_utc_str)
+	last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
+	print("Last full day ERA5T data in UTC:", last_fullday_data_str)
+	return(last_fullday_data)
 
-	return(latest_date)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
