@@ -159,7 +159,7 @@ def ensemble_meteo_gen(ds, perturb, N_ens, ensemb_type):
     return ds_perturb
 
 
-def construct_HX(wdir, startDA, endDA):
+def construct_HX(wdir, startDA, endDA, ncol):
     """
     Function to generate HX matrix of ensembleSamples x day
 
@@ -196,8 +196,8 @@ def construct_HX(wdir, startDA, endDA):
     # construct a list as long as samples x ensembles (sampleEnsembles)
     data = []
     for file_path in file_list:
-        # column 7 (index 6) is snow water equiv
-        data.append(np.genfromtxt(file_path, usecols=6)[int(startIndex):int(endIndex) + 1])
+        # column 7 (ncol 6) is snow water equiv
+        data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex) + 1])
 
     myarray = np.asarray(data)  # sampleEnsembles x days
     ensembRes = pd.DataFrame(myarray.transpose())
@@ -757,7 +757,7 @@ def PBS(obs, pred, R):
     return w
 
 
-def da_plots(HX1, HX2, W, mydates, myobs):
+def da_plots(HX1, HX2,noDA,  W, mydates, myobs):
     """
     Function to extract mean fSSCA from domain
 
@@ -791,7 +791,7 @@ def da_plots(HX1, HX2, W, mydates, myobs):
 
         return np.array(med_post)
 
-    # for prior all ensemble members considered equally likely therefore weights are all
+    # for prior all ensemble members considered equally likely therefore weights are all equal
     weights = [1/HX1.shape[1]] * HX1.shape[1]
     prior_med = percentile_plot(HX1, weights, 0.5)
     prior_low = percentile_plot(HX1, weights, 0.1)
@@ -804,10 +804,10 @@ def da_plots(HX1, HX2, W, mydates, myobs):
 
     plt.subplot(1, 2, 1)
     plt.fill_between(mydates, prior_low, prior_high, alpha=0.2)
-    plt.plot(mydates, prior_med)
+    plt.plot(mydates, prior_med, label="prior median")
     plt.fill_between(mydates, post_low, post_high, alpha=0.2)
-    plt.plot(mydates, post_med)
-    plt.plot(mydates, myobs)
+    plt.plot(mydates, post_med, label = "posterior median")
+    plt.plot(mydates, myobs, label= "observations")
     plt.xlabel("Date")
     plt.ylabel("fSCA")
     plt.legend()
@@ -825,9 +825,10 @@ def da_plots(HX1, HX2, W, mydates, myobs):
 
     plt.subplot(1, 2, 2)
     plt.fill_between(mydates, prior_low, prior_high, alpha=0.2)
-    plt.plot(mydates, prior_med)
+    plt.plot(mydates, prior_med, label="prior median")
     plt.fill_between(mydates, post_low, post_high, alpha=0.2)
-    plt.plot(mydates, post_med)
+    plt.plot(mydates, post_med, label="posterior median")
+    plt.plot(mydates, noDA, label="no DA")
     plt.xlabel("Date")
     plt.ylabel("HS (m)")
     plt.legend()
@@ -1012,8 +1013,8 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         # Reclassify in a single operation using broadcasting
         array = lookup[array]
         # binary map
-        #array[array <= 0] = 0
-        #array[array > 0] = 1
+        array[array <= 0] = 0
+        array[array > 0] = 1
 
 
     # show(array, cmap='viridis')
@@ -1049,8 +1050,8 @@ def da_compare_plot(wdir, plotDay, df_mean_open, df_mean_da):
         # Reclassify in a single operation using broadcasting
         array = lookup[array]
         # binary map
-        #array[array <= 0] = 0
-        #array[array > 0] = 1
+        array[array <= 0] = 0
+        array[array > 0] = 1
 
 
     # show(array, cmap='viridis')
