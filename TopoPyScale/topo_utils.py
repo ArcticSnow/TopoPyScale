@@ -15,7 +15,7 @@ def get_versionning():
         repo = git.Repo(path=tps.__file__, search_parent_directories=True)
         hash = repo.head.object.hexsha
     except:
-        hash = None
+        hash = 'Not available'
     version = metadata.version('TopoPyScale')
     ver_dic = {'git_commit': hash,
                'package_version': version}

@@ -14,6 +14,7 @@ import datetime as dt
 import xarray as xr
 from scipy import io
 from TopoPyScale import meteo_util as mu
+from TopoPyScale import topo_utils as tu
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 
@@ -85,6 +86,8 @@ def to_musa(ds,
     Returns:
         Save downscaled timeseries and toposub cluster mapping
     """
+    ver_dict = tu.get_versionning()
+    
     if da_label is not None:
     	da_label.to_netcdf(path + fname_labels)
 
@@ -114,6 +117,8 @@ def to_musa(ds,
     fo.attrs = {'title':'Forcing for MuSa assimilation scheme',
                 'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
                 'creator_name':'Dataset created by {}'.format(project_authors),
+                'package_version':ver_dict.get('package_version'),
+                'git_commit': ver_dict.get('git_commit'),
                 'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
     encod_dict = {}
     for var in list(fo.keys()):
@@ -159,6 +164,8 @@ def to_cryogrid(ds,
     
     """
     # Add logic to save maps of cluster labels in case of usage of topo_sub
+    
+    ver_dict = tu.get_versionning()
     if label_map:
         if da_label is None:
             print('ERROR: no cluster label (da_label) provided')
@@ -195,6 +202,8 @@ def to_cryogrid(ds,
         fo.attrs = {'title':'Forcing for Cryogrid Community model',
                     'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
                     'creator_name':'Dataset created by {}'.format(project_author),
+                    'package_version':ver_dict.get('package_version'),
+                    'git_commit': ver_dict.get('git_commit'),
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
         encod_dict = {}
         for var in list(fo.keys()):
@@ -363,6 +372,8 @@ def to_crocus(ds,
     """
     # create one file per point_id
     n_digits = len(str(ds.point_id.values.max()))
+    ver_dict = tu.get_versionning()
+    
     for pt in ds.point_id.values:
         foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
@@ -412,6 +423,8 @@ def to_crocus(ds,
         fo.attrs = {'title':'Forcing for SURFEX CROCUS',
                     'source': 'data from {} downscaled with TopoPyScale ready for CROCUS'.format(climate_dataset_name),
                     'creator_name':'Dataset created by {}'.format(project_author),
+                    'package_version':ver_dict.get('package_version'),
+                    'git_commit': ver_dict.get('git_commit'),
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         fo['ZS'] = np.float64(df_pts.iloc[pt].elevation)
