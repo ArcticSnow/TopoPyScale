@@ -6,6 +6,22 @@ from matplotlib import pyplot as plt
 import numpy as np
 import glob
 from TopoPyScale import topo_da as da
+import git
+
+def get_versionning():
+    import TopoPyScale as tps
+    from importlib import metadata
+    try:
+        repo = git.Repo(path=tps.__file__, search_parent_directories=True)
+        hash = repo.head.object.hexsha
+    except:
+        hash = None
+    version = metadata.version('TopoPyScale')
+    ver_dic = {'git_commit': hash,
+               'package_version': version}
+    return ver_dic
+
+
 
 def FsmMetParser(file, freq="1h", resample=False):
     '''

@@ -85,7 +85,7 @@ class Topoclass(object):
             self.config.outputs.downscaled = Path(self.config.outputs.directory)
         else:
             self.config.outputs.downscaled = self.config.outputs.path / 'downscaled'
-        
+
         # climate path
         if os.path.isabs(self.config.climate.era5.path):
             self.config.climate.path = self.config.climate.era5.path
@@ -320,7 +320,8 @@ class Topoclass(object):
             for var in df_param.drop(flist, axis=1).columns:
                 self.toposub.df_centroids[var] = tmp[var]
         n_digits = len(str(self.toposub.df_centroids.index.max()))
-        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).astype(str).str.zfill(n_digits)
+        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).astype(str).str.zfill(
+            n_digits)
         self.toposub.ds_param['cluster_labels'] = (
             ["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
@@ -460,6 +461,12 @@ class Topoclass(object):
             raise ValueError(
                 f'The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
 
+        # clean directory from files with the same downscaled output file pattern (so they get replaced)
+        existing_files = sorted(downscaled_dir.glob(f_pattern))
+        for file in existing_files:
+            file.unlink()
+            print(f'existing file {file.name} removed.')
+
         if self.config.project.split.IO:
             for i, start in enumerate(self.time_splitter.start_list):
                 print()
@@ -488,14 +495,6 @@ class Topoclass(object):
 
             # Concatenate time-splitted outputs along time-dimension
             # TODO: modify code below to concatenate to be parallelized.
-
-            # clean directory from files with the same downscaled output file pattern (so they get replaced)
-            f_pattern_regex = f_pattern.replace('*', '\d+')
-            existing_files = sorted(
-                [file for file in downscaled_dir.glob('**/*') if re.match(f_pattern_regex, file.name)])
-            for file in existing_files:
-                file.unlink()
-                print(f'existing file {file.name} removed.')
 
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
@@ -531,8 +530,7 @@ class Topoclass(object):
                                  self.config.outputs.file.downscaled_pt,
                                  self.config.project.CPU_cores)
 
-        self.downscaled_pts = ta.read_downscaled(
-            f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
+        self.downscaled_pts = ta.read_downscaled(f'{downscaled_dir}/{f_pattern}')
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 

@@ -43,12 +43,14 @@ import numpy as np
 import sys, time
 import datetime as dt
 from TopoPyScale import meteo_util as mu
+from TopoPyScale import topo_utils as tu
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import os, glob
 from pathlib import Path
 from typing import Union
+
 
 # Physical constants
 g = 9.81  # Acceleration of gravity [ms^-1]
@@ -382,6 +384,12 @@ def downscale_climate(project_directory,
                                            'long_name': 'Precipitation after lapse-rate correction',
                                            'standard_name': 'precipitation_after_lapse-rate_correction'}
 
+        ver_dict = tu.get_versionning()
+
+        down_pt.attrs = {{'title':'Downscale point using TopoPyScale',
+                          'package_verionning':ver_dict.__str__(),
+                          'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}}
+
         print(f'---> Storing point {pt_id} to outputs/tmp/')
 
         comp = dict(zlib=True, complevel=5)
@@ -440,7 +448,7 @@ def downscale_climate(project_directory,
             down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
 
         kt = surf_interp.ssrd * 0
-        sunset = ds_solar.sunset.astype(bool)
+        sunset = ds_solar.sunset.astype(bool).compute()
         mu0 = ds_solar.mu0
         SWtoa = ds_solar.SWtoa
 
@@ -466,7 +474,9 @@ def downscale_climate(project_directory,
         down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (
                 down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
         down_pt = down_pt.drop(['cos_illumination_tmp'])
-        down_pt['cos_illumination'][down_pt['cos_illumination'] < 0] = 0
+        illumination_mask = down_pt['cos_illumination'] < 0
+        illumination_mask = illumination_mask.compute()
+        down_pt['cos_illumination'][illumination_mask] = 0
 
         # Binary shadow masks.
         horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth), method='nearest')
