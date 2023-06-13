@@ -207,12 +207,12 @@ def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
         def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(l, key=alphanum_key)
 
-    fsm_columns = {'alb':4,
-                   'rof':5,
-                   'snd':6,
-                   'swe':7,
-                   'gst':8.,
-                   'tsl':9}
+    fsm_columns = {'alb':3,
+                   'rof':4,
+                   'snd':5,
+                   'swe':6,
+                   'gst':7,
+                   'tsl':8}
 
     if ncol is None and var is not None:
         if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
@@ -246,7 +246,8 @@ def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
     # add timestamp
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
-    print(f'Variable {list(fsm_columns)[ncol-4]} extracted')
+
+    print(f'Variable {list(fsm_columns)[ncol-3]} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
@@ -274,12 +275,12 @@ def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob("./fsm_sims/sim_ENS*_FSM_pt*")
-    fsm_columns = {'alb':4,
-                   'rof':5,
-                   'snd':6,
-                   'swe':7,
-                   'gst':8.,
-                   'tsl':9}
+    fsm_columns = {'alb':3,
+                   'rof':4,
+                   'snd':5,
+                   'swe':6,
+                   'gst':7.,
+                   'tsl':8}
     if ncol is None and var is not None:
         if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
             ncol = int(fsm_columns.get(var))
@@ -330,7 +331,7 @@ def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
-    print(f'Variable {list(fsm_columns)[ncol-4]} extracted')
+    print(f'Variable {list(fsm_columns)[ncol-3]} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
