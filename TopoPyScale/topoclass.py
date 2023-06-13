@@ -559,6 +559,12 @@ class Topoclass(object):
         else:
             realtime = False
 
+        if realtime: # make sure end date is correct
+            lastdate = fe.return_last_fullday()
+            # 5th day will always be incomplete so we got to last fullday
+            self.config.project.end = self.config.project.end.replace(year=lastdate.year, month=lastdate.month, day=lastdate.day)
+
+
         # retreive ERA5 surface data
         fe.retrieve_era5(
             self.config.climate[self.config.project.climate].product,
