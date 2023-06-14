@@ -115,6 +115,16 @@ def txt2ds(fname):
 
 
 def to_netcdf(fname_fsm_sim, complevel=9):
+    '''
+    Function to convert a single FSM simulation output file (.txt) to a compressed netcdf file (.nc)
+
+    Args:
+        fname_fsm_sim(str): filename to convert from txt to nc
+        complevel (int): Compression level. 1-9
+
+    Returns:
+        NULL (FSM simulation file written to disk)
+    '''
     ver_dict = tu.get_versionning()
 
     ds = txt2ds(fname_fsm_sim)
@@ -140,6 +150,18 @@ def to_netcdf_parallel(fsm_sims='./fsm_sims/sim_FSM*.txt',
                        n_core=6,
                        complevel=9,
                        delete_txt_files=False):
+    '''
+    Function to convert FSM simulation output (.txt files) to compressed netcdf. This function parallelize jobs on n_core
+
+    Args:
+        fsm_sims (str or list): file pattern or list of file output of FSM. Note that must be in short relative path!. Default = 'fsm_sims/sim_FSM_pt*.txt'
+        n_core (int): number of cores. Default = 6:
+        complevel (int): Compression level. 1-9
+        delete_txt_files (bool): delete simulation txt files or not. Default=True
+
+    Returns:
+        NULL (FSM simulation file written to disk)
+    '''
     print('---> Run FSM simulation in parallel')
     # 1. create all nlsit_files
     if isinstance(fsm_sims, str):
@@ -169,7 +191,7 @@ def to_dataset(fname_pattern='sim_FSM_pt*.txt', fsm_path = "./fsm_sims/"):
         fsm_path:
 
     Returns:
-
+        dataset (xarray)
     '''
     fnames = glob.glob(fsm_path + fname_pattern)
     fnames.sort()
@@ -208,8 +230,17 @@ def read_pt_fsm(fname):
     return fsm
 
 def _run_fsm(fsm_exec, nlstfile):
-        os.system(fsm_exec + ' < ' + nlstfile)
-        print('Simulation done: ' + nlstfile)
+    '''
+    function to execute FSM
+    Args:
+        fsm_exec (str): path to FSM executable
+        nlstfile (str): path to FSM simulation config file
+
+    Returns:
+        NULL (FSM simulation file written to disk)
+    '''
+    os.system(fsm_exec + ' < ' + nlstfile)
+    print('Simulation done: ' + nlstfile)
 
 def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
                      fsm_nconfig=31,
@@ -230,6 +261,8 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
         n_thread (int): number of threads when creating simulation configuration files. Default=100
         delete_nlst_files (bool): delete simulation configuration files or not. Default=True
 
+    Returns:
+        NULL (FSM simulation file written to disk)
     '''
     print('---> Run FSM simulation in parallel')
     # 1. create all nlsit_files

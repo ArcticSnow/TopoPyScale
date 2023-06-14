@@ -44,6 +44,7 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
         Args:
             fname (str): name of export file
             variables (list str): list of variable to export. Default exports all variables
+            complevel (int): Compression level. 1-9
         """
 
         encod_dict = {}
