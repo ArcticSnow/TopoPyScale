@@ -127,6 +127,8 @@ def to_netcdf(fname_fsm_sim, complevel=9):
     ds.attrs = {'title':'FSM simulation outputs',
                 'source': 'Data downscaled with TopoPyScale and simulated with FSM',
                 'package_version':ver_dict.get('package_version'),
+                'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                'url_FSM': 'https://github.com/RichardEssery/FSM',
                 'git_commit': ver_dict.get('git_commit'),
                 'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
     fout = f"{fname_fsm_sim[:-4]}.nc"

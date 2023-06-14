@@ -118,6 +118,7 @@ def to_musa(ds,
                 'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
                 'creator_name':'Dataset created by {}'.format(project_authors),
                 'package_version':ver_dict.get('package_version'),
+                'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                 'git_commit': ver_dict.get('git_commit'),
                 'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
     encod_dict = {}
@@ -203,6 +204,7 @@ def to_cryogrid(ds,
                     'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
                     'creator_name':'Dataset created by {}'.format(project_author),
                     'package_version':ver_dict.get('package_version'),
+                    'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                     'git_commit': ver_dict.get('git_commit'),
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
         encod_dict = {}
@@ -425,6 +427,7 @@ def to_crocus(ds,
                     'creator_name':'Dataset created by {}'.format(project_author),
                     'package_version':ver_dict.get('package_version'),
                     'git_commit': ver_dict.get('git_commit'),
+                    'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale', 
                     'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         fo['ZS'] = np.float64(df_pts.iloc[pt].elevation)

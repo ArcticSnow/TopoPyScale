@@ -462,6 +462,7 @@ def downscale_climate(project_directory,
                          'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
                           'package_version':ver_dict.get('package_version'),
                           'git_commit': ver_dict.get('git_commit'),
+                         'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                          'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         comp = dict(zlib=True, complevel=5)
