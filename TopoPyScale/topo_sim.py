@@ -160,7 +160,7 @@ def read_pt_fsm(fname):
 
 def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
                      fsm_nconfig=31,
-                     fsm_nave=24, # for daily output
+                     fsm_nave=24,  # for daily output
                      fsm_exec='./FSM',
                      n_core=6,
                      n_thread=100,
@@ -178,7 +178,7 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
     fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist) )
     tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
     print('nlst files ready')
-
+    
     # 2. execute FSM on multicore
     def _run_fsm(fsm_exec, nlstfile):
         os.system(fsm_exec + ' < ' + nlstfile)
