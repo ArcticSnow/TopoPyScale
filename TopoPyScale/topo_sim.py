@@ -148,7 +148,6 @@ def to_netcdf_parallel(fsm_sims='./fsm_sims/sim_FSM*.txt',
         print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
         return
 
-    (ds, fname='output.nc', variables=None, complevel=9)
     fun_param = zip(flist, [complevel]*len(flist))
     tu.multicore_pooling(to_netcdf, fun_param, n_core)
     print('---> All FSM simulations stored as netcdf')
