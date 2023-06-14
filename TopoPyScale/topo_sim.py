@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from matplotlib.backends.backend_pdf import PdfPages
 import datetime as dt
+from TopoPyScale import topo_utils as tu
+
 def fsm_nlst(nconfig, metfile, nave):
     """
     Function to generate namelist parameter file that is required to run the FSM model.
