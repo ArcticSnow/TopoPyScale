@@ -173,7 +173,7 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
         print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
         return
 
-    fun_param = zip([fsm_nconfig]*len(met_flist), flist, [fsm_nave]*len(met_flist) )
+    fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist) )
     tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
     print('nlst files ready')
 
