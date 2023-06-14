@@ -184,10 +184,10 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
         os.system(fsm_exec + ' < ' + nlstfile)
         print('Simulation done: ' + nlstfile)
 
-    nlst_flist = glob.glob('nlst_*.txt')
+    nlst_flist = glob.glob('fsm_sims/nlst_*.txt')
     fun_param = zip([fsm_exec]*len(nlst_flist), nlst_flist)
     tu.multicore_pooling(_run_fsm, fun_param, n_core)
-    print('---> FSM simulations done.')
+    print('---> FSM simulations finished.')
 
     # 3. remove nlist files
     if delete_nlst_files:
