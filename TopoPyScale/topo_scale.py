@@ -44,9 +44,7 @@ import sys, time
 import datetime as dt
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
-from multiprocessing import Pool
-from multiprocessing.dummy import Pool as ThreadPool
-import multiprocessing as mproc
+
 import os, glob
 from pathlib import Path
 from typing import Union

@@ -7,7 +7,8 @@ import numpy as np
 import glob
 from TopoPyScale import topo_da as da
 import git
-
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 
 def multicore_pooling(fun, fun_param, n_cores):
