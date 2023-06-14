@@ -158,6 +158,10 @@ def read_pt_fsm(fname):
     fsm.columns = ['albedo', 'runoff', 'snd', 'swe', 't_surface', 't_soil']
     return fsm
 
+def _run_fsm(fsm_exec, nlstfile):
+        os.system(fsm_exec + ' < ' + nlstfile)
+        print('Simulation done: ' + nlstfile)
+
 def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
                      fsm_nconfig=31,
                      fsm_nave=24,  # for daily output
@@ -178,12 +182,8 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
     fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist) )
     tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
     print('nlst files ready')
-    
-    # 2. execute FSM on multicore
-    def _run_fsm(fsm_exec, nlstfile):
-        os.system(fsm_exec + ' < ' + nlstfile)
-        print('Simulation done: ' + nlstfile)
 
+    # 2. execute FSM on multicore
     nlst_flist = glob.glob('fsm_sims/nlst_*.txt')
     fun_param = zip([fsm_exec]*len(nlst_flist), nlst_flist)
     tu.multicore_pooling(_run_fsm, fun_param, n_core)
