@@ -37,7 +37,7 @@ def compute_scaling_and_offset(da, n=16):
 
     return scale_factor, add_offset
 
-def to_netcdf(ds, fname='output.nc', variables=None):
+def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
         """
         Generic function to save a datatset to one single compressed netcdf file
 
@@ -57,7 +57,7 @@ def to_netcdf(ds, fname='output.nc', variables=None):
                                    'dtype':ds[var].dtype}})
             else:
                 encod_dict.update({var:{"zlib": True,
-                                       "complevel": 9,
+                                       "complevel": complevel,
                                        'dtype':'int16',
                                        'scale_factor':scale_factor,
                                        'add_offset':add_offset}})
