@@ -156,6 +156,43 @@ def read_pt_fsm(fname):
     fsm.columns = ['albedo', 'runoff', 'snd', 'swe', 't_surface', 't_soil']
     return fsm
 
+def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
+                     fsm_nconfig=31,
+                     fsm_nave=24, # for daily output
+                     fsm_exec='./FSM',
+                     n_core=6,
+                     n_thread=100,
+                     delete_nlst_files=True):
+    print('---> Run FSM simulation in parallel')
+    # 1. create all nlsit_files
+    if isinstance(fsm_input, str):
+        met_flist = glob.glob(fsm_input)
+    elif isinstance(fsm_input, list):
+        met_list = fsm_input
+    else:
+        print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
+        return
+
+    fun_param = zip([fsm_nconfig]*len(met_flist), flist, [fsm_nave]*len(met_flist) )
+    tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
+    print('nlst files ready')
+
+    # 2. execute FSM on multicore
+    def _run_fsm(fsm_exec, nlstfile):
+        os.system(fsm_exec + ' < ' + nlstfile)
+        print('Simulation done: ' + nlstfile)
+
+    nlst_flist = glob.glob('nlst_*.txt')
+    fun_param = zip([fsm_exec]*len(nlst_flist), nlst_flist)
+    tu.multicore_pooling(_run_fsm, fun_param, n_core)
+    print('---> FSM simulations done.')
+
+    # 3. remove nlist files
+    if delete_nlst_files:
+        print('---> Removing FSM simulation config file')
+        for file in nlst_flist:
+            os.remove(file)
+
 
 def fsm_sim(nlstfile, fsm_exec):
     """
