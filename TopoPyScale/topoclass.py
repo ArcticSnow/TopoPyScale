@@ -562,7 +562,14 @@ class Topoclass(object):
             # 5th day will always be incomplete so we got to last fullday
             self.config.project.end = self.config.project.end.replace(year=lastdate.year, month=lastdate.month, day=lastdate.day)
 
-
+            # remove existing results (temporary results are ok and updated but cannot append to final files eg .outputs/downscaled/down_pt_0.nc)
+            try:
+                shutil.rmtree(self.config.outputs.path / "downscaled")
+                print('---> Downscaled directory cleaned')
+                os.makedirs(self.config.outputs.path / "downscaled")
+            except:
+                os.makedirs(self.config.outputs.path / "downscaled")
+        realtime = False
         # retreive ERA5 surface data
         fe.retrieve_era5(
             self.config.climate[self.config.project.climate].product,
