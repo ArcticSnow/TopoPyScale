@@ -314,7 +314,6 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
 # 	return(latest_date)
 
 def return_last_fullday():
-
 	# Get current UTC time
 	current_time_utc = datetime.utcnow()
 
@@ -328,21 +327,19 @@ def return_last_fullday():
 	current_time_utc_str = rounded_time_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 	five_days_ago_utc_str = five_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 
-
-	five_days_ago_utc = datetime.strptime(five_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
-	# if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
-	if latest_date.hour < 23:
-		last_fullday_data = five_days_ago_utc - timedelta(days=1)
 	# Print the results
+	five_days_ago_utc = datetime.strptime(five_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
+
+	# if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
+	if five_days_ago_utc.hour < 23:
+		last_fullday_data = five_days_ago_utc - timedelta(days=1)
+
+	last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
 	print("Current time (rounded down) in UTC:", current_time_utc_str)
 	print("Last ERA5T data in UTC:", five_days_ago_utc_str)
-	last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
 	print("Last full day ERA5T data in UTC:", last_fullday_data_str)
-	return(last_fullday_data)
 
-
-
-
+	return (last_fullday_data)
 
 
 
