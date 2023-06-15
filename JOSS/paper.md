@@ -26,7 +26,7 @@ affiliations:
    index: 1
  - name: WSL Institute for Snow and Avalanche Research SLF, Switzerland
    index: 2
-date: 8 November 2022
+date: 15 June 2023
 bibliography: paper.bib
 ---
 
