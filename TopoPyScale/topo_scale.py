@@ -44,9 +44,7 @@ import sys, time
 import datetime as dt
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
-from multiprocessing import Pool
-from multiprocessing.dummy import Pool as ThreadPool
-import multiprocessing as mproc
+
 import os, glob
 from pathlib import Path
 from typing import Union
@@ -56,46 +54,6 @@ from typing import Union
 g = 9.81  # Acceleration of gravity [ms^-1]
 R = 287.05  # Gas constant for dry air [JK^-1kg^-1]
 
-
-def multicore_pooling(fun, fun_param, n_cores):
-    '''
-    Function to perform multiprocessing on n_cores
-    Args:
-        fun (obj): function to distribute
-        fun_param zip(list): zip list of functino arguments
-        n_core (int): number o cores
-    '''
-    if n_cores is None:
-        n_cores = mproc.cpu_count() - 2
-        print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
-    elif n_cores > mproc.cpu_count():
-        n_cores = mproc.cpu_count() - 2
-        print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
-
-    # make sure it will run on one core at least
-    if n_cores == 0:
-        n_cores = 1
-
-    pool = Pool(n_cores)
-    pool.starmap(fun, fun_param)
-    pool.close()
-    pool.join()
-    pool = None
-
-
-def multithread_pooling(fun, fun_param, n_threads):
-    '''
-    Function to perform multiprocessing on n_threads
-    Args:
-        fun (obj): function to distribute
-        fun_param zip(list): zip list of functino arguments
-        n_core (int): number of threads
-    '''
-    tpool = ThreadPool(n_threads)
-    tpool.starmap(fun, fun_param)
-    tpool.close()
-    tpool.join()
-    tpool = None
 
 
 def clear_files(path: Union[Path, str]):
@@ -215,7 +173,7 @@ def downscale_climate(project_directory,
 
     fun_param = zip(ds_list, row_list, ['plev'] * len(row_list),
                     df_centroids.index.values)  # construct here the tuple that goes into the pooling for arguments
-    multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
+    tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
     ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
@@ -225,7 +183,7 @@ def downscale_climate(project_directory,
 
     fun_param = zip(ds_list, row_list, ['surf'] * len(row_list),
                     range(0, len(row_list)))  # construct here the tuple that goes into the pooling for arguments
-    multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
+    tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_surf = None
 
@@ -384,11 +342,8 @@ def downscale_climate(project_directory,
                                            'long_name': 'Precipitation after lapse-rate correction',
                                            'standard_name': 'precipitation_after_lapse-rate_correction'}
 
-        ver_dict = tu.get_versionning()
-
-        down_pt.attrs = {{'title':'Downscale point using TopoPyScale',
-                          'package_verionning':ver_dict.__str__(),
-                          'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}}
+        down_pt.attrs = {'title':'Downscale point using TopoPyScale',
+                          'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         print(f'---> Storing point {pt_id} to outputs/tmp/')
 
@@ -407,7 +362,7 @@ def downscale_climate(project_directory,
 
     fun_param = zip(row_list, plev_pt_list, surf_pt_list,
                     meta_list)  # construct here the tuple that goes into the pooling for arguments
-    multicore_pooling(pt_downscale_interp, fun_param, n_core)
+    tu.multicore_pooling(pt_downscale_interp, fun_param, n_core)
     fun_param = None
     plev_pt_list = None
     surf_pt_list = None
@@ -502,8 +457,12 @@ def downscale_climate(project_directory,
                             'standard_name': 'shortwave_radiation_downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
                                     'standard_name': 'shortwave_diffuse_radiation_downward'}
+        ver_dict = tu.get_versionning()
         down_pt.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
-                         'Create with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                         'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                          'package_version':ver_dict.get('package_version'),
+                          'git_commit': ver_dict.get('git_commit'),
+                         'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                          'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         comp = dict(zlib=True, complevel=5)
@@ -520,7 +479,7 @@ def downscale_climate(project_directory,
 
     fun_param = zip(row_list, ds_solar_list, horizon_da_list,
                     meta_list)  # construct here tuple to feed pool function's argument
-    multicore_pooling(pt_downscale_radiations, fun_param, n_core)
+    tu.multicore_pooling(pt_downscale_radiations, fun_param, n_core)
     fun_param = None
     ds_solar_list = None
     horizon_da_list = None

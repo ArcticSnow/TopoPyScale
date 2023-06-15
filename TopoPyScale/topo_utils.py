@@ -7,6 +7,49 @@ import numpy as np
 import glob
 from TopoPyScale import topo_da as da
 import git
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool
+import multiprocessing as mproc
+
+def multicore_pooling(fun, fun_param, n_cores):
+    '''
+    Function to perform multiprocessing on n_cores
+    Args:
+        fun (obj): function to distribute
+        fun_param zip(list): zip list of functino arguments
+        n_core (int): number o cores
+    '''
+    if n_cores is None:
+        n_cores = mproc.cpu_count() - 2
+        print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
+    elif n_cores > mproc.cpu_count():
+        n_cores = mproc.cpu_count() - 2
+        print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
+
+    # make sure it will run on one core at least
+    if n_cores == 0:
+        n_cores = 1
+
+    pool = Pool(n_cores)
+    pool.starmap(fun, fun_param)
+    pool.close()
+    pool.join()
+    pool = None
+
+
+def multithread_pooling(fun, fun_param, n_threads):
+    '''
+    Function to perform multiprocessing on n_threads
+    Args:
+        fun (obj): function to distribute
+        fun_param zip(list): zip list of functino arguments
+        n_core (int): number of threads
+    '''
+    tpool = ThreadPool(n_threads)
+    tpool.starmap(fun, fun_param)
+    tpool.close()
+    tpool.join()
+    tpool = None
 
 def get_versionning():
     import TopoPyScale as tps
@@ -15,7 +58,7 @@ def get_versionning():
         repo = git.Repo(path=tps.__file__, search_parent_directories=True)
         hash = repo.head.object.hexsha
     except:
-        hash = None
+        hash = 'Not available'
     version = metadata.version('TopoPyScale')
     ver_dic = {'git_commit': hash,
                'package_version': version}
