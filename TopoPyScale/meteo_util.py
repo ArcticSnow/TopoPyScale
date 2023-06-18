@@ -29,6 +29,30 @@ R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 eps0 = 0.622  # Ratio of molecular weight of water and dry air [-]
 S0 = 1370    # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
 
+def steep_snow_reduce_all(snow, slope):
+    # ======================================================================================
+    # # linearly reduce snow to zero in steep slopes
+    # if steepSnowReduce=="TRUE": # make this an option if need that in future
+    # ======================================================================================
+
+    snowSMIN = 30.
+    snowSMAX = 80.
+
+    # partial snow removal
+    k = (snowSMAX - slope) / (snowSMAX - snowSMIN)
+
+    # no snow removal
+    a = slope < snowSMIN
+    k[~a] = 1
+
+    # all snow removal
+    a = slope > snowSMIN
+    k[~a] = 0
+
+    steepSnow = snow.transpose() * np.array(k).transpose()
+
+    return (steepSnow)
+
 
 def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low_thresh=272.15, tair_high_thresh=274.15):
     """
