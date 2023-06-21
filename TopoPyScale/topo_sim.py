@@ -854,7 +854,7 @@ def climatology(HSdf, fsm_path):
 
 
 
-def climatology_plot(ncol, mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HSdf_realtime=None, plot_show=False):
+def climatology_plot(var, mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HSdf_realtime=None, plot_show=False):
 
     with PdfPages("snow_tracker.pdf") as pdf:
 
@@ -900,10 +900,10 @@ def climatology_plot(ncol, mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HS
         #plt.plot(fsca.DOY.astype(int)+(366-244)    , fsca.fSCA, label="fSCA MODIS (0-100%) ") # doy starts at jan 1 for modis data, here it is 1 sept so we shift by 122 days
 
         plt.xlabel('Day of the year')
-        if int(ncol) == 5:
+        if var == 'snd':
             plt.ylabel('Height of snow (cm)')
             plt.title("Basin average snow height " +mytitle+ " (Starting September 1st)")
-        if int(ncol) == 6:
+        if var == 'swe':
             plt.ylabel('Snow water equivalent (mm)')
             plt.title("Basin average snow water equivalent " +mytitle+ " (Starting September 1st)")
         plt.legend()
