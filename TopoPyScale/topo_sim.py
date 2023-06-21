@@ -312,7 +312,7 @@ def fsm_sim(nlstfile, fsm_exec):
 
 
 
-def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
+def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -320,15 +320,19 @@ def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
     Currently written for FSM files but could be generalised to other models.
 
     Args:
-        ncol (int): column number of variable to extract
-    Returns: 
-        NULL ( file written to disk)
+        var (str): column name of variable to extract, one of: alb, rof, hs, swe, gst, gt50
+                alb - albedo
+                rof - runoff
+                snd - snow height (m)
+                swe - snow water equivalent (mm)
+                gst - ground surface temp (10cm depth) degC
+                gt50 - ground temperature (50cm depth) degC
 
-    ncol:
-        4 = rof
-        5 = hs
-        6 = swe
-        7 = gst
+        fsm_path (str): location of simulation files
+    Returns: 
+        dataframe
+
+
 
     """
 
@@ -341,18 +345,18 @@ def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
         def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(l, key=alphanum_key)
 
-    fsm_columns = {'alb':3,
-                   'rof':4,
-                   'snd':5,
-                   'swe':6,
-                   'gst':7,
-                   'tsl':8}
+    fsm_columns = {'alb':-6,
+                   'rof':-5,
+                   'snd':-4,
+                   'swe':-3,
+                   'gst':-2,
+                   'gt50':-1}
 
-    if ncol is None and var is not None:
-        if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
-            ncol = int(fsm_columns.get(var))
-        else:
-            print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
+
+    if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
+        ncol = int(fsm_columns.get(var))
+    else:
+        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
 
     file_list = natural_sort(a)
 
@@ -381,12 +385,12 @@ def agg_by_var_fsm(ncol=None, var='gst', fsm_path = "./fsm_sims"):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
-    print(f'Variable {list(fsm_columns)[ncol-3]} extracted')
+    print(f'Variable {var} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
-def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
+def agg_by_var_fsm_ensemble( var='snd', W=1):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -394,10 +398,17 @@ def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
     Currently written for FSM files but could be generalised to other models.
 
     Args:
-        ncol (int): column number of variable to extract
-        W ():
+        var (str): column name of variable to extract, one of: alb, rof, hs, swe, gst, gt50
+                alb - albedo
+                rof - runoff
+                hs - snow height (m)
+                swe - snow water equivalent (mm)
+                gst - ground surface temp (10cm depth) degC
+                gt50 - ground temperature (50cm depth) degC
+
+        W - weight vector from PBS
     Returns: 
-        NULL ( file written to disk)
+        dataframe
 
     ncol:
         4 = rof
@@ -409,17 +420,17 @@ def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob("./fsm_sims/sim_ENS*_FSM_pt*")
-    fsm_columns = {'alb':3,
-                   'rof':4,
-                   'snd':5,
-                   'swe':6,
-                   'gst':7.,
-                   'tsl':8}
-    if ncol is None and var is not None:
-        if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']:
-            ncol = int(fsm_columns.get(var))
-        else:
-            print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
+    fsm_columns = {'alb':-6,
+                   'rof':-5,
+                   'snd':-4,
+                   'swe':-3,
+                   'gst':-2,
+                   'gt50':-1}
+
+    if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
+        ncol = int(fsm_columns.get(var))
+    else:
+        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
 
 
     def natural_sort(l):
@@ -465,7 +476,7 @@ def agg_by_var_fsm_ensemble(ncol=None, var='gst', W=1):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
-    print(f'Variable {list(fsm_columns)[ncol-3]} extracted')
+    print(f'Variable {var} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 

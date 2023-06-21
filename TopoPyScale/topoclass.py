@@ -569,7 +569,7 @@ class Topoclass(object):
                 os.makedirs(self.config.outputs.path / "downscaled")
             except:
                 os.makedirs(self.config.outputs.path / "downscaled")
-        realtime = False
+
         # retreive ERA5 surface data
         fe.retrieve_era5(
             self.config.climate[self.config.project.climate].product,
