@@ -829,9 +829,10 @@ def agg_stats(df ):
     dfagg = np.sum(weighteddf, 1)/ np.sum(lp.members)
     return (dfagg)
 
-def climatology(ncol, fsm_path):
-    HS = agg_by_var_fsm(ncol, fsm_path)
-    HSdf = agg_stats(HS)
+def climatology(HSdf, fsm_path):
+    # taken this out of this function:
+    # HS = agg_by_var_fsm(ncol, fsm_path)
+    # HSdf = agg_stats(HS)
     
     # Group the DataFrame by day of the year and calculate the mean
     HSdf_daily_median = HSdf.groupby(HSdf.index.dayofyear).median()
@@ -842,7 +843,7 @@ def climatology(ncol, fsm_path):
 
 
 
-def climatology_plot(mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HSdf_realtime=None, plot_show=False):
+def climatology_plot(ncol, mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HSdf_realtime=None, plot_show=False):
 
     with PdfPages("snow_tracker.pdf") as pdf:
 
@@ -888,8 +889,12 @@ def climatology_plot(mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HSdf_rea
         #plt.plot(fsca.DOY.astype(int)+(366-244)    , fsca.fSCA, label="fSCA MODIS (0-100%) ") # doy starts at jan 1 for modis data, here it is 1 sept so we shift by 122 days
 
         plt.xlabel('Day of the year')
-        plt.ylabel('Height of snow (cm)')
-        plt.title("Snow height " +mytitle+ " (Starting September 1st)")
+        if int(ncol) == 5:
+            plt.ylabel('Height of snow (cm)')
+            plt.title("Basin average snow height " +mytitle+ " (Starting September 1st)")
+        if int(ncol) == 6:
+            plt.ylabel('Snow water equivalent (mm)')
+            plt.title("Basin average snow water equivalent " +mytitle+ " (Starting September 1st)")
         plt.legend()
         if plot_show ==True:
             plt.show()
@@ -897,7 +902,58 @@ def climatology_plot(mytitle, HSdf_daily_median, HSdf_daily_quantiles,  HSdf_rea
         plt.close()
 
 
+def climatology_plot2(mytitle, HSdf_daily_median, HSdf_daily_quantiles, HSdf_realtime=None, plot_show=False):
+    with PdfPages("snow_tracker.pdf") as pdf:
 
+        df_shifted = HSdf_daily_median  # .shift(-244)
+        df_quantiles_shifted = HSdf_daily_quantiles  # .shift(-244)
+
+        # Concatenate the shifted time series such that the last 122 days are first, followed by the first 244 days - water year
+        df_shifted0 = pd.concat([df_shifted[244:], df_shifted[:244]])
+        df_quantiles_shifted1 = pd.concat([df_quantiles_shifted.xs(0.05, level=1)[244:],
+                                           df_quantiles_shifted.xs(0.05, level=1)[:244]], axis=0)
+
+        df_quantiles_shifted2 = pd.concat([df_quantiles_shifted.xs(0.95, level=1)[244:],
+                                           df_quantiles_shifted.xs(0.95, level=1)[:244]], axis=0)
+
+        # s.reset_index(drop=True)
+        df_shifted0.reset_index(drop=True, inplace=True)
+
+        # Plot the timeseries and the quantiles
+        plt.figure(figsize=(10, 6))
+        plt.plot(df_shifted0, label='Long-term Median')
+        plt.fill_between(df_shifted0.index,
+                         df_quantiles_shifted1,
+                         df_quantiles_shifted2,
+                         alpha=0.2, label='Long-term 5% - 95% Quantiles')
+
+        # plot realtime data
+        if HSdf_realtime is not None:
+            # get water year
+            thisYear = datetime.now().year
+            thisMonth = datetime.now().month
+
+            wy_start = {9, 10, 11, 12}
+            wy_end = {1, 2, 3, 4, 5, 6, 7, 8}
+
+            if thisMonth in wy_start:
+                thisWaterYear = thisYear
+            else:
+                thisWaterYear = thisYear - 1
+
+            plt.plot(HSdf_realtime.values, label="Water year " + str(thisWaterYear))
+
+        # plot fSCA (working on this)
+        # plt.plot(fsca.DOY.astype(int)+(366-244)    , fsca.fSCA, label="fSCA MODIS (0-100%) ") # doy starts at jan 1 for modis data, here it is 1 sept so we shift by 122 days
+
+        plt.xlabel('Day of the year')
+        plt.ylabel('Height of snow (cm)')
+        plt.title("Snow height " + mytitle + " (Starting September 1st)")
+        plt.legend()
+        if plot_show == True:
+            plt.show()
+        pdf.savefig()  # saves the current figure into a pdf page
+        plt.close()
 # usage with a climate dir and realtime dir
 # clim_dir = '/home/joel/sim/tscale_projects/naryn4'    
 # realtime_dir = "/home/joel/mnt/aws/sim/naryn4"
