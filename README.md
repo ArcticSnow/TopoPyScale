@@ -3,7 +3,9 @@
 [![DOI](https://zenodo.org/badge/411249045.svg)](https://zenodo.org/badge/latestdoi/411249045)
 [![GitHub license](https://img.shields.io/github/license/ArcticSnow/TopoPyScale)](https://github.com/ArcticSnow/TopoPyScale/blob/main/LICENSE)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/ArcticSnow/TopoPyScale)
-<a href="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87"><img src="https://joss.theoj.org/papers/91621581b2d0c097495fdd1e58179e87/status.svg"></a>
+<a style="border-width:0" href="https://doi.org/10.21105/joss.05059">
+  <img src="https://joss.theoj.org/papers/10.21105/joss.05059/status.svg" alt="DOI badge" >
+</a>
 [![][docs-dev-img]][docs-dev-url]
 ![Test](https://github.com/ArcticSnow/TopoPyScale/actions/workflows/test_topopyscale.yml/badge.svg)
 
@@ -20,6 +22,8 @@ Documentation avalaible: https://topopyscale.readthedocs.io
 ![](https://github.com/ArcticSnow/TopoPyScale/blob/main/JOSS/temperature_comparison_crop_scaled.jpg)
 
 **References:**
+
+- Filhol et al., (2023). TopoPyScale: A Python Package for Hillslope Climate Downscaling. Journal of Open Source Software, 8(86), 5059, https://doi.org/10.21105/joss.05059
 - Fiddes, J. and Gruber, S.: TopoSCALE v.1.0: downscaling gridded climate data in complex terrain, Geosci. Model Dev., 7, 387–405, https://doi.org/10.5194/gmd-7-387-2014, 2014.
 - Fiddes, J. and Gruber, S.: TopoSUB: a tool for efficient large area numerical modelling in complex topography at sub-grid scales, Geosci. Model Dev., 5, 1245–1257, https://doi.org/10.5194/gmd-5-1245-2012, 2012. 
 
