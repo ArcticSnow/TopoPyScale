@@ -506,6 +506,12 @@ class Topoclass(object):
                 ds.to_netcdf(fout, engine='h5netcdf')
                 del ds
 
+            # Delete time slice files.
+            for fpat in self.time_splitter.downscaled_flist:
+                flist = glob.glob(f'{self.config.outputs.downscaled}/{fpat}')
+                for file in flist:
+                    os.remove(file)
+
             # concatenate ds solar
             print('concatenating solar files')
             out_solar_name = Path(self.config.outputs.file.ds_solar)
@@ -518,12 +524,6 @@ class Topoclass(object):
             [f.unlink() for f in solar_flist]  # delete tmp solar files
             print('solar files concatenated')
             del ds
-
-            # Delete time slice files.
-            for fpat in self.time_splitter.downscaled_flist:
-                flist = glob.glob(f'{self.config.outputs.downscaled}/{fpat}')
-                for file in flist:
-                    os.remove(file)
 
         else:
             ta.downscale_climate(self.config.project.directory,
