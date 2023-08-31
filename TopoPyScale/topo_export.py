@@ -225,7 +225,106 @@ def to_cryogrid(ds,
         fo.to_netcdf(foutput, encoding=encod_dict)
         print('---> File {} saved'.format(foutput))
 
+def to_fsm2oshd():
+    # Write function to drive FSM2oshd (https://github.com/oshd-slf/FSM2oshd/tree/main).
+    # FSM2oshd includes canopy structures processes
+    # one simulation consists of 2 driving file:
+    #   - met.txt with variables:
+    #       year, month, day, hour, SWb, SWd, LW, Sf, Rf, Ta, RH, Ua, Ps, Sf24h, Tvt
+    #   - param.nam with canopy and model constants. See https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/runner.py#L10
+    #
 
+    def write_namelist(file_namelist, file_met, file_output, ALBEDO, CANMOD, CONDCT, DENSTY, EXCHNG, HYDROL):
+        # Function to write namelist file (.nam) for each point where to run FSM.
+        # TODO:
+        #  - [ ] review all variables of the namelist file. for instance lat lon, dem ... what are those for
+        print('TBI')
+
+        nlst = f"""
+&nam_grid
+  NNx = 1,
+  NNy = 1,
+  NNsmax = 3,
+  NNsoil = 4,
+/
+&nam_layers
+  DDzsnow = 0.1, 0.2, 0.4,
+  DDzsoil = 0.1, 0.2, 0.4, 0.8,
+/
+&nam_driving
+  zzT = 10,
+  zzU = 10,
+  met_file = {file_met},
+  out_file = {output_file},
+/
+&nam_modconf
+  NALBEDO = {ALBEDO},
+  NCANMOD = {CANMOD},
+  NCONDCT = {CONDCT},
+  NDENSTY = {DENSTY},
+  NEXCHNG = {EXCHNG},
+  NHYDROL = {HYDROL},
+  NSNFRAC = 3,
+  NRADSBG = 0,
+  NZOFFST = 0,
+  NOSHDTN = 1,
+  LHN_ON  = .FALSE.,
+  LFOR_HN = .TRUE.,
+/
+&nam_modpert
+  LZ0PERT = .FALSE.,
+/
+&nam_modtile
+  CTILE = 'open',
+  rtthresh = 0.1,
+/
+&nam_results
+   CLIST_DIAG_RESULTS = 'rotc', 'hsnt', 'swet', 'slqt', 'swtb', 'swtd', 'lwtr', 'romc', 'sbsc',
+   CLIST_STATE_RESULTS = 'tsfe', 'scfe',
+/
+&nam_location
+  fsky_terr = 0.9483,
+  slopemu = 0.0122,
+  xi = 0,
+  Ld = 1,
+  lat = 46.8296,
+  lon = 9.8092,
+  dem = 2540,
+  pmultf = 1,
+  fveg = 0,
+  hcan = 0,
+  lai = 0,
+  vfhp = 1, 
+  fves = 0,
+/
+  """
+
+        with open(file_namelist, "w") as nlst_file:
+            nlst_file.write(nlst)
+
+
+
+    def write_fsm2_met():
+        '''
+        Function to write meteorological forcing for FSM
+
+        Format of the text file is:
+            2021 9 1 6 61 45.01 206.7 0 0 275.02 74.08 0.29 74829 0 0.5
+            2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
+
+        year month  day   hour  SWb   SWd  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
+    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (?) (?)
+
+        '''
+        print('TBI')
+        n_digits = 2
+
+        return
+
+    # Write both namelist and met_file for each point
+    for pt in ds.point_id.values:
+        write_namelist()
+        write_fsm2_met()
 
 def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     """

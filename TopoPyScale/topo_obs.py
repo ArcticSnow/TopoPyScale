@@ -89,7 +89,14 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     return ds
 
 
-def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/observations', product='sub_daily'):
+def fetch_WMO_insitu_observations(years,
+                                  months,
+                                  bbox,
+                                  target_path='./inputs/observations',
+                                  product='sub_daily',
+                                  var=['air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
+                                       'dew_point_temperature', 'wind_from_direction', 'wind_speed']
+                                  ):
     """
     Function to download WMO in-situ data from land surface in-situ observations from Copernicus.
     https://cds.climate.copernicus.eu/cdsapp#!/dataset/insitu-observations-surface-land?tab=overview
@@ -99,6 +106,7 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
         month (str or list): month(s) to download
         bbox (list): bonding box in lat-lon [lat_south, lon_west, lat_north, lon_east]
         target (str): filename
+        var (list): list of variable to download. available:
 
     Returns:
         Store to disk the dataset as zip file
@@ -118,15 +126,37 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
         print(f'ERROR: path "{target_path}" does not exist')
         return False
 
+    if product == 'sub_daily':
+        var_avail = ['air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
+                     'dew_point_temperature', 'wind_from_direction', 'wind_speed']
+        for v in var:
+            if v not in var_avail:
+                print(f'WARNING: fecthin {v} from WMO on CDS server not available for {product}')
+                return
+
+    elif product == 'daily':
+        var_avail = ['accumulated_precipitation', 'air_temperature', 'fresh_snow',
+                     'snow_depth', 'snow_water_equivalent', 'wind_from_direction', 'wind_speed']
+        for v in var:
+            if v not in var_avail:
+                print(f'WARNING: fecthin {v} from WMO on CDS server not available for {product}')
+                return
+
+    elif product == 'monthly':
+        var_avail = ['accumulated_precipitation', 'air_temperature']
+        for v in var:
+            if v not in var_avail:
+                print(f'WARNING: fecthin {v} from WMO on CDS server not available for {product}')
+                return
+    else:
+        print(f'WARNING: {product} not available')
+
     c = cdsapi.Client()
     c.retrieve(
         'insitu-observations-surface-land',
         {
             'time_aggregation': product,
-            'variable': [
-                'air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
-                'dew_point_temperature', 'wind_from_direction', 'wind_speed'
-            ],
+            'variable': var,
             'usage_restrictions': 'restricted',
             'data_quality': 'passed',
             'year': years,
