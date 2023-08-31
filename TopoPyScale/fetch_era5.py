@@ -59,10 +59,10 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	df['month'] = df.dates.dt.month
 	df['year'] = df.dates.dt.year
 	if surf_plev == 'surf':
-		df['dataset'] = df.dates.apply(lambda x: 'reanalysis-era5-single-levels' if x.year >= 1979 else 'reanalysis-era5-single-levels-preliminary-back-extension')
+		df['dataset'] = 'reanalysis-era5-single-levels'
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
 	elif surf_plev == 'plev':
-		df['dataset'] = df.dates.apply(lambda x: 'reanalysis-era5-pressure-levels' if x.year >= 1979 else 'reanalysis-era5-pressure-levels-preliminary-back-extension')
+		df['dataset'] = 'reanalysis-era5-pressure-levels'
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
 		loc_list = []
 		loc_list.extend([plevels]*df.shape[0])
