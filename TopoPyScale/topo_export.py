@@ -6,6 +6,7 @@ S. Filhol, December 2021
 TODO;
 - SPHY forcing (grids)
 """
+import os.path
 import pdb
 import sys, csv
 import numpy as np
@@ -225,8 +226,22 @@ def to_cryogrid(ds,
         fo.to_netcdf(foutput, encoding=encod_dict)
         print('---> File {} saved'.format(foutput))
 
-def to_fsm2oshd():
-    # Write function to drive FSM2oshd (https://github.com/oshd-slf/FSM2oshd/tree/main).
+def to_fsm2oshd(ds_down,
+                ds_param_canop,
+                df_centroids,
+                ds_tvt,
+                namelist_param=None ):
+    '''
+
+    Args:
+        ds_down:  Downscaled weather variable dataset
+        ds_param_canop:  terrain and canopy parameter dataset
+        df_centroids:  cluster centroids statistics (terrain + canopy)
+        ds_tvt (dataset):  transmisivity dataset
+        namelist_param (dict): {'precip_multiplier':1, 'max_sd':4,'z_snow':[0.1, 0.2, 0.4], 'z_soil':[0.1, 0.2, 0.4, 0.8]}
+
+    '''
+    # Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     # FSM2oshd includes canopy structures processes
     # one simulation consists of 2 driving file:
     #   - met.txt with variables:
@@ -234,77 +249,87 @@ def to_fsm2oshd():
     #   - param.nam with canopy and model constants. See https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/runner.py#L10
     #
 
-    def write_namelist(file_namelist, file_met, file_output, ALBEDO, CANMOD, CONDCT, DENSTY, EXCHNG, HYDROL):
+    def write_namelist(row_centroids,
+                       file_namelist,
+                       file_met,
+                       file_output,
+                       precip_multi=1,
+                       max_sd=4,
+                       z_snow=[0.1, 0.2, 0.4],
+                       z_soil=[0.1, 0.2, 0.4, 0.8]):
         # Function to write namelist file (.nam) for each point where to run FSM.
         # TODO:
-        #  - [ ] review all variables of the namelist file. for instance lat lon, dem ... what are those for
-        print('TBI')
+        #  - [ ] review all variables of the namelist file. for instance lat lon, dem ... what are those for?
 
-        nlst = f"""
+        # add a check if file_met exist before creating namelist file
+        if os.path.exists(file_met):
+            nlst = f"""
 &nam_grid
-  NNx = 1,
-  NNy = 1,
-  NNsmax = 3,
-  NNsoil = 4,
+  NNx = 1,   
+  NNy = 1,   
+  NNsmax = {max_sd},   # max snow depth?
+  NNsoil = 4,          # ?
 /
 &nam_layers
-  DDzsnow = 0.1, 0.2, 0.4,
-  DDzsoil = 0.1, 0.2, 0.4, 0.8,
+  DDzsnow = {z_snow[0]}, {z_snow[1]}, {z_snow[2]},     # is this forced to 3 layers?
+  DDzsoil = {z_soil[0]}, {z_soil[1]}, {z_soil[2]}, {z_soil[3]}   # is this forced to 4 layers?
 /
 &nam_driving
-  zzT = 10,
-  zzU = 10,
+  zzT = 10,  # ?
+  zzU = 10,  # ?
   met_file = {file_met},
   out_file = {output_file},
 /
 &nam_modconf
-  NALBEDO = {ALBEDO},
-  NCANMOD = {CANMOD},
-  NCONDCT = {CONDCT},
-  NDENSTY = {DENSTY},
-  NEXCHNG = {EXCHNG},
-  NHYDROL = {HYDROL},
-  NSNFRAC = 3,
-  NRADSBG = 0,
-  NZOFFST = 0,
-  NOSHDTN = 1,
-  LHN_ON  = .FALSE.,
-  LFOR_HN = .TRUE.,
+  NALBEDO = {row.albedo},
+  NCANMOD = {row.canmod},
+  NCONDCT = {row.condct},
+  NDENSTY = {row.density},
+  NEXCHNG = {row.exchange},
+  NHYDROL = {row.hydrol},
+  NSNFRAC = 3,          # ?
+  NRADSBG = 0,          # ?
+  NZOFFST = 0,          # ?
+  NOSHDTN = 1,          # ?
+  LHN_ON  = .FALSE.,    # ?
+  LFOR_HN = .TRUE.,     # ?
 /
 &nam_modpert
-  LZ0PERT = .FALSE.,
+  LZ0PERT = .FALSE.,   # ?
 /
 &nam_modtile
-  CTILE = 'open',
-  rtthresh = 0.1,
+  CTILE = 'open',      # ?
+  rtthresh = 0.1,       # ?
 /
 &nam_results
-   CLIST_DIAG_RESULTS = 'rotc', 'hsnt', 'swet', 'slqt', 'swtb', 'swtd', 'lwtr', 'romc', 'sbsc',
-   CLIST_STATE_RESULTS = 'tsfe', 'scfe',
+   CLIST_DIAG_RESULTS = 'rotc', 'hsnt', 'swet', 'slqt', 'swtb', 'swtd', 'lwtr', 'romc', 'sbsc',   # need all?
+   CLIST_STATE_RESULTS = 'tsfe', 'scfe',                                                          # need all?
 /
 &nam_location
-  fsky_terr = 0.9483,
-  slopemu = 0.0122,
-  xi = 0,
-  Ld = 1,
-  lat = 46.8296,
-  lon = 9.8092,
-  dem = 2540,
-  pmultf = 1,
-  fveg = 0,
-  hcan = 0,
-  lai = 0,
-  vfhp = 1, 
-  fves = 0,
+  fsky_terr = {row.svf},   # terrain svf
+  slopemu = {row.slope},   # slope in rad?
+  xi = 0,   # ?
+  Ld = 1,   # ?
+  lat = {row.latitude}, # duniim
+  lon = {row.longitude},  #dynamic
+  dem = {row.elevation},  #elevation?
+  pmultf = {precip_multi},  # precip multiplier
+  fveg = {row.fveg},  #from Clare
+  hcan = {row.hcan},  #from Clare
+  lai = {row.lai},   #from Clare
+  vfhp = {row.vfhp},  #from Clare
+  fves = 0,  #from Clare?
 /
   """
 
-        with open(file_namelist, "w") as nlst_file:
-            nlst_file.write(nlst)
+            with open(file_namelist, "w") as nlst_file:
+                nlst_file.write(nlst)
+        else:
+            print(f'ERROR: met_file: {file_met} not found')
+            return
 
 
-
-    def write_fsm2_met():
+    def write_fsm2oshd_met():
         '''
         Function to write meteorological forcing for FSM
 
@@ -313,7 +338,7 @@ def to_fsm2oshd():
             2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
 
         year month  day   hour  SWb   SWd  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
-    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (?) (?)
+    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
 
         '''
         print('TBI')
@@ -321,10 +346,16 @@ def to_fsm2oshd():
 
         return
 
+    # 0. Add print statements about the need of data currently computed extrenally to TopoPyScale.
+    # 1. Convert Clare's canopy output to FSM2oshd parametrization
+    # 2. Extract cluster canopy and forest cover weights from ds_param_canopy
+    # 3. loop through clusters and write met_file and namelist files
+
     # Write both namelist and met_file for each point
     for pt in ds.point_id.values:
+
+        write_fsm2oshd_met()
         write_namelist()
-        write_fsm2_met()
 
 def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     """
