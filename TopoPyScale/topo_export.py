@@ -414,13 +414,26 @@ def to_fsm2oshd(ds_down,
 
     # ----- Loop through all points -----
     for pt in ds.point_id.values:
-        fname_namlst_forest = f'fsm_namlst_{str(pt).zfill(n_digits)}.nam'
+        fname_namlst_forest = f'fsm_namlst_{str(pt).zfill(n_digits)}_forest.nam'
+        fname_namlst_open = f'fsm_namlst_{str(pt).zfill(n_digits)}_open.nam'
 
         ds_pt = ds.sel(point_id=pt).copy()
         row = df_centroids.loc[df_centroids.pt]
         write_fsm2oshd_met(ds_pt, ds_param, pt_name)
-        write_fsm2oshd_namelist(row, , mode='open', namelist_param=namelist_param) # write open namelist
-        write_fsm2oshd_namelist(mode='forest', namelist_param=namelist_param ) # write forest namelist
+        write_fsm2oshd_namelist(row,
+                                file_namelist=fname_namlst_open ,
+                                file_met=,
+                                file_output=,
+                                mode='open',
+                                namelist_options=namelist_param) # write open namelist
+        write_fsm2oshd_namelist(row,
+                                file_namelist=fname_namlst_forest ,
+                                file_met=,
+                                file_output=,
+                                mode='forest',
+                                namelist_options=namelist_param) # write forest namelist
+
+        # [ ] add logic to computed weighted average outputs based on forest cover fraction per point.
 
     return
 
