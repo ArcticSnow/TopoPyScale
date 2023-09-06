@@ -232,6 +232,12 @@ def to_fsm2oshd(ds_down,
                 ds_tvt,
                 namelist_param=None ):
     '''
+    Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
+    FSM2oshd includes canopy structures processes
+    one simulation consists of 2 driving file:
+       - met.txt with variables:
+           year, month, day, hour, SWb, SWd, LW, Sf, Rf, Ta, RH, Ua, Ps, Sf24h, Tvt
+       - param.nam with canopy and model constants. See https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/runner.py#L10
 
     Args:
         ds_down:  Downscaled weather variable dataset
@@ -241,84 +247,97 @@ def to_fsm2oshd(ds_down,
         namelist_param (dict): {'precip_multiplier':1, 'max_sd':4,'z_snow':[0.1, 0.2, 0.4], 'z_soil':[0.1, 0.2, 0.4, 0.8]}
 
     '''
-    # Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
-    # FSM2oshd includes canopy structures processes
-    # one simulation consists of 2 driving file:
-    #   - met.txt with variables:
-    #       year, month, day, hour, SWb, SWd, LW, Sf, Rf, Ta, RH, Ua, Ps, Sf24h, Tvt
-    #   - param.nam with canopy and model constants. See https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/runner.py#L10
-    #
 
-    def write_namelist(row_centroids,
-                       file_namelist,
-                       file_met,
-                       file_output,
-                       precip_multi=1,
-                       max_sd=4,
-                       z_snow=[0.1, 0.2, 0.4],
-                       z_soil=[0.1, 0.2, 0.4, 0.8]):
+
+    def write_fsm2oshd_namelist(row_centroids,
+                                file_namelist,
+                                file_met,
+                                file_output,
+                                mode='forest',
+                                precip_multi=1,
+                                max_sd=4,
+                                z_snow=[0.1, 0.2, 0.4],
+                                z_soil=[0.1, 0.2, 0.4, 0.8],
+                                z_tair=2,
+                                z_wind=10,
+                                diag_var_outputs = ['rotc', 'hsnt', 'swet', 'slqt',  'romc', 'sbsc'],
+                                state_var_outputs=[]):
         # Function to write namelist file (.nam) for each point where to run FSM.
-        # TODO:
-        #  - [ ] review all variables of the namelist file. for instance lat lon, dem ... what are those for?
 
-        # add a check if file_met exist before creating namelist file
+        if fsm_mode == 'forest':
+            # Values compatible with 'forest' mode
+            canmod = 1
+            turbulent_exchange = 2
+            z_offset = 0
+            fveg = row.fveg
+            hcan = row.hcan
+            lai = row.lai
+            vfhp = row.vfhp
+
+        else:
+            # default values for 'open' mode
+            canmod = 0
+            turbulent_exchange = 1
+            z_offset, fveg, hcan, lai, vfhd= 0, 0, 0, 0, 1
+
+
         if os.path.exists(file_met):
             nlst = f"""
 &nam_grid
-  NNx = 1,   
-  NNy = 1,   
-  NNsmax = {max_sd},   # max snow depth?
-  NNsoil = 4,          # ?
+  NNx = 1,                          ! Grid x-indexing. Not relevant with this implementation
+  NNy = 1,                          ! Grid y-indexing. Not relevant with this implementation
+  NNsmax = {len(z_snow)},           ! Number snow layers. Default 3-layers
+  NNsoil = {len(z_soil)},           ! Number soil layers. Default 4-layers
 /
 &nam_layers
-  DDzsnow = {z_snow[0]}, {z_snow[1]}, {z_snow[2]},     # is this forced to 3 layers?
-  DDzsoil = {z_soil[0]}, {z_soil[1]}, {z_soil[2]}, {z_soil[3]}   # is this forced to 4 layers?
+  DDzsnow = {', '.join(z_snow)},    ! Minimum thickness to define a new snow layer
+  DDzsoil = {', '.join(z_soil)},    ! soil layer thickness
 /
 &nam_driving
-  zzT = 10,  # ?
-  zzU = 10,  # ?
-  met_file = {file_met},
-  out_file = {output_file},
+  zzT = {z_tair},                   ! Height of temperature forcing (2 or 10m)
+  zzU = {z_wind},                   ! Height of wind forcing (2 or 10m)
+  met_file = {file_met},            ! name of met file associatied to this namelist
+  out_file = {output_file},         ! name of output file for this FSM2oshd simulation
 /
 &nam_modconf
-  NALBEDO = {row.albedo},
-  NCANMOD = {row.canmod},
-  NCONDCT = {row.condct},
-  NDENSTY = {row.density},
-  NEXCHNG = {row.exchange},
-  NHYDROL = {row.hydrol},
-  NSNFRAC = 3,          # ?
-  NRADSBG = 0,          # ?
-  NZOFFST = 0,          # ?
-  NOSHDTN = 1,          # ?
-  LHN_ON  = .FALSE.,    # ?
-  LFOR_HN = .TRUE.,     # ?
+  NALBEDO = {row.albedo},           ! albedo parametrization (special one for oshd)
+  NCANMOD = {canmod},               ! canopy is switch ON/OFF. must sync to CTILE param (open vs. forest).
+  NCONDCT = {row.condct},           ! thermal conductivity (from original FSM)
+  NDENSTY = {row.density},          ! densification module 
+  NEXCHNG = {turbulent_exchange},   ! option for turbulent heat exchange (need in sync  with in forest or in open)
+  NHYDROL = {row.hydrol},           ! water transport through snowpack
+  NSNFRAC = 3,                      ! fractional snow cover (consider pathciness during melt or not). relevant for large scale run
+  NRADSBG = 0,                      ! ignore
+  NZOFFST = {z_offset},             ! 0 for above ground, 1 for above canopy. Z-offset for temperature and wind forcing. in sync with 'open' or 'forest'
+  NOSHDTN = 0,                      ! switch if compensate for elevation precipitation lapse rate. Relevant for swiss operational model. Turn on if systematic bias of not enough snow in high elevation
+  LHN_ON  = .FALSE.,                ! irrelevant for none operational setup. keep to false
+  LFOR_HN = .FALSE.,                ! irrelevant for none operational setup. keep to false
 /
 &nam_modpert
-  LZ0PERT = .FALSE.,   # ?
+  LZ0PERT = .FALSE.,                ! switch for perturbation run. Not available, in development...
 /
 &nam_modtile
-  CTILE = 'open',      # ?
-  rtthresh = 0.1,       # ?
+  CTILE = {fsm_mode},               !  open or forest mode to run FSM
+  rtthresh = 0.1,                   ! threshold of forest cover fraction at which to run forest mode. relevant when run in a grid setup. Not relevant here.
 /
-&nam_results
-   CLIST_DIAG_RESULTS = 'rotc', 'hsnt', 'swet', 'slqt', 'swtb', 'swtd', 'lwtr', 'romc', 'sbsc',   # need all?
-   CLIST_STATE_RESULTS = 'tsfe', 'scfe',                                                          # need all?
+&nam_results                        ! https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/src/core/MODULES.F90#L80
+   CLIST_DIAG_RESULTS = {', '.join(diag_var_outputs)},   ! need all?   
+   CLIST_STATE_RESULTS = {', '.join(state_var_outputs)}, ! try if can be deleted
 /
 &nam_location
-  fsky_terr = {row.svf},   # terrain svf
-  slopemu = {row.slope},   # slope in rad?
-  xi = 0,   # ?
-  Ld = 1,   # ?
-  lat = {row.latitude}, # duniim
-  lon = {row.longitude},  #dynamic
-  dem = {row.elevation},  #elevation?
-  pmultf = {precip_multi},  # precip multiplier
-  fveg = {row.fveg},  #from Clare
-  hcan = {row.hcan},  #from Clare
-  lai = {row.lai},   #from Clare
-  vfhp = {row.vfhp},  #from Clare
-  fves = 0,  #from Clare?
+  fsky_terr = {row.svf},            ! terrain svf 
+  slopemu = {row.slope},            ! slope in rad
+  xi = 0,                           ! to be ignored. relevant coarse scale run. see Nora's paper
+  Ld = {row.gridsize},              ! grid cell size in meters (used in snow fractional cover) linked to Nora's paper
+  lat = {row.latitude},             ! DD.DDD
+  lon = {row.longitude},            ! DD.DDD
+  dem = {row.elevation},            ! elevation
+  pmultf = {precip_multi},          ! precip multiplier default 1
+  fveg = {fveg},                    ! local canopy cover fraction (set to 0 in open)
+  hcan = {hcan},                    ! canopy height (meters) (set to 0 in open)
+  lai = {lai},                      ! Leaf area index  (set to 0 in open)
+  vfhp = {vfhp},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
+  fves = {row.fves},                ! canopy cover fraction (larger area)
 /
   """
 
@@ -350,12 +369,15 @@ def to_fsm2oshd(ds_down,
     # 1. Convert Clare's canopy output to FSM2oshd parametrization
     # 2. Extract cluster canopy and forest cover weights from ds_param_canopy
     # 3. loop through clusters and write met_file and namelist files
+    # - 2 sets of FSM run, one with forest, another one without. Need to combine both output into a final value for the cluster centroid
 
     # Write both namelist and met_file for each point
     for pt in ds.point_id.values:
 
         write_fsm2oshd_met()
-        write_namelist()
+        write_fsm2oshd_namelist() # write open namelist
+        write_fsm2oshd_namelist() # write forest namelist
+
 
 def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     """
