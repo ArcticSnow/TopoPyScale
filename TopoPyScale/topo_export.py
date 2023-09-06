@@ -18,6 +18,7 @@ from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
+from pathlib import Path
 
 
 def compute_scaling_and_offset(da, n=16):
@@ -230,6 +231,7 @@ def to_fsm2oshd(ds_down,
                 ds_param_canop,
                 df_centroids,
                 ds_tvt,
+                path='outputs/',
                 namelist_param=None ):
     '''
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
@@ -248,21 +250,15 @@ def to_fsm2oshd(ds_down,
 
     '''
 
-
     def write_fsm2oshd_namelist(row_centroids,
                                 file_namelist,
                                 file_met,
                                 file_output,
                                 mode='forest',
-                                precip_multi=1,
-                                max_sd=4,
-                                z_snow=[0.1, 0.2, 0.4],
-                                z_soil=[0.1, 0.2, 0.4, 0.8],
-                                z_tair=2,
-                                z_wind=10,
-                                diag_var_outputs = ['rotc', 'hsnt', 'swet', 'slqt',  'romc', 'sbsc'],
-                                state_var_outputs=[]):
+                                namelist_options=None):
         # Function to write namelist file (.nam) for each point where to run FSM.
+
+        for k, v in namelist_param.items(): exec(k+'=v')
 
         if fsm_mode == 'forest':
             # Values compatible with 'forest' mode
@@ -348,7 +344,10 @@ def to_fsm2oshd(ds_down,
             return
 
 
-    def write_fsm2oshd_met():
+    def write_fsm2oshd_met(ds_pt,
+                           ds_param,
+                           df_centroids,
+                           df_canopy):
         '''
         Function to write meteorological forcing for FSM
 
@@ -363,7 +362,32 @@ def to_fsm2oshd(ds_down,
         print('TBI')
         n_digits = 2
 
-        return
+        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_id=pt).copy()
+        df = pd.DataFrame()
+        df['year'] = pd.to_datetime(ds_pt.time.values).year
+        df['month']  = pd.to_datetime(ds_pt.time.values).month
+        df['day']  = pd.to_datetime(ds_pt.time.values).day
+        df['hr']  = pd.to_datetime(ds_pt.time.values).hour
+        df['SWb'] = ds_pt.SW.values             # change to direct SW
+        df['SWd'] = ds_pt.SW.values             # change to diffuse SW
+        df['LW'] = ds_pt.LW.values
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
+        df['snowfall'] = snow / 3600
+        df['rainfall'] = rain / 3600
+        df['Tair'] = np.round(ds_pt.t.values, 2)
+        df['RH'] = rh * 100
+        df['speed'] = ds_pt.ws.values
+        df['p'] = ds_pt.p.values
+        df['sf24'] = df.snowfall.rolling('24').sum()   # hardcoded sum over last 24h [mm]
+
+        # code to pick transmissivity based on Julian date, and cluster/point ID, (think about leap years)
+        df['tvt'] = ds_param.transmissivity.sel()
+
+        df.to_csv(foutput, index=False, header=False, sep=' ')
+        print('---> Met file {} saved'.format(foutput))
+
 
     # 0. Add print statements about the need of data currently computed extrenally to TopoPyScale.
     # 1. Convert Clare's canopy output to FSM2oshd parametrization
@@ -371,15 +395,36 @@ def to_fsm2oshd(ds_down,
     # 3. loop through clusters and write met_file and namelist files
     # - 2 sets of FSM run, one with forest, another one without. Need to combine both output into a final value for the cluster centroid
 
-    # Write both namelist and met_file for each point
+    # ----- sample canopy propoerties from df_canopy -----
+
+
+
+    # ----- unpack and overwrite namelist_options ----
+    # default namelist_param values
+    namelist_param = { 'precip_multi':1,
+                       'max_sd':4,
+                       'z_snow':[0.1, 0.2, 0.4],
+                       'z_soil':[0.1, 0.2, 0.4, 0.8],
+                       'z_tair':2,
+                       'z_wind':10,
+                       'diag_var_outputs' : ['rotc', 'hsnt', 'swet', 'slqt',  'romc', 'sbsc'],
+                       'state_var_outputs':['']}
+    if namelist_options is not None:
+        namelist_param.update(namelist_options)
+
+    # ----- Loop through all points -----
     for pt in ds.point_id.values:
+        fname_namlst_forest = f'fsm_namlst_{str(pt).zfill(n_digits)}.nam'
 
-        write_fsm2oshd_met()
-        write_fsm2oshd_namelist() # write open namelist
-        write_fsm2oshd_namelist() # write forest namelist
+        ds_pt = ds.sel(point_id=pt).copy()
+        row = df_centroids.loc[df_centroids.pt]
+        write_fsm2oshd_met(ds_pt, ds_param, pt_name)
+        write_fsm2oshd_namelist(row, , mode='open', namelist_param=namelist_param) # write open namelist
+        write_fsm2oshd_namelist(mode='forest', namelist_param=namelist_param ) # write forest namelist
 
+    return
 
-def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
+def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n_digits=None):
     """
     Function to export data for FSM.
 
@@ -400,10 +445,8 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous'):
     - Check format is compatible with compiled model DONE jf
     - ensure ds.point_id.values always
     """
-
-    #n_digits = len(str(ds.point_id.values.max()))
-    # always set this as 3  simplifies parsing files later on
-    n_digits = 2
+    if n_digits is None:
+        n_digits = len(str(ds.point_id.values.max())) + 1
 
     for pt in ds.point_id.values:
         foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
