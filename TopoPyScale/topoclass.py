@@ -349,7 +349,7 @@ class Topoclass(object):
                 self.extract_topo_cluster_param()
             elif self.config.sampling.method == 'both':
 
-                # implement the case one wann run both toposub and a list of points
+                # implement the case one want to run both toposub and a list of points
                 print('ERROR: method not yet implemented')
 
             else:

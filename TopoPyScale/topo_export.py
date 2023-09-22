@@ -229,10 +229,12 @@ def to_cryogrid(ds,
 
 def to_fsm2oshd(ds_down,
                 ds_param_canop,
+                fsm_param,
                 df_centroids,
                 ds_tvt,
                 path='outputs/',
-                namelist_param=None ):
+                namelist_param=None,
+                n_digits=None):
     '''
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
@@ -255,7 +257,7 @@ def to_fsm2oshd(ds_down,
                                 file_met,
                                 file_output,
                                 mode='forest',
-                                namelist_options=None):
+                                namelist_param=None):
         # Function to write namelist file (.nam) for each point where to run FSM.
 
         for k, v in namelist_param.items(): exec(k+'=v')
@@ -345,9 +347,8 @@ def to_fsm2oshd(ds_down,
 
 
     def write_fsm2oshd_met(ds_pt,
-                           ds_param,
-                           df_centroids,
-                           df_canopy):
+                           ds_tvt,
+                           n_digits):
         '''
         Function to write meteorological forcing for FSM
 
@@ -356,11 +357,9 @@ def to_fsm2oshd(ds_down,
             2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
 
         year month  day   hour  SWb   SWd  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
-    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
+        (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
 
         '''
-        print('TBI')
-        n_digits = 2
 
         foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
@@ -383,7 +382,7 @@ def to_fsm2oshd(ds_down,
         df['sf24'] = df.snowfall.rolling('24').sum()   # hardcoded sum over last 24h [mm]
 
         # code to pick transmissivity based on Julian date, and cluster/point ID, (think about leap years)
-        df['tvt'] = ds_param.transmissivity.sel()
+        #df['tvt'] = ds_tvt.tvt.sel()
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print('---> Met file {} saved'.format(foutput))
@@ -395,10 +394,6 @@ def to_fsm2oshd(ds_down,
     # 3. loop through clusters and write met_file and namelist files
     # - 2 sets of FSM run, one with forest, another one without. Need to combine both output into a final value for the cluster centroid
 
-    # ----- sample canopy propoerties from df_canopy -----
-
-
-
     # ----- unpack and overwrite namelist_options ----
     # default namelist_param values
     namelist_param = { 'precip_multi':1,
@@ -409,27 +404,39 @@ def to_fsm2oshd(ds_down,
                        'z_wind':10,
                        'diag_var_outputs' : ['rotc', 'hsnt', 'swet', 'slqt',  'romc', 'sbsc'],
                        'state_var_outputs':['']}
-    if namelist_options is not None:
-        namelist_param.update(namelist_options)
+    if namelist_param is not None:
+        namelist_param.update(namelist_param)
 
+    if n_digits is None:
+        n_digits = len(str(ds.point_id.values.max())) + 1
+
+    # extract FSM forest parameters for each clusters
+    fsm_param['cluster_labels'] = mp.toposub.ds_param.cluster_labels
+    df_centroids = pd.concat([mp.toposub.df_centroids, fsm_param.groupby('cluster_labels').mean().to_dataframe()], axis=1)
+
+    # rename variable columns to match namelist functino varnames
+    new_name = {'LAI5':'lai5', 'LAI50':'lai50', 'vf':'vfhd', 'cc5':'fveg', 'cc50':'fves', 'mch5':'hcan'}
+    df_centroids = df_centroids.rename(new_name)
+ 
     # ----- Loop through all points -----
-    for pt in ds.point_id.values:
+    for pt in ds_down.point_id.values:
         fname_namlst_forest = f'fsm_namlst_{str(pt).zfill(n_digits)}_forest.nam'
         fname_namlst_open = f'fsm_namlst_{str(pt).zfill(n_digits)}_open.nam'
 
-        ds_pt = ds.sel(point_id=pt).copy()
+        ds_pt = ds_down.sel(point_id=pt).copy()
         row = df_centroids.loc[df_centroids.pt]
-        write_fsm2oshd_met(ds_pt, ds_param, pt_name)
+        write_fsm2oshd_met(ds_pt, ds_param, pt_name, n_digits=n_digits)
         write_fsm2oshd_namelist(row,
                                 file_namelist=fname_namlst_open ,
-                                file_met=,
-                                file_output=,
+                                file_met=None,
+                                file_output=None,
                                 mode='open',
-                                namelist_options=namelist_param) # write open namelist
+                                namelist_param=namelist_param,
+                                n_digits=n_digits) # write open namelist
         write_fsm2oshd_namelist(row,
                                 file_namelist=fname_namlst_forest ,
-                                file_met=,
-                                file_output=,
+                                file_met=None,
+                                file_output=None,
                                 mode='forest',
                                 namelist_options=namelist_param) # write forest namelist
 
