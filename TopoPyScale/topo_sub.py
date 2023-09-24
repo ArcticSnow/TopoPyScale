@@ -19,6 +19,8 @@ from matplotlib.colors import LightSource
 from matplotlib import pyplot as plt
 import numpy as np
 import time
+from typing import Union, Optional
+from pathlib import Path
 
 
 def ds_to_indexed_dataframe(ds):
@@ -279,7 +281,8 @@ def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=p
     plt.show()
 
 
-def write_landform(dem_file, df_param, project_directory='./'):
+def write_landform(dem_file, df_param, project_directory='./', out_dir: Optional[Union[str, Path]] = None,
+                   out_name: Optional[str] = None) -> Union[str, Path]:
     """
     Function to write a landform file which maps cluster ids to dem pixels
     
@@ -287,6 +290,19 @@ def write_landform(dem_file, df_param, project_directory='./'):
         dem_file (str): path to dem raster file
         ds_param (dataset): topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     """
+    # derive output path
+    if out_name is None:
+        out_name = 'landform.tif'
+    if out_dir is None:
+        out_dir = project_directory
+        out_path = project_directory + 'outputs/landform.tif'
+    else:
+        if isinstance(out_dir, str):
+            out_dir = Path(out_dir)
+
+        out_path = out_dir / out_name
+
+    # read dem
     with rasterio.open(dem_file) as dem:
         shape = dem.shape
         profile = dem.profile
@@ -302,8 +318,10 @@ def write_landform(dem_file, df_param, project_directory='./'):
             nodata=-999,
             compress='lzw')
 
-        with rasterio.open(project_directory + 'outputs/landform.tif', 'w', **profile) as dst:
+        with rasterio.open(out_path, 'w', **profile) as dst:
             dst.write(myarray.astype(rasterio.int16), 1)
 
     # At the end of the ``with rasterio.Env()`` block, context
     # manager exits and all drivers are de-registered.
+
+    return out_path
