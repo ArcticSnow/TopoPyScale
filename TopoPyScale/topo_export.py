@@ -315,8 +315,8 @@ def to_fsm2oshd(ds_down,
 &nam_driving
   zzT = {z_tair},                   ! Height of temperature forcing (2 or 10m)
   zzU = {z_wind},                   ! Height of wind forcing (2 or 10m)
-  met_file = {file_met},            ! name of met file associatied to this namelist
-  out_file = {file_output},         ! name of output file for this FSM2oshd simulation
+  met_file = '{file_met}',            ! name of met file associatied to this namelist
+  out_file = '{file_output}',         ! name of output file for this FSM2oshd simulation
 /
 &nam_modconf
   NALBEDO = {modconf.get('albedo')},           ! albedo parametrization (special one for oshd)
@@ -336,27 +336,27 @@ def to_fsm2oshd(ds_down,
   LZ0PERT = .FALSE.,                ! switch for perturbation run. Not available, in development...
 /
 &nam_modtile
-  CTILE = {mode},               !  open or forest mode to run FSM
+  CTILE = '{mode}',               !  open or forest mode to run FSM
   rtthresh = 0.1,                   ! threshold of forest cover fraction at which to run forest mode. relevant when run in a grid setup. Not relevant here.
 /
 &nam_results                        ! https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/src/core/MODULES.F90#L80
-   CLIST_DIAG_RESULTS = {', '.join(i for i in diag_var_outputs)},   ! need all?   
-   CLIST_STATE_RESULTS = {', '.join(i for i in state_var_outputs)}, ! try if can be deleted
+   CLIST_DIAG_RESULTS = {', '.join(f"'{i}'" for i in diag_var_outputs)},   ! need all?   
+   CLIST_STATE_RESULTS = {', '.join(f"'{i}'" for i in state_var_outputs)}, ! try if can be deleted
 /
 &nam_location
-  fsky_terr = {row.svf},            ! terrain svf 
-  slopemu = {row.slope},            ! slope in rad
+  fsky_terr = {np.round(row.svf,3)},            ! terrain svf 
+  slopemu = {np.round(row.slope,3)},            ! slope in rad
   xi = 0,                           ! to be ignored. relevant coarse scale run. see Nora's paper
-  Ld = {row.cluster_size},              ! grid cell size in meters (used in snow fractional cover) linked to Nora's paper
-  lat = {row.lat},             ! DD.DDD
-  lon = {row.lon},            ! DD.DDD
-  dem = {row.elevation},            ! elevation
+  Ld = {np.round(row.cluster_size,3)},              ! grid cell size in meters (used in snow fractional cover) linked to Nora's paper
+  lat = {np.round(row.lat,3)},             ! DD.DDD
+  lon = {np.round(row.lon,3)},            ! DD.DDD
+  dem = {np.round(row.elevation,0)},            ! elevation
   pmultf = {precip_multi},          ! precip multiplier default 1
-  fveg = {fveg},                    ! local canopy cover fraction (set to 0 in open)
-  hcan = {hcan},                    ! canopy height (meters) (set to 0 in open)
-  lai = {lai},                      ! Leaf area index  (set to 0 in open)
-  vfhp = {vfhp},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
-  fves = {row.fves},                ! canopy cover fraction (larger area)
+  fveg = {np.round(fveg,3)},                    ! local canopy cover fraction (set to 0 in open)
+  hcan = {np.round(hcan,3)},                    ! canopy height (meters) (set to 0 in open)
+  lai = {np.round(lai,2)},                      ! Leaf area index  (set to 0 in open)
+  vfhp = {np.round(vfhp,3)},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
+  fves = {np.round(row.fves,3)},                ! canopy cover fraction (larger area)
 /
   """
 
@@ -390,21 +390,24 @@ def to_fsm2oshd(ds_down,
         df['month']  = pd.to_datetime(ds_pt.time.values).month
         df['day']  = pd.to_datetime(ds_pt.time.values).day
         df['hr']  = pd.to_datetime(ds_pt.time.values).hour
-        df['SWb'] = ds_pt.SW_direct.values              # change to direct SW
-        df['SWd'] = ds_pt.SW_diffuse.values             # change to diffuse SW
-        df['LW'] = ds_pt.LW.values
+        df['SWb'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
+        df['SWd'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
+        df['LW'] = np.round(ds_pt.LW.values,2)
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
-        df['snowfall'] = snow / 3600
-        df['rainfall'] = rain / 3600
+        df['snowfall'] = np.round(snow / 3600, 5)
+        df['rainfall'] = np.round(rain / 3600, 5)
         df['Tair'] = np.round(ds_pt.t.values, 2)
-        df['RH'] = rh * 100
-        df['speed'] = ds_pt.ws.values
-        df['p'] = ds_pt.p.values
-        #df['sf24'] = df.snowfall.rolling('24').sum()   # hardcoded sum over last 24h [mm]
+        df['RH'] = np.round(rh * 100,2)
+        df['speed'] = np.round(ds_pt.ws.values,2)
+        df['p'] = np.round(ds_pt.p.values,2)
 
-        # code to pick transmissivity based on Julian date, and cluster/point ID, (think about leap years)
-        #df['tvt'] = ds_tvt.tvt.sel()
+        arr = df.snowfall.rolling(24).sum()  # hardcoded sum over last 24h [mm]
+        arr.loc[np.isnan(arr)] = 0
+        df['sf24'] = np.round(arr*3600,3)
+
+        ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
+        df['tvt'] = np.round(tvt_pt.sel(time=ds_pt.t_iter.values).tvt.values,4)
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print(f'---> Met file {foutput} saved')
@@ -441,10 +444,12 @@ def to_fsm2oshd(ds_down,
     df_centroids = df_centroids.rename(columns=new_name)
     print(df_centroids)
  
-    # ----- Loop through all points -----
+    # ----- Loop through all points-------
+    # NOTE: eventually this for loop could be parallelized to several cores -----
     for pt in ds_down.point_id.values:
 
         ds_pt = ds_down.sel(point_id=pt).copy()
+        tvt_pt = ds_tvt.sel(cluster_labels=pt).copy()
         row = df_centroids.loc[pt]
         write_fsm2oshd_met(ds_pt,
                            ds_tvt=ds_tvt,
@@ -463,7 +468,8 @@ def to_fsm2oshd(ds_down,
                                 fname_format=fname_format,
                                 mode='forest',
                                 namelist_param=namelist_param) # write forest namelist
-
+        ds_pt = None
+        tvt_pt = None
         # [ ] add logic to computed weighted average outputs based on forest cover fraction per point.
 
     return
