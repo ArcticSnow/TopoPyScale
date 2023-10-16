@@ -282,16 +282,22 @@ def to_fsm2oshd(ds_down,
         z_wind = namelist_param.get('z_wind')
         diag_var_outputs = namelist_param.get('diag_var_outputs')
         state_var_outputs = namelist_param.get('state_var_outputs')
+        
+        if (row.fveg.max()>10) | (row.lai5 > 10):
+            scale = 100
+        else:
+            scale = 1
+
 
         if mode == 'forest':
             # Values compatible with 'forest' mode
             canmod = 1
             turbulent_exchange = 2
-            z_offset = 0
-            fveg = row.fveg
-            hcan = row.hcan
-            lai = row.lai5
-            vfhp = row.vfhp
+            z_offset = 1
+            fveg = row.fveg/scale
+            hcan = row.hcan/scale
+            lai = row.lai5/scale
+            vfhp = row.vfhp/scale
 
         else:
             # default values for 'open' mode
@@ -356,7 +362,7 @@ def to_fsm2oshd(ds_down,
   hcan = {np.round(hcan,3)},                    ! canopy height (meters) (set to 0 in open)
   lai = {np.round(lai,2)},                      ! Leaf area index  (set to 0 in open)
   vfhp = {np.round(vfhp,3)},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
-  fves = {np.round(row.fves,3)},                ! canopy cover fraction (larger area)
+  fves = {np.round(row.fves/scale,3)},                ! canopy cover fraction (larger area)
 /
   """
 
@@ -383,6 +389,12 @@ def to_fsm2oshd(ds_down,
         (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
 
         '''
+        
+        # for storage optimization tvt is stored in percent.
+        if ds_tvt.tvt.max()>10:
+            scale_tvt = 100
+        else:
+            scale_tvt = 1
 
         foutput = fname_format + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
         df = pd.DataFrame()
@@ -395,8 +407,8 @@ def to_fsm2oshd(ds_down,
         df['LW'] = np.round(ds_pt.LW.values,2)
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
-        df['snowfall'] = np.round(snow / 3600, 5)
-        df['rainfall'] = np.round(rain / 3600, 5)
+        df['snowfall'] = np.round(snow, 5)
+        df['rainfall'] = np.round(rain, 5)
         df['Tair'] = np.round(ds_pt.t.values, 2)
         df['RH'] = np.round(rh * 100,2)
         df['speed'] = np.round(ds_pt.ws.values,2)
@@ -404,10 +416,10 @@ def to_fsm2oshd(ds_down,
 
         arr = df.snowfall.rolling(24).sum()  # hardcoded sum over last 24h [mm]
         arr.loc[np.isnan(arr)] = 0
-        df['sf24'] = np.round(arr*3600,3)
+        df['sf24'] = np.round(arr,3)
 
         ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        df['tvt'] = np.round(tvt_pt.sel(time=ds_pt.t_iter.values).tvt.values,4)
+        df['tvt'] = np.round(tvt_pt.sel(time=ds_pt.t_iter.values).tvt.values,4)/scale_tvt
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print(f'---> Met file {foutput} saved')
@@ -428,7 +440,7 @@ def to_fsm2oshd(ds_down,
                        'z_tair':2,
                        'z_wind':10,
                        'diag_var_outputs' : ['rotc', 'hsnt', 'swet', 'slqt',  'romc', 'sbsc'],
-                       'state_var_outputs':['']}
+                       'state_var_outputs':['Tsrf', 'Sveg', 'Ds']}
     if namelist_options is not None:
         namelist_param.update(namelist_options)
 
@@ -436,6 +448,8 @@ def to_fsm2oshd(ds_down,
         n_digits = len(str(ds_down.point_id.values.max())) + 1
 
     # extract FSM forest parameters for each clusters
+    
+    # TODO: canopy parameters are to be average for the forest cover only, exclude pixels with forest from averaging. Correct code here:
     df_centroids = pd.concat([df_centroids, fsm_param.groupby('cluster_labels').mean().to_dataframe()], axis=1)
     df_centroids['cluster_size'] = np.sqrt(fsm_param.groupby('cluster_labels').count().to_dataframe().LAI5)*np.diff(fsm_param.x.values).mean()
 
