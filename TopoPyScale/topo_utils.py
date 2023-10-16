@@ -16,8 +16,8 @@ def multicore_pooling(fun, fun_param, n_cores):
     Function to perform multiprocessing on n_cores
     Args:
         fun (obj): function to distribute
-        fun_param zip(list): zip list of functino arguments
-        n_core (int): number o cores
+        fun_param zip(list): zip list of function arguments
+        n_core (int): number of cores
     '''
     if n_cores is None:
         n_cores = mproc.cpu_count() - 2

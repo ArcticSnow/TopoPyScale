@@ -11,7 +11,7 @@ TODO:
 
 
 '''
-
+from TopoPyScale import topo_utils as tu
 from pathlib import Path
 import glob, os
 
@@ -70,5 +70,5 @@ def fsm2oshd_sim_parallel(fsm_forest_nam='fsm_sim/fsm__forest*.nam',
             os.remove(file)
 
 def combine_outputs(df_centroids, fname='fsm_sim/fsm__ou*.txt'):
-    
+
     return

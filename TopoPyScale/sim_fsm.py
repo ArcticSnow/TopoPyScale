@@ -7,12 +7,10 @@ TODO:
 """
 import os, re
 import glob
-import re
 import pandas as pd
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
-from matplotlib import pyplot as plt
 import xarray as xr
 #from TopoPyScale import topo_da as da
 import matplotlib.pyplot as plt
@@ -133,7 +131,7 @@ def to_netcdf(fname_fsm_sim, complevel=9):
     ds.snd.attrs = {'units':'m', 'standard_name':'snd', 'long_name':'Average snow depth', '_FillValue': -9999999.0}
     ds.swe.attrs = {'units':'kg m-2', 'standard_name':'swe', 'long_name':'Average snow water equivalent', '_FillValue': -9999999.0}
     ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_surface', 'long_name':'Average surface temperature', '_FillValue': -9999999.0}
-    ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_soil', 'long_name':'Average soil temperature at 20 cm depth', '_FillValue': -9999999.0}
+    ds.t_soil.attrs = {'units':'°C', 'standard_name':'t_soil', 'long_name':'Average soil temperature at 20 cm depth', '_FillValue': -9999999.0}
     ds.attrs = {'title':'FSM simulation outputs',
                 'source': 'Data downscaled with TopoPyScale and simulated with FSM',
                 'package_version':ver_dict.get('package_version'),
