@@ -572,9 +572,6 @@ class Topoclass(object):
                                      fname,
                                      self.config.project.CPU_cores)
 
-            # Concatenate time-splitted outputs along time-dimension
-            # TODO: modify code below to concatenate to be parallelized.
-
             for pt_id in self.toposub.df_centroids.point_id.values:
                 print(f'Concatenating point {pt_id}')
                 filename = Path(f_pattern.replace('*', pt_id))
@@ -591,6 +588,19 @@ class Topoclass(object):
                 flist = glob.glob(f'{self.config.outputs.downscaled}/{fpat}')
                 for file in flist:
                     os.remove(file)
+
+            # concatenate ds solar
+            print('concatenating solar files')
+            out_solar_name = Path(self.config.outputs.file.ds_solar)
+            solar_pattern = f'{out_solar_name.stem}_*{out_solar_name.suffix}'
+            solar_flist = sorted(self.config.outputs.path.glob(solar_pattern))
+            ds_solar_list = [xr.open_dataset(file, engine='h5netcdf') for file in solar_flist]
+            fout = Path(self.config.outputs.path, out_solar_name)
+            ds = xr.concat(ds_solar_list, dim='time')
+            ds.to_netcdf(fout, engine='h5netcdf')
+            [f.unlink() for f in solar_flist]  # delete tmp solar files
+            print('solar files concatenated')
+            del ds
 
         else:
             ta.downscale_climate(self.config.project.directory,
