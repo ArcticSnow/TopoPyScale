@@ -294,19 +294,23 @@ def write_landform(dem_file, df_param, project_directory='./', out_dir: Optional
     if out_name is None:
         out_name = 'landform.tif'
     if out_dir is None:
-        out_dir = project_directory
-        out_path = project_directory + 'outputs/landform.tif'
+        out_dir = Path(project_directory) / 'outputs'
+        out_name = 'landform.tif'
     else:
         if isinstance(out_dir, str):
             out_dir = Path(out_dir)
 
-        out_path = out_dir / out_name
+    out_path = out_dir / out_name
 
     # read dem
     with rasterio.open(dem_file) as dem:
         shape = dem.shape
         profile = dem.profile
     myarray = np.reshape(df_param.cluster_labels.values, shape)
+
+    # replace nan with number
+    nodata = -1
+    myarray = np.nan_to_num(myarray, nan=-1)
 
     # Register GDAL format drivers and configuration options with a
     # context manager.
@@ -315,7 +319,7 @@ def write_landform(dem_file, df_param, project_directory='./', out_dir: Optional
         profile.update(
             dtype=rasterio.int16,
             count=1,
-            nodata=-999,
+            nodata=nodata,
             compress='lzw')
 
         with rasterio.open(out_path, 'w', **profile) as dst:
