@@ -216,12 +216,7 @@ class Topoclass(object):
             ts.write_landform(self.dem_path, self.ds_param, self.project_directory)
 
     def compute_dem_param(self):
-        if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param):
-            self.toposub.ds_param = xr.open_dataset(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param)
-            print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
-        else:
-            self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
+        self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                          fname=self.config.outputs.file.ds_param,
                                                          project_directory=self.config.project.directory)
 

@@ -18,9 +18,10 @@ from topocalc import horizon
 import time
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
-import os
+import os, shutil
 from TopoPyScale import topo_export as te
 import rioxarray
+from pathlib import Path
 
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
     """
@@ -137,22 +138,41 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
         dataset: x, y, elev, slope, aspect, svf
 
     """
+    pdir = Path(project_directory)
+    file_ds = pdir / 'outputs' / fname
+    if file_ds.is_file():
+        print(f'\n---> Dataset {fname} found.')
+        ds = xr.open_dataset(file_ds)
+
+    else:
+        if Path(dem_file).is_file():
+            print(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
+            ds = rioxarray.open_rasterio(dem_file).to_dataset('band')
+            ds = ds.rename({1: 'elevation'})
+
+        else:
+            print(f'ERROR: No DEM or dataset available')
+
+    var_in = list(ds.variables.keys())
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
-    ds = rioxarray.open_rasterio(dem_file).to_dataset('band')
-    ds = ds.rename({1: 'elevation'})
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
     dem_arr = ds.elevation.values
-    print('Computing slope and aspect ...')
-    slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
-    print('Computing svf ...')
-    svf = viewf.viewf(np.double(dem_arr), dx)[0]
+    if ('slope' not in var_in) or ('aspect' not in var_in):
+        print('Computing slope and aspect ...')
+        slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
+        ds['slope'] = (["y", "x"], slope)
+        ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
+        if 'aspect_cos' not in var_in:
+            ds['aspect_cos'] = (["y", "x"], np.cos(np.deg2rad(aspect)))
+        if 'aspect_sin' not in var_in:
+            ds['aspect_sin'] = (["y", "x"], np.sin(np.deg2rad(aspect)))
 
-    ds['slope'] = (["y", "x"], slope)
-    ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
-    ds['aspect_cos'] = (["y", "x"], np.cos(np.deg2rad(aspect)))
-    ds['aspect_sin'] = (["y", "x"], np.sin(np.deg2rad(aspect)))
-    ds['svf'] = (["y", "x"], svf)
+    if 'svf' not in var_in:
+        print('Computing svf ...')
+        svf = viewf.viewf(np.double(dem_arr), dx)[0]
+        ds['svf'] = (["y", "x"], svf)
+
     ds.attrs = dict(description="DEM input parameters to TopoSub",
                    author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale")
     ds.x.attrs = {'units': 'm'}
@@ -163,7 +183,15 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
     ds.aspect_cos.attrs = {'units': 'cosinus'}
     ds.aspect_sin.attrs = {'units': 'sinus'}
     ds.svf.attrs = {'units': 'ratio', 'standard_name': 'svf', 'long_name': 'Sky view factor'}
-    te.to_netcdf(ds, fname=f'{project_directory}outputs/{fname}')
+
+    if file_ds.is_file():
+        te.to_netcdf(ds, fname=pdir / 'outputs' / 'tmp' / fname)
+        ds = None
+        shutil.move(pdir / 'outputs' / 'tmp' /fname, file_ds)
+        ds = xr.open_dataset(pdir / 'outputs' / fname)
+    else:
+        te.to_netcdf(ds, fname=pdir / 'outputs' / fname)
+
 
     return ds
 
