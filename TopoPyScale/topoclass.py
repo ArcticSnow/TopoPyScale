@@ -20,8 +20,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import xarray as xr
 import rioxarray as rio
+import xarray as xr
 from munch import DefaultMunch
 from sklearn.preprocessing import StandardScaler
 
@@ -302,6 +302,8 @@ class Topoclass(object):
         if mask_file in [None, {}]:
             mask = [True] * len(df_param)
         else:
+            if not os.path.isabs(mask_file):
+                mask_file = Path(self.config.project.directory, mask_file)
             # read mask TIFF
             ds = rio.open_rasterio(mask_file).to_dataset('band').rename({1: 'mask'})
 
@@ -322,6 +324,8 @@ class Topoclass(object):
             groups = [1]
         else:
             split_clustering = True
+            if not os.path.isabs(groups_file):
+                groups_file = Path(self.config.project.directory, groups_file)
 
             # read cluster TIFF
             ds = rio.open_rasterio(groups_file).to_dataset('band').rename({1: 'group'})
