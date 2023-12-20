@@ -16,6 +16,8 @@ import xarray as xr
 from scipy import io
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
+from TopoPyScale import topo_param as tp
+from TopoPyScale import topo_sub as ts
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 from pathlib import Path
@@ -229,12 +231,14 @@ def to_cryogrid(ds,
 
 def to_fsm2oshd(ds_down,
                 fsm_param,
-                df_centroids,
                 ds_tvt,
-                fname_format='fsm_sim/fsm_',
+                simulation_path='fsm_sim',
+                fname_format='fsm_',
                 namelist_options=None,
                 n_digits=None,
-                snow_partition_method='continuous'):
+                snow_partition_method='continuous',
+                cluster_method=True,
+                epsg_ds_param=2056):
     '''
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
@@ -245,14 +249,14 @@ def to_fsm2oshd(ds_down,
 
     Args:
         ds_down:  Downscaled weather variable dataset
-        ds_param_canop:  terrain and canopy parameter dataset
+        fsm_param:  terrain and canopy parameter dataset
         df_centroids:  cluster centroids statistics (terrain + canopy)
         ds_tvt (dataset):  transmisivity dataset
         namelist_param (dict): {'precip_multiplier':1, 'max_sd':4,'z_snow':[0.1, 0.2, 0.4], 'z_soil':[0.1, 0.2, 0.4, 0.8]}
 
     '''
 
-    def write_fsm2oshd_namelist(row_centroids,
+    def write_fsm2oshd_namelist(row,
                                 pt_name,
                                 n_digits,
                                 fname_format='fsm_sim/fsm_',
@@ -261,9 +265,9 @@ def to_fsm2oshd(ds_down,
                                 modconf=None):
         # Function to write namelist file (.nam) for each point where to run FSM.
 
-        file_namelist = fname_format + f'_{mode}_' + str(pt_name).zfill(n_digits) + '.nam'
-        file_met = fname_format + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
-        file_output = fname_format + f'_outputs_{mode}_' + str(pt_name).zfill(n_digits) + '.txt'
+        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_name).zfill(n_digits) + '.nam'
+        file_met = str(fname_format) + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
+        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_name).zfill(n_digits) + '.txt'
 
         if modconf is None:
             modconf = {
@@ -353,7 +357,7 @@ def to_fsm2oshd(ds_down,
   fsky_terr = {np.round(row.svf,3)},            ! terrain svf 
   slopemu = {np.round(row.slope,3)},            ! slope in rad
   xi = 0,                           ! to be ignored. relevant coarse scale run. see Nora's paper
-  Ld = {np.round(row.cluster_size,3)},              ! grid cell size in meters (used in snow fractional cover) linked to Nora's paper
+  Ld = {np.round(row.cluster_domain_size,3)},              ! grid cell size in meters (used in snow fractional cover) linked to Nora's paper
   lat = {np.round(row.lat,3)},             ! DD.DDD
   lon = {np.round(row.lon,3)},            ! DD.DDD
   dem = {np.round(row.elevation,0)},            ! elevation
@@ -377,7 +381,7 @@ def to_fsm2oshd(ds_down,
                            ds_tvt,
                            pt_name,
                            n_digits,
-                           fname_format='fsm_sim/fsm_*.txt'):
+                           fname_format='fsm_sim/fsm_'):
         '''
         Function to write meteorological forcing for FSM
 
@@ -391,12 +395,12 @@ def to_fsm2oshd(ds_down,
         '''
         
         # for storage optimization tvt is stored in percent.
-        if ds_tvt.tvt.max()>10:
+        if ds_tvt.for_tau.max()>10:
             scale_tvt = 100
         else:
             scale_tvt = 1
 
-        foutput = fname_format + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
+        foutput = str(fname_format) + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
         df = pd.DataFrame()
         df['year'] = pd.to_datetime(ds_pt.time.values).year
         df['month']  = pd.to_datetime(ds_pt.time.values).month
@@ -418,8 +422,8 @@ def to_fsm2oshd(ds_down,
         arr.loc[np.isnan(arr)] = 0
         df['sf24'] = np.round(arr,3)
 
-        ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        df['tvt'] = np.round(tvt_pt.sel(time=ds_pt.t_iter.values).tvt.values,4)/scale_tvt
+        #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
+        df['tvt'] = np.round(ds_tvt.sel(cluster_labels=pt_name).for_tau.values,4)/scale_tvt
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print(f'---> Met file {foutput} saved')
@@ -447,16 +451,30 @@ def to_fsm2oshd(ds_down,
     if n_digits is None:
         n_digits = len(str(ds_down.point_id.values.max())) + 1
 
-    # extract FSM forest parameters for each clusters
-    
-    # TODO: canopy parameters are to be average for the forest cover only, exclude pixels with forest from averaging. Correct code here:
-    df_centroids = pd.concat([df_centroids, fsm_param.groupby('cluster_labels').mean().to_dataframe()], axis=1)
-    df_centroids['cluster_size'] = np.sqrt(fsm_param.groupby('cluster_labels').count().to_dataframe().LAI5)*np.diff(fsm_param.x.values).mean()
+    if cluster_method:
+        # extract FSM forest parameters for each clusters
+        # Aggregate forest parameters only to fores area
+        fsm_df = ts.ds_to_indexed_dataframe(fsm_param)
+        fsm_df['lon'], fsm_df['lat'] = tp.convert_epsg_pts(fsm_df.x, fsm_df.y, epsg_ds_param, 4326)
+        df_forest = fsm_df.where(fsm_df.forcov>0.).dropna().groupby('cluster_labels').mean()
+        df_open = fsm_df.where(fsm_df.forcov==0.).dropna().groupby('cluster_labels').mean()
 
+        dx = np.abs(np.diff(fsm_param.x)[0])
+        dy = np.abs(np.diff(fsm_param.y)[0])
+
+        df_forest['cluster_total_area'] = fsm_df.groupby('cluster_labels').count().elevation.values * dx * dy
+        df_forest['proportion_with_forest'] = fsm_df.where(fsm_df.forcov > 0.).groupby('cluster_labels').count().elevation.values / fsm_df.groupby('cluster_labels').count().elevation.values
+        df_forest['cluster_domain_size'] = np.sqrt(df_forest.cluster_total_area)
+        #df_forest['cluster_domain_size'] = np.sqrt(fsm_param.drop('cluster_labels').groupby(fsm_param.cluster_labels).count().to_dataframe().LAI5)*dx
+        df_forest['forest_cover'] = fsm_param.drop('cluster_labels').groupby(fsm_param.cluster_labels).mean().forcov.values
+    else:
+        pass
+
+    p = Path(simulation_path)
     # rename variable columns to match namelist functino varnames
-    new_name = {'LAI5':'lai5', 'LAI50':'lai50', 'vf':'vfhp', 'cc5':'fveg', 'cc50':'fves', 'mch5':'hcan'}
-    df_centroids = df_centroids.rename(columns=new_name)
-    print(df_centroids)
+    new_name = {'LAI5':'lai5', 'LAI50':'lai50', 'svf_for':'vfhp', 'CC5':'fveg', 'CC50':'fves', 'CH5':'hcan'}
+    df_forest = df_forest.rename(columns=new_name)
+    print(df_forest)
  
     # ----- Loop through all points-------
     # NOTE: eventually this for loop could be parallelized to several cores -----
@@ -464,28 +482,33 @@ def to_fsm2oshd(ds_down,
 
         ds_pt = ds_down.sel(point_id=pt).copy()
         tvt_pt = ds_tvt.sel(cluster_labels=pt).copy()
-        row = df_centroids.loc[pt]
+        row_forest = df_forest.loc[pt]
         write_fsm2oshd_met(ds_pt,
                            ds_tvt=ds_tvt,
                            n_digits=n_digits,
                            pt_name=pt,
-                           fname_format=fname_format)
-        write_fsm2oshd_namelist(row,
+                           fname_format=p/fname_format)
+        write_fsm2oshd_namelist(row_forest,
                                 pt_name=pt,
                                 n_digits=n_digits,
-                                fname_format=fname_format,
-                                mode='open',
-                                namelist_param=namelist_param) # write open namelist
-        write_fsm2oshd_namelist(row,
-                                pt_name=pt,
-                                n_digits=n_digits,
-                                fname_format=fname_format,
+                                fname_format=p/fname_format,
                                 mode='forest',
                                 namelist_param=namelist_param) # write forest namelist
+
+        if cluster_method:
+            row_open = df_forest.loc[pt]
+            write_fsm2oshd_namelist(row_open,
+                                    pt_name=pt,
+                                    n_digits=n_digits,
+                                    fname_format=p/fname_format,
+                                    mode='open',
+                                    namelist_param=namelist_param) # write open namelist
+
         ds_pt = None
         tvt_pt = None
         # [ ] add logic to computed weighted average outputs based on forest cover fraction per point.
 
+    df_forest.to_pickle(p/'df_forest.pckl')
     return
 
 def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n_digits=None):

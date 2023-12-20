@@ -273,6 +273,8 @@ class Topoclass(object):
         df_centroids = tp.extract_pts_param(df_centroids, self.toposub.ds_param,
                                             method=method)
         self.toposub.df_centroids = df_centroids
+    def extract_grid_param(self):
+        return
 
     def extract_topo_cluster_param(self):
         """
@@ -335,17 +337,15 @@ class Topoclass(object):
                 self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
-            if self.config.sampling.method in ['points', 'point']:
+            if self.config.sampling.method.lower() in ['points', 'point']:
                 self.extract_pts_param()
                 # if self.config.sampling.points.ID_col:
                 #     self.config.sampling.pt_names = list(
                 #         self.toposub.df_centroids[self.config.sampling.points.ID_col])
-            elif self.config.sampling.method == 'toposub':
+            elif self.config.sampling.method.lower() in ['toposub', 'cluster', 'clusters']:
                 self.extract_topo_cluster_param()
-            elif self.config.sampling.method == 'both':
-
-                # implement the case one want to run both toposub and a list of points
-                print('ERROR: method not yet implemented')
+            elif self.config.sampling.method == 'grid':
+                self.toposub.df_centroids = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
 
             else:
                 print('ERROR: Extraction method not available')
