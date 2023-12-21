@@ -461,7 +461,7 @@ def to_fsm2oshd(ds_down,
 
         dx = np.abs(np.diff(fsm_param.x)[0])
         dy = np.abs(np.diff(fsm_param.y)[0])
-
+        #pdb.set_trace()
         df_forest['cluster_total_area'] = fsm_df.groupby('cluster_labels').count().elevation.values * dx * dy
         df_forest['proportion_with_forest'] = fsm_df.where(fsm_df.forcov > 0.).groupby('cluster_labels').count().elevation.values / fsm_df.groupby('cluster_labels').count().elevation.values
         df_forest['cluster_domain_size'] = np.sqrt(df_forest.cluster_total_area)

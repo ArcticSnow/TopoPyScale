@@ -14,6 +14,7 @@ TODO:
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_export as te
 from pathlib import Path
+import datetime as dt
 import pandas as pd
 import xarray as xr
 import linecache
@@ -97,8 +98,11 @@ def txt2ds(fname):
         "sd": (['time'], df.sd.values),
         "scf":  (['time'], df.scf.values),
         "swe":  (['time'], df.swe.values),
-        "t_surface":  (['time'], df.tsurf.values),
-        "t_soil":  (['time'], df.tsoil.values),
+        "tsurf":  (['time'], df.tsurf.values),
+        "tsoil_1":  (['time'], df.tsoil_1.values),
+        "tsoil_2":  (['time'], df.tsoil_2.values),
+        "tsoil_3":  (['time'], df.tsoil_3.values),
+        "tsoil_4":  (['time'], df.tsoil_4.values)
         },
         coords={
             "point_id": point_id,
@@ -126,43 +130,84 @@ def to_netcdf(fname_fsm_sim, complevel=9):
     ds.sd.attrs = {'units':'m', 'standard_name':'sd', 'long_name':'Average snow depth', '_FillValue': -9999999.0}
     ds.scf.attrs = {'units':'%', 'standard_name':'scf', 'long_name':'Average snow cover fraction', '_FillValue': -9999999.0}
     ds.swe.attrs = {'units':'kg m-2', 'standard_name':'swe', 'long_name':'Average snow water equivalent', '_FillValue': -9999999.0}
-    ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_surface', 'long_name':'Average surface temperature', '_FillValue': -9999999.0}
-    ds.t_soil.attrs = {'units':'°C', 'standard_name':'t_soil', 'long_name':'Average soil temperature at 20 cm depth', '_FillValue': -9999999.0}
+    ds.tsurf.attrs = {'units':'°C', 'standard_name':'t_surface', 'long_name':'Average surface temperature', '_FillValue': -9999999.0}
+    ds.tsoil_1.attrs = {'units':'°C', 'standard_name':'tsoil_1', 'long_name':'Average soil temperature at 5 cm depth', '_FillValue': -9999999.0}
+    ds.tsoil_2.attrs = {'units':'°C', 'standard_name':'tsoil_2', 'long_name':'Average soil temperature at 15 cm depth', '_FillValue': -9999999.0}
+    ds.tsoil_3.attrs = {'units':'°C', 'standard_name':'tsoil_3', 'long_name':'Average soil temperature at 35 cm depth', '_FillValue': -9999999.0}
+    ds.tsoil_4.attrs = {'units':'°C', 'standard_name':'tsoil_4', 'long_name':'Average soil temperature at 75 cm depth', '_FillValue': -9999999.0}
     ds.attrs = {'title':'FSM2oshd simulation outputs',
                 'source': 'Data downscaled with TopoPyScale and simulated with FSM',
                 'package_TopoPyScale_version':ver_dict.get('package_version'),
                 'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                 'url_FSM': 'https://github.com/ArcticSnow/FSM2oshd',
                 'git_commit': ver_dict.get('git_commit'),
-                'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+                'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
     fout = f"{fname_fsm_sim[:-4]}.nc"
     te.to_netcdf(ds, fout, complevel=complevel)
     print(f"File {fout} saved")
 
 
 
-def combine_open_forest(df_forest,
-                        fout_forest='fsm_sim/fsm_out_forest.nc',
-                        fout_open='fsm_sim/fsm_out_open.nc'):
+def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
+                        fname_forest='fsm_sim/fsm_out_forest.nc',
+                        fname_open='fsm_sim/fsm_out_open.nc',
+                         save_ds=False,
+                         remove_forest_open_file=False,
+                        fout=None,
+                         n_digits=3):
     '''
-    Function to compute weighted average of forest and open simulations
+    Function to compute weighted average of forest and open simulations from single simulation output files
     Args:
         df_forest: dataframe look up table for proportion of forested pixels vs open in a given cluster
-        fout_forest: filename of netcdf file with forest simulation output
-        fout_open: filename of netcdf file with open simulation output
+        fname_forest: filename of netcdf file with forest simulation output
+        fname_open: filename of netcdf file with open simulation output
 
     Returns:
 
     '''
-    dsf = xr.open_dataset(fname)
-    dso = xr.open_dataset(fout_open)
+    df_forest = pd.read_pickle(fname_df_forest)
+    dsf = xr.open_dataset(fname_forest)
+    dso = xr.open_dataset(fname_open)
     point_id = dsf.point_id.values
     ds = dsf * df_forest.proportion_with_forest[point_id] + dso * (1-df_forest.proportion_with_forest[point_id])
 
+    if save_ds:
+        fname_out = f'{fout}_{str(point_id).zfill(n_digits)}.nc'
+        te.to_netcdf(ds, fname_out)
+        if remove_forest_open_file:
+            os.remove(fname_open)
+            os.remove(fname_forest)
+        print(f'--> File {fname_out} saved')
+
     return ds
 
+def aggregate_all_open_forest(fname_df_forest,
+                              fname_forest_outputs='fsm_sim/fsm_outputs_fores_*.nc',
+                              fname_open_outputs='fsm_sim/fsm_outputs_open_*.nc',
+                              fout='fsm_sim/fsm_outputs',
+                              n_cores=6,
+                              n_digits=3,
+                              remove_tmp_outputs=True):
+
+    flist_forest = glob.glob(fname_forest_outputs)
+    flist_open = glob.glob(fname_open_outputs)
+    flist_forest.sort()
+    flist_open.sort()
+
+    fun_param = zip([fname_df_forest] * len(flist_forest),
+                    flist_forest,
+                    flist_open,
+                    [True] * len(flist_forest),
+                    [remove_tmp_outputs] * len(flist_forest),
+                    [fout] * len(flist_forest),
+                    [n_digits] * len(flist_forest))
+    tu.multicore_pooling(_combine_open_forest, fun_param, n_cores)
+    print('---> All forest and open outputs combined')
+
+
+
 def read_pt_fsm2oshd(fname):
-    df = pd.read_csv(fname, delim_whitespace=True, header=None,names=['year', 'month', 'day', 'hour', 'sd', 'scf', 'swe', 'tsurf','tsoil'])
+    df = pd.read_csv(fname, delim_whitespace=True, header=None,names=['year', 'month', 'day', 'hour', 'sd', 'scf', 'swe', 'tsurf','tsoil_1','tsoil_2','tsoil_3','tsoil_4'])
     df['time'] = pd.to_datetime(df[['year', 'month', 'day', 'hour']])
     df = df.set_index('time')
     return df
