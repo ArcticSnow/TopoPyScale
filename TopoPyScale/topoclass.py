@@ -346,6 +346,7 @@ class Topoclass(object):
                 self.extract_topo_cluster_param()
             elif self.config.sampling.method == 'grid':
                 self.toposub.df_centroids = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+                self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index
 
             else:
                 print('ERROR: Extraction method not available')
