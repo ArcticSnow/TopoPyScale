@@ -467,7 +467,7 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.replace("*", pt_id)}',
+        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.replace("*", str(pt_id))}',
                           engine='h5netcdf', encoding=encoding, mode='a')
         # Clear memory
         down_pt, surf_interp = None, None
