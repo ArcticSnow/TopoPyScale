@@ -18,8 +18,7 @@ from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_sub as ts
-from multiprocessing.dummy import Pool as ThreadPool
-import multiprocessing as mproc
+
 from pathlib import Path
 
 

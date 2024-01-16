@@ -127,7 +127,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
         print('ERROR: Method not implemented. Only nearest, linear or idw available')
     return df_pts
 
-def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
+def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'), output_folder='outputs'):
     """
     Function to compute and derive DEM parameters: slope, aspect, sky view factor
 
@@ -138,8 +138,8 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
         dataset: x, y, elev, slope, aspect, svf
 
     """
-    pdir = Path(project_directory)
-    file_ds = pdir / 'outputs' / fname
+    pdir = project_directory
+    file_ds = pdir / output_folder / fname
     if file_ds.is_file():
         print(f'\n---> Dataset {fname} found.')
         ds = xr.open_dataset(file_ds)
@@ -185,18 +185,18 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory='./'):
     ds.svf.attrs = {'units': 'ratio', 'standard_name': 'svf', 'long_name': 'Sky view factor'}
 
     if file_ds.is_file():
-        te.to_netcdf(ds, fname=pdir / 'outputs' / 'tmp' / fname)
+        te.to_netcdf(ds, fname=pdir / output_folder / 'tmp' / fname)
         ds = None
-        shutil.move(pdir / 'outputs' / 'tmp' /fname, file_ds)
-        ds = xr.open_dataset(pdir / 'outputs' / fname)
+        shutil.move(pdir / output_folder / 'tmp' /fname, file_ds)
+        ds = xr.open_dataset(pdir / output_folder / fname)
     else:
-        te.to_netcdf(ds, fname=pdir / 'outputs' / fname)
+        te.to_netcdf(ds, fname=pdir / output_folder / fname)
 
 
     return ds
 
 
-def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc', project_directory='./'):
+def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc', output_directory=Path('./outputs')):
     """
     Function to compute horizon angles for
 
@@ -250,7 +250,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
                           'units':'degree'
                       }
                       )
-    te.to_netcdf(da.to_dataset(), fname=f'{project_directory}outputs/{fname}')
+    te.to_netcdf(da.to_dataset(), fname=output_directory / fname)
     return da
 
 

@@ -68,7 +68,7 @@ def clear_files(path: Union[Path, str]):
 
 def downscale_climate(project_directory,
                       climate_directory,
-                      downscaled_directory,
+                      output_directory,
                       df_centroids,
                       horizon_da,
                       ds_solar,
@@ -85,10 +85,14 @@ def downscale_climate(project_directory,
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
     Args:
-        project_directory: path to project root directory
+        project_directory (str): path to project root directory
+        climate_directory (str):
+        output_directory (path):
         df_centroids (dataframe): containing a list of point for which to downscale (includes all terrain data)
         horizon_da (dataarray): horizon angles for a list of azimuth
         target_EPSG (int): EPSG code of the DEM
+        start_date:
+        end_date:
         interp_method (str): interpolation method for horizontal interp. 'idw' or 'linear'
         lw_terrain_flag (bool): flag to compute contribution of surrounding terrain to LW or ignore
         tstep (str): timestep of the input data, default = 1H
@@ -103,7 +107,7 @@ def downscale_climate(project_directory,
     global _subset_climate_dataset
 
     print('\n---> Downscaling climate to list of points using TopoScale')
-    clear_files(f'{project_directory}outputs/tmp')
+    clear_files(output_directory / 'tmp')
 
     start_time = time.time()
     tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
@@ -114,6 +118,11 @@ def downscale_climate(project_directory,
 
     flist_PLEV = glob.glob(f'{climate_directory}/PLEV*.nc')
     flist_SURF = glob.glob(f'{climate_directory}/SURF*.nc')
+
+    if 'object' in list(df_centroids.dtypes):
+        pass
+    else:
+        df_centroids['dummy'] = 'nn'
 
     def _open_dataset_climate(flist):
 
@@ -136,7 +145,7 @@ def downscale_climate(project_directory,
         return ds_
 
     def _subset_climate_dataset(ds_, row, type='plev', pt_id=0):
-        print('Preparing {} for point {}'.format(type, row.name))
+        print('Preparing {} for point {}'.format(type, row.point_id))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_.latitude - row.lat).argmin()
         ind_lon = np.abs(ds_.longitude - row.lon).argmin()
@@ -149,7 +158,7 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in ds_tmp.data_vars}
-        ds_tmp.to_netcdf(f'{project_directory}outputs/tmp/ds_{type}_pt_{pt_id}.nc', engine='h5netcdf',
+        ds_tmp.to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{pt_id}.nc', engine='h5netcdf',
                          encoding=encoding)
         ds_ = None
         ds_tmp = None
@@ -178,7 +187,7 @@ def downscale_climate(project_directory,
     ds_plev = None
     ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
     ds_list = []
-    for _, row in df_centroids.iterrows():
+    for _, _ in df_centroids.iterrows():
         ds_list.append(ds_surf)
 
     fun_param = zip(ds_list, row_list, ['surf'] * len(row_list),
@@ -194,10 +203,11 @@ def downscale_climate(project_directory,
     horizon_da_list = []
     row_list = []
     meta_list = []
-    for i, row in df_centroids.iterrows():
-        surf_pt_list.append(xr.open_dataset(f'{project_directory}outputs/tmp/ds_surf_pt_{i}.nc', engine='h5netcdf'))
-        plev_pt_list.append(xr.open_dataset(f'{project_directory}outputs/tmp/ds_plev_pt_{i}.nc', engine='h5netcdf'))
-        ds_solar_list.append(ds_solar.sel(point_id=row.name))
+    i = 0
+    for _, row in df_centroids.iterrows():
+        surf_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_surf_pt_{row.point_id}.nc', engine='h5netcdf'))
+        plev_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_plev_pt_{row.point_id}.nc', engine='h5netcdf'))
+        ds_solar_list.append(ds_solar.sel(point_id=row.point_id))
         horizon_da_list.append(horizon_da)
         row_list.append(row)
         meta_list.append({'interp_method': interp_method,
@@ -205,6 +215,7 @@ def downscale_climate(project_directory,
                           'tstep': tstep_dict.get(tstep),
                           'n_digits': n_digits,
                           'file_pattern': file_pattern})
+        i+=1
 
     def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
         pt_id = row.point_id
@@ -345,39 +356,38 @@ def downscale_climate(project_directory,
         down_pt.attrs = {'title':'Downscale point using TopoPyScale',
                           'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
-        print(f'---> Storing point {pt_id} to outputs/tmp/')
+        print(f'---> Storing point {pt_id} to {output_directory.name}/tmp/')
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(project_directory + f'outputs/tmp/down_pt_{pt_id}.nc',
+        down_pt.to_netcdf(output_directory / f'tmp/down_pt_{pt_id}.nc',
                           engine='h5netcdf', encoding=encoding)
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in surf_interp.data_vars}
-        surf_interp.to_netcdf(project_directory + f'outputs/tmp/surf_interp_{pt_id}.nc',
+        surf_interp.to_netcdf(output_directory / f'tmp/surf_interp_{pt_id}.nc',
                               engine='h5netcdf', encoding=encoding)
         down_pt = None
         surf_interp = None
         top, bot = None, None
 
-    fun_param = zip(row_list, plev_pt_list, surf_pt_list,
-                    meta_list)  # construct here the tuple that goes into the pooling for arguments
+    fun_param = zip(row_list, plev_pt_list, surf_pt_list, meta_list)  # construct here the tuple that goes into the pooling for arguments
     tu.multicore_pooling(pt_downscale_interp, fun_param, n_core)
     fun_param = None
     plev_pt_list = None
     surf_pt_list = None
 
-    def pt_downscale_radiations(row, ds_solar, horizon_da, meta):
+    def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
         # insrt here downscaling routine for sw and lw
         # save file final file
         pt_id = row.point_id
+
         file_pattern = meta.get('file_pattern')
         print(f'Downscaling LW, SW for point: {pt_id}')
 
-        down_pt = xr.open_dataset(f'{project_directory}outputs/tmp/down_pt_{pt_id}.nc',
+        down_pt = xr.open_dataset(output_dir / 'tmp' / f'down_pt_{pt_id}.nc',
                                   engine='h5netcdf')
-        surf_interp = xr.open_dataset(
-            f'{project_directory}outputs/tmp/surf_interp_{pt_id}.nc', engine='h5netcdf')
+        surf_interp = xr.open_dataset(output_dir / 'tmp' / f'surf_interp_{pt_id}.nc', engine='h5netcdf')
 
         # ======== Longwave downward radiation ===============
         x1, x2 = 0.43, 5.7
@@ -467,7 +477,7 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.replace("*", str(pt_id))}',
+        down_pt.to_netcdf(output_directory / 'downscaled' / file_pattern.replace("*", str(pt_id)),
                           engine='h5netcdf', encoding=encoding, mode='a')
         # Clear memory
         down_pt, surf_interp = None, None
@@ -477,14 +487,11 @@ def downscale_climate(project_directory,
         horizon = None
         shade = None
 
-    fun_param = zip(row_list, ds_solar_list, horizon_da_list,
-                    meta_list)  # construct here tuple to feed pool function's argument
+    fun_param = zip(row_list, ds_solar_list, horizon_da_list, meta_list, [output_directory]*len(row_list))  # construct here tuple to feed pool function's argument
     tu.multicore_pooling(pt_downscale_radiations, fun_param, n_core)
     fun_param = None
     ds_solar_list = None
     horizon_da_list = None
-
-    # clear_files(f'{project_directory}outputs/tmp')
 
     # print timer to console
     print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))

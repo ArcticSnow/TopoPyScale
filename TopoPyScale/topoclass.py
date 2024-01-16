@@ -54,8 +54,12 @@ class Topoclass(object):
             print(
                 f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
-        self.config.outputs.path = Path(self.config.project.directory, 'outputs')
+        if self.config.outputs.directory in [None, {}]:
+            self.config.outputs.directory = 'outputs'
+
+        self.config.outputs.path = Path(self.config.project.directory, self.config.outputs.directory)
         self.config.outputs.tmp_path = self.config.outputs.path / 'tmp'
+        self.config.outputs.downscaled = self.config.outputs.path / 'downscaled'
 
         if self.config.outputs.file.clean_outputs:
             # remove outputs directory because if results already exist this causes concat of netcdf files
@@ -79,12 +83,6 @@ class Topoclass(object):
                 print("---> Ensemble directory cleaned")
             except:
                 print("---> no ensemble directory to clean")
-
-        # directory where to store the downscaled data
-        if self.config.outputs.directory:
-            self.config.outputs.downscaled = Path(self.config.outputs.directory)
-        else:
-            self.config.outputs.downscaled = self.config.outputs.path / 'downscaled'
 
         # climate path
         if os.path.isabs(self.config.climate.era5.path):
@@ -156,30 +154,30 @@ class Topoclass(object):
         '''
         Function to load pre-existing TopoPyScale project saved in files
         '''
-        if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids):
+        if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
             self.toposub.df_centroids = pd.read_pickle(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids)
+                self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
             print(f'-> WARNING: Centroid file {self.config.outputs.file.df_centroids} not found')
 
-        if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param):
+        if (self.config.outputs.path / self.config.outputs.file.ds_param).is_file():
             self.toposub.ds_param = xr.open_dataset(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param)
+                self.config.outputs.path / self.config.outputs.file.ds_param)
             print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
         else:
             print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
 
-        if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_solar):
+        if (self.config.outputs.path / self.config.outputs.file.ds_solar).is_file():
             self.ds_solar = xr.open_dataset(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_solar)
+                self.config.outputs.path / self.config.outputs.file.ds_solar)
             print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
         else:
             print(f'-> WARNING: Solar file {self.config.outputs.file.ds_solar} not found')
 
-        if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.da_horizon):
+        if (self.config.outputs.path / self.config.outputs.file.da_horizon).is_file():
             self.da_horizon = xr.open_dataarray(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.da_horizon)
+                self.config.outputs.path / self.config.outputs.file.da_horizon)
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         else:
             print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
@@ -218,8 +216,9 @@ class Topoclass(object):
 
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
-                                                         fname=self.config.outputs.file.ds_param,
-                                                         project_directory=self.config.project.directory)
+                                                     fname=self.config.outputs.file.ds_param,
+                                                     project_directory=Path(self.config.project.directory),
+                                                     output_folder=self.config.outputs.path.name)
 
     def search_optimum_number_of_clusters(self,
                                           cluster_range=np.arange(100, 1000, 200),
@@ -406,7 +405,7 @@ class Topoclass(object):
             ["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
 
         # update file
-        fname = self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_param
+        fname = self.config.outputs.path / self.config.outputs.file.ds_param
         te.to_netcdf(self.toposub.ds_param, fname=fname)
 
         # update plotting class variable
@@ -416,9 +415,9 @@ class Topoclass(object):
         """
         Function to select which
         """
-        if os.path.isfile(self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids):
+        if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
             self.toposub.df_centroids = pd.read_pickle(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids)
+                self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
             if self.config.sampling.method.lower() in ['points', 'point']:
@@ -443,7 +442,7 @@ class Topoclass(object):
 
             # Store dataframe to pickle
             self.toposub.df_centroids.to_pickle(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids)
+                self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
 
     class TimeSplitter():
@@ -473,9 +472,9 @@ class Topoclass(object):
         if self.config.project.split.IO:
             for i, start in enumerate(self.time_splitter.start_list):
                 end = self.time_splitter.end_list[i]
-                fname = self.config.project.directory + 'outputs/' + self.time_splitter.ds_solar_flist[i]
+                fname = self.config.outputs.path / self.time_splitter.ds_solar_flist[i]
 
-                if os.path.isfile(fname):
+                if fname.is_file():
                     self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
                     print(f'---> Solar file {self.time_splitter.ds_solar_flist[i]} exists and loaded')
                 else:
@@ -486,11 +485,11 @@ class Topoclass(object):
                                                       str(self.config.dem.epsg),
                                                       self.config.project.CPU_cores,
                                                       self.time_splitter.ds_solar_flist[i],
-                                                      self.config.project.directory)
+                                                      self.config.outputs.path)
 
         else:
-            fname = self.config.project.directory + 'outputs/' + self.config.outputs.file.ds_solar
-            if os.path.isfile(fname):
+            fname = self.config.outputs.path / self.config.outputs.file.ds_solar
+            if fname.is_file():
                 self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
                 print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
             else:
@@ -501,14 +500,14 @@ class Topoclass(object):
                                                   str(self.config.dem.epsg),
                                                   self.config.project.CPU_cores,
                                                   self.config.outputs.file.ds_solar,
-                                                  self.config.project.directory)
+                                                  self.config.outputs.path)
 
     def compute_horizon(self):
         """
         Function to compute horizon angle and sample values for list of points
         """
-        fname = self.config.project.directory + 'outputs/' + self.config.outputs.file.da_horizon
-        if os.path.isfile(fname):
+        fname = self.config.outputs.path / self.config.outputs.file.da_horizon
+        if fname.is_file():
             self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         else:
@@ -516,7 +515,7 @@ class Topoclass(object):
                                                  self.config.dem.horizon_increments,
                                                  self.config.project.CPU_cores,
                                                  self.config.outputs.file.da_horizon,
-                                                 self.config.project.directory)
+                                                 self.config.outputs.path)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
 
@@ -529,12 +528,13 @@ class Topoclass(object):
                                                                                        method='nearest').values.flatten()
             # update df_centroid file with horizons angle
             self.toposub.df_centroids.to_pickle(
-                self.config.project.directory + 'outputs/' + self.config.outputs.file.df_centroids)
+                self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
         downscaled_dir = self.config.outputs.downscaled
         f_pattern = self.config.outputs.file.downscaled_pt
+        output_folder = self.config.outputs.path.name
 
         if '*' not in f_pattern:
             raise ValueError(
@@ -554,11 +554,11 @@ class Topoclass(object):
 
                 self.ds_solar = None
                 self.ds_solar = xr.open_dataset(
-                    self.config.project.directory + 'outputs/' + self.time_splitter.ds_solar_flist[i])
+                    self.config.outputs.path / self.time_splitter.ds_solar_flist[i])
 
                 ta.downscale_climate(self.config.project.directory,
                                      self.config.climate.path,
-                                     self.config.outputs.downscaled,
+                                     self.config.outputs.path,
                                      self.toposub.df_centroids,
                                      self.da_horizon,
                                      self.ds_solar,
@@ -605,7 +605,7 @@ class Topoclass(object):
         else:
             ta.downscale_climate(self.config.project.directory,
                                  self.config.climate.path,
-                                 self.config.outputs.downscaled,
+                                 self.config.outputs.path,
                                  self.toposub.df_centroids,
                                  self.da_horizon,
                                  self.ds_solar,
@@ -717,7 +717,7 @@ class Topoclass(object):
             fname_format (str): filename format. point_id is inserted where * is
 
         """
-        path = self.config.project.directory + 'outputs/'
+        path = self.config.outputs.path
         if 'cluster:labels' in self.toposub.ds_param.keys():
             label_map = True
             da_label = self.toposub.ds_param.cluster_labels
@@ -738,7 +738,7 @@ class Topoclass(object):
         """
         function to export toposcale output to FSM format
         """
-        te.to_fsm(self.downscaled_pts, f'{self.config.project.directory}outputs/' + fname_format)
+        te.to_fsm(self.downscaled_pts, self.config.outputs.path /  fname_format)
 
     def to_crocus(self, fname_format='CROCUS_pt_*.nc', scale_precip=1):
         """
@@ -750,7 +750,7 @@ class Topoclass(object):
         """
         te.to_crocus(self.downscaled_pts,
                      self.toposub.df_centroids,
-                     fname_format=f'{self.config.project.directory}outputs/' + fname_format,
+                     fname_format=self.config.outputs.path / fname_format,
                      scale_precip=scale_precip,
                      climate_dataset_name=self.config.project.climate,
                      project_author=self.config.project.authors)
@@ -763,7 +763,7 @@ class Topoclass(object):
         """
         te.to_micromet_single_station(self.downscaled_pts,
                                       self.toposub.df_centroids,
-                                      fname_format=f'{self.config.project.directory}outputs/' + fname_format,
+                                      fname_format=self.config.outputs.path / fname_format,
                                       na_values=-9999,
                                       headers=False)
 
@@ -790,13 +790,13 @@ class Topoclass(object):
         """
         function to export toposcale output to FSM format
         """
-        te.to_snowpack(self.downscaled_pts, f'{self.config.project.directory}outputs/' + fname_format)
+        te.to_snowpack(self.downscaled_pts, self.config.outputs.path / fname_format)
 
     def to_geotop(self, fname_format='meteo_*.txt'):
         """
         function to export toposcale output to FSM format
         """
-        te.to_geotop(self.downscaled_pts, f'{self.config.project.directory}outputs/' + fname_format)
+        te.to_geotop(self.downscaled_pts, self.config.outputs.path / fname_format)
 
     def to_musa(self,
                 fname_met='musa_met.nc',
@@ -818,7 +818,7 @@ class Topoclass(object):
                    da_label=labels,
                    fname_met=fname_met,
                    fname_labels=fname_labels,
-                   path=self.config.project.directory + 'outputs/',
+                   path=self.config.outputs.path,
                    climate_dataset_name=self.config.project.climate,
                    project_authors=self.config.project.authors
                    )
