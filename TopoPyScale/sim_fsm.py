@@ -7,12 +7,10 @@ TODO:
 """
 import os, re
 import glob
-import re
 import pandas as pd
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
-from matplotlib import pyplot as plt
 import xarray as xr
 #from TopoPyScale import topo_da as da
 import matplotlib.pyplot as plt
@@ -133,7 +131,7 @@ def to_netcdf(fname_fsm_sim, complevel=9):
     ds.snd.attrs = {'units':'m', 'standard_name':'snd', 'long_name':'Average snow depth', '_FillValue': -9999999.0}
     ds.swe.attrs = {'units':'kg m-2', 'standard_name':'swe', 'long_name':'Average snow water equivalent', '_FillValue': -9999999.0}
     ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_surface', 'long_name':'Average surface temperature', '_FillValue': -9999999.0}
-    ds.t_surface.attrs = {'units':'°C', 'standard_name':'t_soil', 'long_name':'Average soil temperature at 20 cm depth', '_FillValue': -9999999.0}
+    ds.t_soil.attrs = {'units':'°C', 'standard_name':'t_soil', 'long_name':'Average soil temperature at 20 cm depth', '_FillValue': -9999999.0}
     ds.attrs = {'title':'FSM simulation outputs',
                 'source': 'Data downscaled with TopoPyScale and simulated with FSM',
                 'package_version':ver_dict.get('package_version'),
@@ -331,14 +329,10 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
         fsm_path (str): location of simulation files
     Returns: 
         dataframe
-
-
-
     """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob(fsm_path+"/sim_FSM_pt*")
-
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -352,7 +346,6 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
                    'gst':-2,
                    'gt50':-1}
 
-
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
@@ -363,10 +356,6 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
     mydf = pd.read_csv(file_list[0], delim_whitespace=True, parse_dates=[[0, 1, 2]], header=None)
     mydates = mydf.iloc[:, 0]
 
-    # can do temp subset here
-    # startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
-    # endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
-
     # all values
     startIndex = 0
     endIndex = mydf.shape[0]
@@ -374,12 +363,10 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
     # efficient way to parse multifile
     data = []
     for file_path in file_list:
-
         data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)])
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
@@ -387,7 +374,6 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
 
     print(f'Variable {var} extracted')
     return df
-    # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
 def agg_by_var_fsm_ensemble( var='snd', W=1):
@@ -443,10 +429,6 @@ def agg_by_var_fsm_ensemble( var='snd', W=1):
     mydf = pd.read_csv(file_list[0], delim_whitespace=True, parse_dates=[[0, 1, 2]], header=None)
     mydates = mydf.iloc[:, 0]
 
-    # can do temp subset here
-    # startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
-    # endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
-
     # all values
     startIndex = 0
     endIndex = mydf.shape[0]
@@ -478,7 +460,6 @@ def agg_by_var_fsm_ensemble( var='snd', W=1):
 
     print(f'Variable {var} extracted')
     return df
-    # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
 
 def timeseries_means_period(df, start_date, end_date):

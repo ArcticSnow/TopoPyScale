@@ -182,7 +182,7 @@ def downscale_climate(project_directory,
         ds_list.append(ds_surf)
 
     fun_param = zip(ds_list, row_list, ['surf'] * len(row_list),
-                    range(0, len(row_list)))  # construct here the tuple that goes into the pooling for arguments
+                    df_centroids.index.values)  # construct here the tuple that goes into the pooling for arguments
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_surf = None
@@ -467,7 +467,7 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.replace("*", pt_id)}',
+        down_pt.to_netcdf(f'{downscaled_directory}/{file_pattern.replace("*", str(pt_id))}',
                           engine='h5netcdf', encoding=encoding, mode='a')
         # Clear memory
         down_pt, surf_interp = None, None

@@ -18,7 +18,7 @@ from rasterio.plot import show
 from osgeo import gdal
 from osgeo import osr 
 from scipy.interpolate import interp1d
-from TopoPyScale import topo_sim as sim
+from TopoPyScale import sim_fsm as sim
 from datetime import datetime
 import xarray as xr
 import rioxarray
