@@ -17,7 +17,7 @@ from TopoPyScale import topo_utils as tu
 from pathlib import Path
 
 
-def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None, fname='ds_solar.nc', project_ouput=Path('./')):
+def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_cores=None, fname='ds_solar.nc', project_ouput=Path('./')):
     """
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
@@ -28,7 +28,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
         end_date (str: end date   "2015-05-10"
         tstep (str): time step, ex: '6H'
         sr_epsg (str): source EPSG code for the input coordinate
-        num_threads (int): number of threads to parallelize computation on. default is number of core -2
+        num_cores (int): number of cores to parallelize computation on. default is number of core -2
         fname (str): name of netcdf file to store solar geometry
         project_ouput (str): path to project root directory
 
@@ -65,7 +65,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
                  list(df_pool.latitude),
                  list(df_pool.longitude),
                  list(df_pool.elevation))
-    arr = tu.multicore_pooling(compute_solar_geom, params)
+    arr = tu.multicore_pooling(compute_solar_geom, params, n_cores=num_cores)
 
 
     arr_val = np.empty((df_position.shape[0], 3, times.shape[0]))
