@@ -13,6 +13,7 @@ from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 from TopoPyScale import topo_export as te
+from TopoPyScale import topo_utils as tu
 from pathlib import Path
 
 
@@ -52,17 +53,20 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
         arr = pvlib.solarposition.get_solarposition(time_step, latitude, longitude, elevation)[['zenith', 'azimuth', 'elevation']].values.T
         return arr
 
-    if num_threads is None:
-        pool = ThreadPool(mproc.cpu_count() - 2)
-    else:
-        pool = ThreadPool(num_threads)
+    #if num_threads is None:
+    #    pool = ThreadPool(mproc.cpu_count() - 2)
+    #else:
+    #    pool = ThreadPool(num_threads)
+    #arr = pool.starmap(compute_solar_geom, params)
+    #pool.close()
+    #pool.join()
 
-    arr = pool.starmap(compute_solar_geom, zip(list(df_pool.times),
-                                                   list(df_pool.latitude),
-                                                   list(df_pool.longitude),
-                                                   list(df_pool.elevation)))
-    pool.close()
-    pool.join()
+    params = zip(list(df_pool.times),
+                 list(df_pool.latitude),
+                 list(df_pool.longitude),
+                 list(df_pool.elevation))
+    arr = tu.multicore_pooling(compute_solar_geom, params)
+
 
     arr_val = np.empty((df_position.shape[0], 3, times.shape[0]))
     for i, a in enumerate(arr):
