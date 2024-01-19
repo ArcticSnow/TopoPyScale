@@ -16,7 +16,15 @@ from TopoPyScale import topo_export as te
 from pathlib import Path
 
 
-def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num_threads=None, fname='ds_solar.nc', project_ouput=Path('./')):
+def get_solar_geom(df_position,
+                   start_date,
+                   end_date,
+                   tstep,
+                   sr_epsg="4326",
+                   num_threads=None,
+                   fname='ds_solar.nc',
+                   project_ouput=Path('./'),
+                   method_solar='nrel_numpy'):
     """
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
@@ -49,7 +57,7 @@ def get_solar_geom(df_position, start_date, end_date, tstep, sr_epsg="4326", num
     df_pool['times'] = df_pool.latitude.apply(lambda x: times)
 
     def compute_solar_geom(time_step, latitude, longitude, elevation):
-        arr = pvlib.solarposition.get_solarposition(time_step, latitude, longitude, elevation)[['zenith', 'azimuth', 'elevation']].values.T
+        arr = pvlib.solarposition.get_solarposition(time_step, latitude, longitude, elevation, method=method_solar)[['zenith', 'azimuth', 'elevation']].values.T
         return arr
 
     if num_threads is None:

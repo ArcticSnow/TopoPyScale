@@ -149,6 +149,8 @@ class Topoclass(object):
                                                    self.config.project.split.time,
                                                    self.config.outputs.file.ds_solar,
                                                    self.config.outputs.file.downscaled_pt)
+        if self.config.dem.solar_position_method is None:
+            self.config.dem.solar_position_method = 'nrel_numpy'
 
     def load_project(self):
         '''
@@ -485,7 +487,8 @@ class Topoclass(object):
                                                       str(self.config.dem.epsg),
                                                       self.config.project.CPU_cores,
                                                       self.time_splitter.ds_solar_flist[i],
-                                                      self.config.outputs.path)
+                                                      self.config.outputs.path,
+                                                      method_solar=self.config.solar_position_method)
 
         else:
             fname = self.config.outputs.path / self.config.outputs.file.ds_solar
