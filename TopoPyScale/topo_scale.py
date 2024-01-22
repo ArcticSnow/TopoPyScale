@@ -180,8 +180,7 @@ def downscale_climate(project_directory,
         row_list.append(row)
         ds_list.append(ds_plev)
 
-    fun_param = zip(ds_list, row_list, ['plev'] * len(row_list),
-                    df_centroids.index.values)  # construct here the tuple that goes into the pooling for arguments
+    fun_param = zip(ds_list, row_list, ['plev'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
