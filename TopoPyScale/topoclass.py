@@ -13,6 +13,7 @@ project/
 """
 import glob
 import os
+import pdb
 import shutil
 import sys
 from pathlib import Path
@@ -303,11 +304,11 @@ class Topoclass(object):
             if not os.path.isabs(mask_file):
                 mask_file = Path(self.config.project.directory, mask_file)
             # read mask TIFF
-            ds = rio.open_rasterio(mask_file).to_dataset('band').rename({1: 'mask'})
+            ds_mask = rio.open_rasterio(mask_file).to_dataset('band').rename({1: 'mask'})
 
             # check if bounds and resolution match
             dem = self.toposub.ds_param
-            if not ds.rio.bounds() == dem.rio.bounds() or not ds.rio.resolution() == dem.rio.resolution():
+            if not ds_mask.rio.bounds() == dem.rio.bounds() or not ds_mask.rio.resolution() == dem.rio.resolution():
                 raise ValueError(
                     'The GeoTIFFS of the DEM and the MASK need to habe the same bounds/resolution. Please check.')
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
@@ -315,7 +316,7 @@ class Topoclass(object):
             # get mask
             mask = ts.ds_to_indexed_dataframe(ds)['mask'] == 1
 
-        # add cluster groups
+        # add cluster groups. Groups can be landcover classes for instance
         if groups_file in [None, {}]:
             split_clustering = False
             df_param['cluster_group'] = 1
@@ -326,16 +327,16 @@ class Topoclass(object):
                 groups_file = Path(self.config.project.directory, groups_file)
 
             # read cluster TIFF
-            ds = rio.open_rasterio(groups_file).to_dataset('band').rename({1: 'group'})
+            ds_group = rio.open_rasterio(groups_file).to_dataset('band').rename({1: 'group'})
 
             # check if bounds and resolution match
             dem = self.toposub.ds_param
-            if not ds.rio.bounds() == dem.rio.bounds() or not ds.rio.resolution() == dem.rio.resolution():
+            if not ds_group.rio.bounds() == dem.rio.bounds() or not ds_group.rio.resolution() == dem.rio.resolution():
                 raise ValueError(
-                    'The GeoTIFFS of the DEM and the MASK need to habe the same bounds/resolution. Please check.')
+                    'The GeoTIFFS of the DEM and the MASK must have the same bounds/resolution. Please check.')
 
             # add cluster group
-            df_param['cluster_group'] = ts.ds_to_indexed_dataframe(ds)['group'].astype(int)
+            df_param['cluster_group'] = ts.ds_to_indexed_dataframe(ds_group)['group'].astype(int)
 
             groups = sorted(df_param.cluster_group.unique())
             print(f'---> Split clustering into {len(groups)} groups.')
@@ -399,12 +400,12 @@ class Topoclass(object):
             for var in df_param.drop(flist, axis=1).columns:
                 self.toposub.df_centroids[var] = tmp[var]
         n_digits = len(str(self.toposub.df_centroids.index.max()))
-        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).astype(str).str.zfill(
-            n_digits)
+        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).astype(str).str.zfill(n_digits)
+        df_param['point_id'] = df_param.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
 
         # Build the final cluster map
-        self.toposub.ds_param['cluster_labels'] = (
-            ["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
+        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
+        self.toposub.ds_param['point_id'] = (["y", "x"], np.reshape(df_param.point_id.values, self.toposub.ds_param.slope.shape))
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
