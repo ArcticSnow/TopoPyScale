@@ -144,7 +144,7 @@ def downscale_climate(project_directory,
 
         return ds_
 
-    def _subset_climate_dataset(ds_, row, type='plev', pt_id=0):
+    def _subset_climate_dataset(ds_, row, type='plev'):
         print('Preparing {} for point {}'.format(type, row.point_id))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_.latitude - row.lat).argmin()
@@ -158,7 +158,7 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in ds_tmp.data_vars}
-        ds_tmp.to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{pt_id}.nc', engine='h5netcdf',
+        ds_tmp.to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_id}.nc', engine='h5netcdf',
                          encoding=encoding)
         ds_ = None
         ds_tmp = None
@@ -190,8 +190,7 @@ def downscale_climate(project_directory,
     for _, _ in df_centroids.iterrows():
         ds_list.append(ds_surf)
 
-    fun_param = zip(ds_list, row_list, ['surf'] * len(row_list),
-                    df_centroids.index.values)  # construct here the tuple that goes into the pooling for arguments
+    fun_param = zip(ds_list, row_list, ['surf'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_surf = None
