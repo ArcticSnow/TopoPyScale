@@ -8,6 +8,7 @@ TODO;
 """
 import csv
 import datetime as dt
+import pdb
 import sys
 
 import numpy as np
@@ -97,7 +98,7 @@ def to_musa(ds,
     if da_label is not None:
         da_label.to_netcdf(path + fname_labels)
 
-    da_label.to_netcdf(path + fname_labels)
+    da_label.to_netcdf(path / fname_labels)
 
     fo = xr.Dataset()
     fo['tair'] = ds['t'].T
@@ -148,7 +149,7 @@ def to_musa(ds,
     fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude', 'long_name': 'Cluster longitude'}
     fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation', 'long_name': 'Cluster elevation'}
 
-    fo.to_netcdf(path + fname_met, encoding=encod_dict)
+    fo.to_netcdf(path / fname_met, encoding=encod_dict)
     print('---> File {} saved'.format(fname_met))
 
 
@@ -185,7 +186,7 @@ def to_cryogrid(ds,
 
     n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
-        foutput = path + fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = path / fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         fo = xr.Dataset()
         fo['time'] = ds_pt.time
@@ -319,7 +320,6 @@ def to_fsm2oshd(ds_down,
             turbulent_exchange = 1
             z_offset, fveg, fves, hcan, lai, vfhp= 0, 0, 0, 0, 0, 1
 
-        #pdb.set_trace()
         if os.path.exists(file_met):
             nlst = f"""
 &nam_grid
@@ -666,7 +666,6 @@ def to_fsm2oshd(ds_down,
 
         dx = np.abs(np.diff(fsm_param.x)[0])
         dy = np.abs(np.diff(fsm_param.y)[0])
-        #pdb.set_trace()
         df_forest['cluster_total_area'] = fsm_df.groupby('cluster_labels').count().elevation.values * dx * dy
         df_forest['proportion_with_forest'] = fsm_df.where(fsm_df.forcov > 0.).groupby('cluster_labels').count().elevation.values / fsm_df.groupby('cluster_labels').count().elevation.values
         df_forest['cluster_domain_size'] = np.sqrt(df_forest.cluster_total_area)
@@ -742,7 +741,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n
         n_digits = len(str(ds.point_id.values.max())) + 1
 
     for pt in ds.point_id.values:
-        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
         df['year'] = pd.to_datetime(ds_pt.time.values).year
@@ -784,7 +783,7 @@ def to_TC(ds, fname_format='pt_*.tx'):
     n_digits = len(str(max(ds.point_id.values)))
 
     for pt in ds.point_id.values:
-        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
         df['datetime'] = pd.to_datetime(ds_pt.time.values)
@@ -835,7 +834,7 @@ def to_micromet_single_station(ds,
 
     n_digits = len(str(ds.point_id.values.max()))
     for pt in ds.point_id.values:
-        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
         df['year'] = pd.to_datetime(ds_pt.time.values).year
@@ -887,7 +886,7 @@ def to_crocus(ds,
     ver_dict = tu.get_versionning()
 
     for pt in ds.point_id.values:
-        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
         df['time'] = ds_pt.time.values
@@ -1051,7 +1050,7 @@ def to_snowpack(ds, fname_format='smet_pt_*.tx'):
     n_digits = 3
 
     for pt in ds.point_id.values:
-        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
         df['timestamp'] = ds_pt.time
@@ -1122,7 +1121,7 @@ def to_geotop(ds, fname_format='geotop_pt_*.txt'):
     n_digits = 3
 
     for pt in ds.point_id.values:
-        foutput = fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_id=pt).copy()
         df = pd.DataFrame()
         dt = pd.to_datetime(ds_pt.time.values)
