@@ -168,11 +168,11 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
     df_forest = pd.read_pickle(fname_df_forest)
     dsf = xr.open_dataset(fname_forest)
     dso = xr.open_dataset(fname_open)
-    point_name = dsf.point_name.values
-    ds = dsf * df_forest.proportion_with_forest[point_name] + dso * (1-df_forest.proportion_with_forest[point_name])
+    point_ind = dsf.point_ind.values
+    ds = dsf * df_forest.proportion_with_forest[point_ind] + dso * (1-df_forest.proportion_with_forest[point_ind])
 
     if save_ds:
-        fname_out = f'{fout}_{str(point_name).zfill(n_digits)}.nc'
+        fname_out = f'{fout}_{str(point_ind).zfill(n_digits)}.nc'
         te.to_netcdf(ds, fname_out)
         if remove_forest_open_file:
             os.remove(fname_open)
