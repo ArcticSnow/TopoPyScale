@@ -96,9 +96,9 @@ def to_musa(ds,
     ver_dict = tu.get_versionning()
 
     if da_label is not None:
-        da_label.to_netcdf(path + fname_labels)
+        da_label.to_netcdf(str(path + fname_labels))
 
-    da_label.to_netcdf(path / fname_labels)
+    da_label.to_netcdf(str(path / fname_labels))
 
     fo = xr.Dataset()
     fo['tair'] = ds['t'].T
@@ -149,7 +149,7 @@ def to_musa(ds,
     fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude', 'long_name': 'Cluster longitude'}
     fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation', 'long_name': 'Cluster elevation'}
 
-    fo.to_netcdf(path / fname_met, encoding=encod_dict)
+    fo.to_netcdf(str(path / fname_met), encoding=encod_dict)
     print('---> File {} saved'.format(fname_met))
 
 
@@ -182,12 +182,12 @@ def to_cryogrid(ds,
             print('ERROR: no cluster label (da_label) provided')
             sys.exit()
         else:
-            da_label.to_netcdf(path + 'cluster_labels_map.nc')
+            da_label.to_netcdf(str(path / 'cluster_labels_map.nc'))
 
     n_digits = len(str(len(ds.point_name))) + 1
 
     for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = path / fname_format.split('*')[0] + str(pt_ind).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(path) + fname_format.split('*')[0] + str(pt_ind).zfill(n_digits) + fname_format.split('*')[1]
         ds_pt = ds.sel(point_name=pt_name).copy()
         fo = xr.Dataset()
         fo['time'] = ds_pt.time
@@ -401,7 +401,7 @@ def to_fsm2oshd(ds_down,
             2021 9 1 6 61 45.01 206.7 0 0 275.02 74.08 0.29 74829 0 0.5
             2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
 
-        year month  day   hour  SWb   SWd  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
+        year month  day   hour  SWdir   SWdiff  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
         (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
 
         '''
@@ -418,8 +418,8 @@ def to_fsm2oshd(ds_down,
         df['month']  = pd.to_datetime(ds_pt.time.values).month
         df['day']  = pd.to_datetime(ds_pt.time.values).day
         df['hr']  = pd.to_datetime(ds_pt.time.values).hour
-        df['SWb'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
-        df['SWd'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
+        df['SWdir'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
+        df['SWdif'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
         df['LW'] = np.round(ds_pt.LW.values,2)
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
