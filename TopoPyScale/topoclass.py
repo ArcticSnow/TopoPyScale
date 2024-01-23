@@ -413,6 +413,7 @@ class Topoclass(object):
         # Build the final cluster map
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.astype(int).values, self.toposub.ds_param.slope.shape))
         self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, self.toposub.ds_param.slope.shape))
+        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.values, self.toposub.ds_param.slope.shape))
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
