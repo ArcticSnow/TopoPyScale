@@ -193,7 +193,6 @@ def aggregate_all_open_forest(fname_df_forest,
     fun_param = zip([fname_df_forest] * len(flist_forest),
                     flist_forest,
                     flist_open,
-                    [True] * len(flist_forest),
                     [remove_tmp_outputs] * len(flist_forest),
                     [fout] * len(flist_forest),
                     [n_digits] * len(flist_forest))
