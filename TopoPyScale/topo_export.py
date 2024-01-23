@@ -232,9 +232,9 @@ def to_cryogrid(ds,
                                      'dtype': 'int16',
                                      'scale_factor': scale_factor,
                                      'add_offset': add_offset}})
-        fo['latitude'] = df_pts.latitude.iloc[pt]
-        fo['longitude'] = df_pts.longitude.iloc[pt]
-        fo['elevation'] = df_pts.elevation.iloc[pt]
+        fo['latitude'] = df_pts.latitude.iloc[pt_ind]
+        fo['longitude'] = df_pts.longitude.iloc[pt_ind]
+        fo['elevation'] = df_pts.elevation.iloc[pt_ind]
         fo.latitude.attrs = {'units': 'deg', 'standard_name': 'latitude'}
         fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude'}
         fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation'}
