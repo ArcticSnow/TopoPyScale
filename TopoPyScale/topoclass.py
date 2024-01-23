@@ -190,7 +190,7 @@ class Topoclass(object):
             print('---> Loading downscaled points \n ...')
             self.downscaled_pts = xr.open_mfdataset(
                 f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
-                concat_dim='point_id',
+                concat_dim='point_name',
                 combine='nested',
                 parallel=True)
             print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
@@ -266,16 +266,20 @@ class Topoclass(object):
         if not os.path.isabs(self.config.sampling.points.csv_file):
             self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
         df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
-        if self.config.sampling.points.ID_col:
-            ID_col = df_centroids[self.config.sampling.points.ID_col]
-            df_centroids['point_id'] = pd.to_numeric(ID_col, errors='ignore').astype(str)
+        if self.config.sampling.points.name_column:
+            df_centroids['point_name'] = df_centroids[self.config.sampling.points.name_column].astype(str)
         else:
-            df_centroids['point_id'] = df_centroids.index + 1
-            n_digits = len(str(df_centroids.point_id.max()))
-            df_centroids['point_id'] = df_centroids.point_id.astype(str).str.zfill(n_digits)
+            df_centroids['point_name'] = df_centroids.index + 1
+            n_digits = len(str(df_centroids.point_name.max()))
+            df_centroids['point_name'] = df_centroids.point_name.astype(str).str.zfill(n_digits)
+
+        df_centroids['point_ind'] = df_centroids.index + 1
         df_centroids = tp.extract_pts_param(df_centroids, self.toposub.ds_param,
                                             method=method)
+
         self.toposub.df_centroids = df_centroids
+
+
     def extract_grid_param(self):
         return
 
@@ -399,13 +403,16 @@ class Topoclass(object):
             tmp = df_param.groupby('cluster_labels').mean()
             for var in df_param.drop(flist, axis=1).columns:
                 self.toposub.df_centroids[var] = tmp[var]
-        n_digits = len(str(self.toposub.df_centroids.index.max()))
-        self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index.astype(int).astype(str).str.zfill(n_digits)
-        df_param['point_id'] = df_param.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
+        self.toposub.df_centroids['cluster_labels'] = tmp.index.values.astype(int)
+        n_digits = len(str(self.toposub.df_centroids.cluster_labels.max()))
+        self.toposub.df_centroids['point_name'] = self.toposub.df_centroids.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
+        self.toposub.df_centroids['point_ind'] = self.toposub.df_centroids.cluster_labels.astype(int)
+        df_param['point_name'] = df_param.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
+        df_param['point_ind'] = df_param.cluster_labels.astype(int)
 
         # Build the final cluster map
-        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.values, self.toposub.ds_param.slope.shape))
-        self.toposub.ds_param['point_id'] = (["y", "x"], np.reshape(df_param.point_id.values, self.toposub.ds_param.slope.shape))
+        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.astype(int).values, self.toposub.ds_param.slope.shape))
+        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, self.toposub.ds_param.slope.shape))
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
@@ -432,7 +439,7 @@ class Topoclass(object):
                 self.extract_topo_cluster_param()
             elif self.config.sampling.method == 'grid':
                 self.toposub.df_centroids = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
-                self.toposub.df_centroids['point_id'] = self.toposub.df_centroids.index
+                self.toposub.df_centroids['point_name'] = self.toposub.df_centroids.index
 
             else:
                 print('ERROR: Extraction method not available')
@@ -576,7 +583,7 @@ class Topoclass(object):
                                      fname,
                                      self.config.project.CPU_cores)
 
-            for pt_id in self.toposub.df_centroids.point_id.values:
+            for pt_id in self.toposub.df_centroids.point_name.values:
                 print(f'Concatenating point {pt_id}')
                 filename = Path(f_pattern.replace('*', pt_id))
                 flist = sorted([file for file in downscaled_dir.rglob(f'{filename.stem}_*')])
@@ -718,7 +725,7 @@ class Topoclass(object):
         wrapper function to export toposcale output to cryosgrid format from TopoClass
         
         Args:
-            fname_format (str): filename format. point_id is inserted where * is
+            fname_format (str): filename format. point_name is inserted where * is
 
         """
         path = self.config.outputs.path
@@ -746,10 +753,10 @@ class Topoclass(object):
 
     def to_crocus(self, fname_format='CROCUS_pt_*.nc', scale_precip=1):
         """
-        function to export toposcale output to crocus format .nc. This functions saves one file per point_id
+        function to export toposcale output to crocus format .nc. This functions saves one file per point_name
         
         Args:
-            fout_format (str): filename format. point_id is inserted where * is
+            fout_format (str): filename format. point_name is inserted where * is
             scale_precip(float): scaling factor to apply on precipitation. Default is 1
         """
         te.to_crocus(self.downscaled_pts,
@@ -763,7 +770,7 @@ class Topoclass(object):
         """
         function to export toposcale output to snowmodel format .ascii, for single station standard
 
-            fout_format: str, filename format. point_id is inserted where * is
+            fout_format: str, filename format. point_name is inserted where * is
         """
         te.to_micromet_single_station(self.downscaled_pts,
                                       self.toposub.df_centroids,

@@ -89,11 +89,11 @@ def txt2ds(fname):
         fname (str): filename
 
     Returns:
-        xarray dataset of dimension (time, point_id)
+        xarray dataset of dimension (time, point_name)
     '''
     df = read_pt_fsm2oshd(fname)
-    point_id = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
-    print(f'---> Reading FSM data for point_id = {point_id}')
+    point_ind = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
+    print(f'---> Reading FSM data for point_name = {point_ind}')
     ds = xr.Dataset({
         "sd": (['time'], df.sd.values),
         "scf":  (['time'], df.scf.values),
@@ -105,7 +105,7 @@ def txt2ds(fname):
         "tsoil_4":  (['time'], df.tsoil_4.values)
         },
         coords={
-            "point_id": point_id,
+            "point_ind": point_ind,
             "time": df.index,
             "reference_time": pd.Timestamp(df.index[0])
         })
@@ -149,11 +149,11 @@ def to_netcdf(fname_fsm_sim, complevel=9):
 
 
 def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
-                        fname_forest='fsm_sim/fsm_out_forest.nc',
-                        fname_open='fsm_sim/fsm_out_open.nc',
+                         fname_forest='fsm_sim/fsm_out_forest.nc',
+                         fname_open='fsm_sim/fsm_out_open.nc',
                          save_ds=False,
                          remove_forest_open_file=False,
-                        fout=None,
+                         fout=None,
                          n_digits=3):
     '''
     Function to compute weighted average of forest and open simulations from single simulation output files
@@ -168,11 +168,11 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
     df_forest = pd.read_pickle(fname_df_forest)
     dsf = xr.open_dataset(fname_forest)
     dso = xr.open_dataset(fname_open)
-    point_id = dsf.point_id.values
-    ds = dsf * df_forest.proportion_with_forest[point_id] + dso * (1-df_forest.proportion_with_forest[point_id])
+    point_name = dsf.point_name.values
+    ds = dsf * df_forest.proportion_with_forest[point_name] + dso * (1-df_forest.proportion_with_forest[point_name])
 
     if save_ds:
-        fname_out = f'{fout}_{str(point_id).zfill(n_digits)}.nc'
+        fname_out = f'{fout}_{str(point_name).zfill(n_digits)}.nc'
         te.to_netcdf(ds, fname_out)
         if remove_forest_open_file:
             os.remove(fname_open)

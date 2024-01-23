@@ -108,8 +108,8 @@ def to_musa(ds,
     fo['sw'] = ds['SW'].T
     fo['ws'] = ds['ws'].T
     fo['tp'] = ds['tp'].T
-    fo['rh'] = (('time', 'point_id'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
-    fo['precip'] = (('time', 'point_id'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
+    fo['rh'] = (('time', 'point_name'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
+    fo['precip'] = (('time', 'point_name'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
     fo = fo.drop_vars(['q', 'tp'])
     fo = fo[['tair', 'rh', 'p', 'lw', 'sw', 'ws', 'precip']].expand_dims({'dummy': 1}, axis=2)
 
@@ -142,9 +142,9 @@ def to_musa(ds,
                                  'scale_factor': scale_factor,
                                  'add_offset': add_offset}})
 
-    fo['latitude'] = (('point_id'), df_pts.latitude.values)
-    fo['longitude'] = (('point_id'), df_pts.longitude.values)
-    fo['elevation'] = (('point_id'), df_pts.elevation.values)
+    fo['latitude'] = (('point_name'), df_pts.latitude.values)
+    fo['longitude'] = (('point_name'), df_pts.longitude.values)
+    fo['elevation'] = (('point_name'), df_pts.elevation.values)
     fo.latitude.attrs = {'units': 'deg', 'standard_name': 'latitude', 'long_name': 'Cluster latitude'}
     fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude', 'long_name': 'Cluster longitude'}
     fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation', 'long_name': 'Cluster elevation'}
@@ -184,10 +184,11 @@ def to_cryogrid(ds,
         else:
             da_label.to_netcdf(path + 'cluster_labels_map.nc')
 
-    n_digits = len(str(ds.point_id.values.max()))
-    for pt in ds.point_id.values:
-        foutput = path / fname_format.split('*')[0] + str(pt).zfill(n_digits) + fname_format.split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    n_digits = len(str(len(ds.point_name))) + 1
+
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = path / fname_format.split('*')[0] + str(pt_ind).zfill(n_digits) + fname_format.split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         fo = xr.Dataset()
         fo['time'] = ds_pt.time
         fo['Tair'] = ('time', ds_pt.t.values - 273.15)
@@ -268,7 +269,7 @@ def to_fsm2oshd(ds_down,
     '''
 
     def write_fsm2oshd_namelist(row,
-                                pt_name,
+                                pt_ind,
                                 n_digits,
                                 fname_format='fsm_sim/fsm_',
                                 mode='forest',
@@ -276,9 +277,9 @@ def to_fsm2oshd(ds_down,
                                 modconf=None):
         # Function to write namelist file (.nam) for each point where to run FSM.
 
-        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_name).zfill(n_digits) + '.nam'
-        file_met = str(fname_format) + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
-        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_name).zfill(n_digits) + '.txt'
+        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'
+        file_met = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
+        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.txt'
 
         if modconf is None:
             modconf = {
@@ -390,6 +391,7 @@ def to_fsm2oshd(ds_down,
     def write_fsm2oshd_met(ds_pt,
                            ds_tvt,
                            pt_name,
+                           pt_ind,
                            n_digits,
                            fname_format='fsm_sim/fsm_'):
         '''
@@ -410,7 +412,7 @@ def to_fsm2oshd(ds_down,
         else:
             scale_tvt = 1
 
-        foutput = str(fname_format) + '_met_' + str(pt_name).zfill(n_digits) + '.txt'
+        foutput = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
         df = pd.DataFrame()
         df['year'] = pd.to_datetime(ds_pt.time.values).year
         df['month']  = pd.to_datetime(ds_pt.time.values).month
@@ -433,7 +435,7 @@ def to_fsm2oshd(ds_down,
         df['sf24'] = np.round(arr,3)
 
         #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        df['tvt'] = np.round(ds_tvt.sel(point_id=pt_name).for_tau.values,4)/scale_tvt
+        df['tvt'] = np.round(ds_tvt.sel(point_name=pt_name).for_tau.values,4)/scale_tvt
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print(f'---> Met file {foutput} saved')
@@ -459,23 +461,23 @@ def to_fsm2oshd(ds_down,
         namelist_param.update(namelist_options)
 
     if n_digits is None:
-        n_digits = len(str(ds_down.point_id.values.max())) + 1
+        n_digits = len(str(len(ds.point_name))) + 1
 
     if cluster_method:
         # extract FSM forest parameters for each clusters
         # Aggregate forest parameters only to fores area
         fsm_df = ts.ds_to_indexed_dataframe(fsm_param)
         fsm_df['lon'], fsm_df['lat'] = tp.convert_epsg_pts(fsm_df.x, fsm_df.y, epsg_ds_param, 4326)
-        df_forest = fsm_df.where(fsm_df.forcov>0.).dropna().groupby('point_id').mean()
-        df_open = fsm_df.where(fsm_df.forcov==0.).dropna().groupby('point_id').mean()
+        df_forest = fsm_df.where(fsm_df.forcov>0.).dropna().groupby('point_name').mean()
+        df_open = fsm_df.where(fsm_df.forcov==0.).dropna().groupby('point_name').mean()
 
         dx = np.abs(np.diff(fsm_param.x)[0])
         dy = np.abs(np.diff(fsm_param.y)[0])
-        df_forest['cluster_total_area'] = fsm_df.groupby('point_id').count().elevation.values * dx * dy
-        df_forest['proportion_with_forest'] = fsm_df.where(fsm_df.forcov > 0.).groupby('point_id').count().elevation.values / fsm_df.groupby('point_id').count().elevation.values
+        df_forest['cluster_total_area'] = fsm_df.groupby('point_name').count().elevation.values * dx * dy
+        df_forest['proportion_with_forest'] = fsm_df.where(fsm_df.forcov > 0.).groupby('point_name').count().elevation.values / fsm_df.groupby('point_name').count().elevation.values
         df_forest['cluster_domain_size'] = np.sqrt(df_forest.cluster_total_area)
-        #df_forest['cluster_domain_size'] = np.sqrt(fsm_param.drop('point_id').groupby(fsm_param.point_id).count().to_dataframe().LAI5)*dx
-        df_forest['forest_cover'] = fsm_param.drop('point_id').groupby(fsm_param.point_id).mean().forcov.values
+        #df_forest['cluster_domain_size'] = np.sqrt(fsm_param.drop('point_name').groupby(fsm_param.point_name).count().to_dataframe().LAI5)*dx
+        df_forest['forest_cover'] = fsm_param.drop('point_name').groupby(fsm_param.point_name).mean().forcov.values
     else:
         pass
 
@@ -487,25 +489,26 @@ def to_fsm2oshd(ds_down,
  
     # ----- Loop through all points-------
     # NOTE: eventually this for loop could be parallelized to several cores -----
-    for pt in ds_down.point_id.values:
+    for pt_ind, pt_name in enumerate(ds_down.point_name.values):
 
-        ds_pt = ds_down.sel(point_id=pt).copy()
-        tvt_pt = ds_tvt.sel(point_id=pt).copy()
-        row_forest = df_forest.loc[pt]
+        ds_pt = ds_down.sel(point_name=pt_name).copy()
+        tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
+        row_forest = df_forest.iloc[pt_ind]
         write_fsm2oshd_met(ds_pt,
                            ds_tvt=ds_tvt,
                            n_digits=n_digits,
-                           pt_name=pt,
+                           pt_name=pt_name,
+                           pt_ind=pt_ind,
                            fname_format=p/fname_format)
         write_fsm2oshd_namelist(row_forest,
-                                pt_name=pt,
+                                pt_ind=pt_ind,
                                 n_digits=n_digits,
                                 fname_format=p/fname_format,
                                 mode='forest',
                                 namelist_param=namelist_param) # write forest namelist
 
         if cluster_method:
-            row_open = df_forest.loc[pt]
+            row_open = df_forest.iloc[pt_ind]
             write_fsm2oshd_namelist(row_open,
                                     pt_name=pt,
                                     n_digits=n_digits,
@@ -540,14 +543,14 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n
     TODO: 
     - Check unit DONE jf
     - Check format is compatible with compiled model DONE jf
-    - ensure ds.point_id.values always
+    - ensure ds.point_name.values always
     """
     if n_digits is None:
-        n_digits = len(str(ds.point_id.values.max())) + 1
+        n_digits = len(str(len(ds.point_name)))
 
-    for pt in ds.point_id.values:
-        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
         df['year'] = pd.to_datetime(ds_pt.time.values).year
         df['month'] = pd.to_datetime(ds_pt.time.values).month
@@ -585,11 +588,11 @@ def to_TC(ds, fname_format='pt_*.tx'):
     """
 
     # set n_digits
-    n_digits = len(str(max(ds.point_id.values)))
+    n_digits = len(str(len(ds.point_name))) + 1
 
-    for pt in ds.point_id.values:
-        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
         df['datetime'] = pd.to_datetime(ds_pt.time.values)
         df['TA'] = np.round(ds_pt.t.values, 2)  # air temperature
@@ -617,12 +620,12 @@ def to_micromet_single_station(ds,
                                na_values=-9999,
                                headers=False):
     """
-    Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_id
+    Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_name
 
     Args:
         ds (dataset): TopoPyScale xarray dataset, downscaled product
         df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
-        fname_format (str): filename format. point_id is inserted where * is
+        fname_format (str): filename format. point_name is inserted where * is
         na_values (int): na_value default
         headers (bool): add headers to file
 
@@ -637,10 +640,11 @@ def to_micromet_single_station(ds,
      2002   10    8   12.00    101   426340.0  4411238.0  3598.0    -5.02    88.77 -9999.00 -9999.00 -9999.00
     """
 
-    n_digits = len(str(ds.point_id.values.max()))
-    for pt in ds.point_id.values:
-        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    n_digits = len(str(len(ds.point_name))) + 1
+
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
         df['year'] = pd.to_datetime(ds_pt.time.values).year
         df['mo'] = pd.to_datetime(ds_pt.time.values).month
@@ -674,25 +678,25 @@ def to_crocus(ds,
               project_author='S. Filhol',
               snow_partition_method='continuous'):
     """
-    Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id
+    Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_name
 
     Args:
         ds (dataset): Toposcale downscaled dataset.
         df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
-        fname_format (str): filename format. point_id is inserted where * is
+        fname_format (str): filename format. point_name is inserted where * is
         scale_precip (float): scaling factor to apply on precipitation. Default is 1
         climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
         project_author (str): name of project author(s)
         snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
 
     """
-    # create one file per point_id
-    n_digits = len(str(ds.point_id.values.max()))
+    # create one file per point_name
+    n_digits = len(str(ds.point_name.values.max()))
     ver_dict = tu.get_versionning()
 
-    for pt in ds.point_id.values:
-        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
         df['time'] = ds_pt.time.values
         df['Tair'] = ds_pt.t.values
@@ -850,13 +854,11 @@ def to_snowpack(ds, fname_format='smet_pt_*.tx'):
 
     """
 
-    # n_digits = len(str(ds.point_id.values.max()))
-    # always set this as 3  simplifies parsing files later on
-    n_digits = 3
+    n_digits = len(str(len(ds.point_name))) + 1
 
-    for pt in ds.point_id.values:
-        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
         df['timestamp'] = ds_pt.time
         df['Tair'] = np.round(ds_pt.t.values, 2)
@@ -921,13 +923,11 @@ def to_geotop(ds, fname_format='geotop_pt_*.txt'):
 
     """
 
-    # n_digits = len(str(ds.point_id.values.max()))
-    # always set this as 3  simplifies parsing files later on
-    n_digits = 3
+    n_digits = len(str(len(ds.point_name))) + 1
 
-    for pt in ds.point_id.values:
-        foutput = str(fname_format).split('*')[0] + str(pt).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_id=pt).copy()
+    for pt_ind, pt_name in enumerate(ds.point_name.values):
+        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
+        ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
         dt = pd.to_datetime(ds_pt.time.values)
         df['Date'] = dt.strftime("%d/%m/%Y %H:%M")

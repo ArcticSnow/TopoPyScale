@@ -30,7 +30,7 @@ def get_solar_geom(df_position,
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
 
     Args:
-        df_position (dataframe): point_id as index, latitude, longitude
+        df_position (dataframe): point_name as index, latitude, longitude
         start_date (str): start date  "2014-05-10"
         end_date (str: end date   "2015-05-10"
         tstep (str): time step, ex: '6H'
@@ -78,12 +78,12 @@ def get_solar_geom(df_position,
 
     ds = xr.Dataset(
         {
-            "zenith": (["point_id", "time"], np.deg2rad(arr_val[:, 0, :])),
-            "azimuth": (["point_id", "time"], np.deg2rad(arr_val[:,1,:] - 180)),
-            "elevation": (["point_id", "time"], np.deg2rad(arr_val[:, 2, :])),
+            "zenith": (["point_name", "time"], np.deg2rad(arr_val[:, 0, :])),
+            "azimuth": (["point_name", "time"], np.deg2rad(arr_val[:,1,:] - 180)),
+            "elevation": (["point_name", "time"], np.deg2rad(arr_val[:, 2, :])),
         },
         coords={
-            "point_id":(("point_id"), df_position.point_id),
+            "point_name":(("point_name"), df_position.point_name),
             "time": pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, inclusive='left'),
             "reference_time": pd.Timestamp(start_date),
         },

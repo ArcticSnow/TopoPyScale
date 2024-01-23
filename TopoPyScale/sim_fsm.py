@@ -89,11 +89,11 @@ def txt2ds(fname):
         fname (str): filename
 
     Returns:
-        xarray dataset of dimension (time, point_id)
+        xarray dataset of dimension (time, point_name)
     '''
     df = read_pt_fsm(fname)
-    point_id = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
-    print(f'---> Reading FSM data for point_id = {point_id}')
+    point_name = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
+    print(f'---> Reading FSM data for point_name = {point_name}')
 
     ds = xr.Dataset({
         "albedo": (['time'], df.albedo.values),
@@ -104,7 +104,7 @@ def txt2ds(fname):
         "t_soil":  (['time'], df.t_soil.values),
         },
         coords={
-            "point_id": point_id,
+            "point_name": point_name,
             "time": df.index,
             "reference_time": pd.Timestamp(df.index[0])
         })
@@ -194,7 +194,7 @@ def to_dataset(fname_pattern='sim_FSM_pt*.txt', fsm_path = "./fsm_sims/"):
     fnames = glob.glob(fsm_path + fname_pattern)
     fnames.sort()
 
-    ds = xr.concat([txt2ds(fname) for fname in fnames],'point_id')
+    ds = xr.concat([txt2ds(fname) for fname in fnames],'point_name')
 
     ds.albedo.attrs = {'units':'ratio', 'standard_name':'albedo', 'long_name':'Surface Effective Albedo', '_FillValue': -9999999.0}
     ds.runoff.attrs = {'units':'kg m-2', 'standard_name':'runoff', 'long_name':'Cumulated runoff from snow', '_FillValue': -9999999.0}

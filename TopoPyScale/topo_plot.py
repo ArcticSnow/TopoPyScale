@@ -60,7 +60,7 @@ def map_variable(ds_down,
     Function to plot unclustered downscaled points given that each point corresponds to a cluster label
 
     Args:
-        ds_down (dataset): TopoPyScale downscaled point object with coordinates (time, point_id). Can be single variable or multiple
+        ds_down (dataset): TopoPyScale downscaled point object with coordinates (time, point_name). Can be single variable or multiple
         ds_param (dataset): TopoPyScale toposub dataset with coordinates (x,y)
         time_step (int): (optional) time step to plot.
         time (str): (optional) time slice to plot. time overule time_step
@@ -101,7 +101,7 @@ def map_variable(ds_down,
 
     if len(list(ds.keys()))==1:
         var = list(ds.keys())[0]
-    ds[var].sel(point_id=ds_param.cluster_labels).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
+    ds[var].sel(point_name=ds_param.cluster_labels).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
 
 
     return ax
@@ -110,6 +110,6 @@ def map_clusters(ds_down,
                  ds_param,
                  df_centroids=None,
                  **kwargs):
-    ds_down.point_id.sel(point_id=ds_param.cluster_labels).plot.imshow(**kwargs)
+    ds_down.point_name.sel(point_name=ds_param.cluster_labels).plot.imshow(**kwargs)
     if df_centroids is not None:
         plt.scatter(df_centroids.x, df_centroids.y, c='k', s=2)

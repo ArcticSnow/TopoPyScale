@@ -100,13 +100,15 @@ def downscale_climate(project_directory,
         n_core (int): number of core on which to distribute processing
 
     Returns:
-        dataset: downscaled data organized with time, point_id, lat, long
+        dataset: downscaled data organized with time, point_name, lat, long
     """
     global pt_downscale_interp
     global pt_downscale_radiations
     global _subset_climate_dataset
 
-    print('\n---> Downscaling climate to list of points using TopoScale')
+    print('\n-------------------------------------------------')
+    print('           TopoScale - Downscaling\n')
+    print('---> Downscaling climate to list of points using TopoScale')
     clear_files(output_directory / 'tmp')
 
     start_time = time.time()
@@ -145,7 +147,7 @@ def downscale_climate(project_directory,
         return ds_
 
     def _subset_climate_dataset(ds_, row, type='plev'):
-        print('Preparing {} for point {}'.format(type, row.point_id))
+        print('Preparing {} for point {}'.format(type, row.point_name))
         # =========== Extract the 3*3 cells centered on a given point ============
         ind_lat = np.abs(ds_.latitude - row.lat).argmin()
         ind_lon = np.abs(ds_.longitude - row.lon).argmin()
@@ -158,7 +160,7 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in ds_tmp.data_vars}
-        ds_tmp.to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_id}.nc', engine='h5netcdf',
+        ds_tmp.to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_name}.nc', engine='h5netcdf',
                          encoding=encoding)
         ds_ = None
         ds_tmp = None
@@ -203,9 +205,9 @@ def downscale_climate(project_directory,
     meta_list = []
     i = 0
     for _, row in df_centroids.iterrows():
-        surf_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_surf_pt_{row.point_id}.nc', engine='h5netcdf'))
-        plev_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_plev_pt_{row.point_id}.nc', engine='h5netcdf'))
-        ds_solar_list.append(ds_solar.sel(point_id=row.point_id))
+        surf_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_surf_pt_{row.point_name}.nc', engine='h5netcdf'))
+        plev_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_plev_pt_{row.point_name}.nc', engine='h5netcdf'))
+        ds_solar_list.append(ds_solar.sel(point_name=row.point_name))
         horizon_da_list.append(horizon_da)
         row_list.append(row)
         meta_list.append({'interp_method': interp_method,
@@ -216,7 +218,7 @@ def downscale_climate(project_directory,
         i+=1
 
     def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
-        pt_id = row.point_id
+        pt_id = row.point_name
         print(f'Downscaling t,q,p,tp,ws, wd for point: {pt_id}')
 
         # ====== Horizontal interpolation ====================
@@ -266,7 +268,8 @@ def downscale_climate(project_directory,
 
         down_pt = xr.Dataset(coords={
             'time': plev_interp.time,
-            'point_id': pd.to_numeric(pt_id, errors='ignore')
+            #'point_name': pd.to_numeric(pt_id, errors='ignore')
+            'point_name': pt_id
         })
 
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
@@ -378,7 +381,7 @@ def downscale_climate(project_directory,
     def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
         # insrt here downscaling routine for sw and lw
         # save file final file
-        pt_id = row.point_id
+        pt_id = row.point_name
 
         file_pattern = meta.get('file_pattern')
         print(f'Downscaling LW, SW for point: {pt_id}')
@@ -506,5 +509,5 @@ def read_downscaled(path='outputs/down_pt*.nc'):
         dataset: merged dataset readily to use and loaded in chuncks via Dask
     """
 
-    down_pts = xr.open_mfdataset(path, concat_dim='point_id', combine='nested', parallel=False)
+    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested', parallel=False)
     return down_pts
