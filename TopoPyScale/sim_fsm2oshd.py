@@ -151,7 +151,6 @@ def to_netcdf(fname_fsm_sim, complevel=9):
 def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
                          fname_forest='fsm_sim/fsm_out_forest.nc',
                          fname_open='fsm_sim/fsm_out_open.nc',
-                         save_ds=False,
                          remove_forest_open_file=False,
                          fout=None,
                          n_digits=3):
@@ -171,15 +170,12 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
     point_ind = dsf.point_ind.values
     ds = dsf * df_forest.proportion_with_forest.iloc[point_ind] + dso * (1-df_forest.proportion_with_forest.iloc[point_ind])
 
-    if save_ds:
-        fname_out = f'{fout}_{str(point_ind).zfill(n_digits)}.nc'
-        te.to_netcdf(ds, fname_out)
-        if remove_forest_open_file:
-            os.remove(fname_open)
-            os.remove(fname_forest)
-        print(f'--> File {fname_out} saved')
-
-    return ds
+    fname_out = f'{fout}_{str(point_ind).zfill(n_digits)}.nc'
+    te.to_netcdf(ds, fname_out)
+    if remove_forest_open_file:
+        os.remove(fname_open)
+        os.remove(fname_forest)
+    print(f'--> File {fname_out} saved')
 
 def aggregate_all_open_forest(fname_df_forest,
                               fname_forest_outputs='fsm_sim/fsm_outputs_fores_*.nc',
