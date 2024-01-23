@@ -58,7 +58,7 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
 
     for var in variables:
         scale_factor, add_offset = compute_scaling_and_offset(ds[var], n=10)
-        if str(ds[var].dtype)[:3] == 'int' or var == 'cluster_labels':
+        if str(ds[var].dtype)[:3] == 'int' or var == 'cluster_labels' or var == 'point_name':
             encod_dict.update({var: {
                 'dtype': ds[var].dtype}})
         else:
