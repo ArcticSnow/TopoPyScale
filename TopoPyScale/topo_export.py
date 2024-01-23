@@ -461,7 +461,7 @@ def to_fsm2oshd(ds_down,
         namelist_param.update(namelist_options)
 
     if n_digits is None:
-        n_digits = len(str(len(ds.point_name))) + 1
+        n_digits = len(str(len(ds_down.point_name))) + 1
 
     if cluster_method:
         # extract FSM forest parameters for each clusters
