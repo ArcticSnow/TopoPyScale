@@ -510,7 +510,7 @@ def to_fsm2oshd(ds_down,
         if cluster_method:
             row_open = df_forest.iloc[pt_ind]
             write_fsm2oshd_namelist(row_open,
-                                    pt_name=pt_name,
+                                    pt_ind=pt_ind,
                                     n_digits=n_digits,
                                     fname_format=p/fname_format,
                                     mode='open',
