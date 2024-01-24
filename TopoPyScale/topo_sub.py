@@ -21,24 +21,21 @@ import numpy as np
 import time
 from typing import Union, Optional
 from pathlib import Path
+from TopoPyScale import topo_utils as tu
 
 
 def ds_to_indexed_dataframe(ds):
-    """
-    Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
-    WARNING: this only works if the variable of the dataset have all the same dimensions!
+    '''
+    Function to convert dataset to dataframe
 
-    By default the ds.to_dataframe() returns a multi-index dataframe. Here the coordinates are transfered as columns in the dataframe
-    
+    See definition of function in topo_utils.py
     Args:
-        ds (dataset): xarray dataset with all variable of same number of dimensions
-    
+        ds (dataset): xarray dataset N * 2D Dataarray
+
     Returns:
-        pandas dataframe: 
-    """
-    df = ds.to_dataframe()
-    n_levels = df.index.names.__len__()
-    return df.reset_index(level=list(range(0, n_levels)))
+
+    '''
+    return tu.ds_to_indexed_dataframe(ds)
 
 
 def scale_df(df_param,

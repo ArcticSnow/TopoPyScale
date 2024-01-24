@@ -192,7 +192,6 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     else:
         te.to_netcdf(ds, fname=pdir / output_folder / fname)
 
-
     return ds
 
 
