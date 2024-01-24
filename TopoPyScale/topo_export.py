@@ -438,7 +438,7 @@ def to_fsm2oshd(ds_down,
         df['sf24'] = np.round(arr,3)
 
         #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        if type(ds_tvt) in [int, float]:
+        if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]]:
             df['tvt'] = ds_tvt
         else:
             if ds_tvt.for_tau.max()>10:
