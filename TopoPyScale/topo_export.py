@@ -256,7 +256,7 @@ def to_fsm2oshd(ds_down,
     FSM2oshd includes canopy structures processes
     one simulation consists of 2 driving file:
        - met.txt with variables:
-           year, month, day, hour, SWb, SWd, LW, Sf, Rf, Ta, RH, Ua, Ps, Sf24h, Tvt
+           year, month, day, hour, SWdir, SWdif, LW, Sf, Rf, Ta, RH, Ua, Ps, Sf24h, Tvt
        - param.nam with canopy and model constants. See https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/runner.py#L10
 
     Args:
@@ -407,10 +407,7 @@ def to_fsm2oshd(ds_down,
         '''
         
         # for storage optimization tvt is stored in percent.
-        if ds_tvt.for_tau.max()>10:
-            scale_tvt = 100
-        else:
-            scale_tvt = 1
+
 
         foutput = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
         df = pd.DataFrame()
@@ -435,7 +432,14 @@ def to_fsm2oshd(ds_down,
         df['sf24'] = np.round(arr,3)
 
         #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        df['tvt'] = np.round(ds_tvt.sel(point_name=pt_name).for_tau.values,4)/scale_tvt
+        if type(ds_tvt) in [int, float]:
+            df['tvt'] = ds_tvt
+        else:
+            if ds_tvt.for_tau.max()>10:
+                scale_tvt = 100
+            else:
+                scale_tvt = 1
+            df['tvt'] = np.round(ds_tvt.sel(point_name=pt_name).for_tau.values,4)/scale_tvt
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print(f'---> Met file {foutput} saved')
@@ -492,10 +496,18 @@ def to_fsm2oshd(ds_down,
     for pt_ind, pt_name in enumerate(ds_down.point_name.values):
 
         ds_pt = ds_down.sel(point_name=pt_name).copy()
-        tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
+
+        # [ ] Add checking of NaNs in ds_tvt. If NaN present stop process and send ERROR message
+
+        if type(ds_tvt) in [int, float]:
+            tvt_pt = ds_tvt
+        elif ds_tvt == 'svf_for':
+            tvt_pt = df_forest.vfhp.iloc[pt_ind]
+        else:
+            tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
         row_forest = df_forest.iloc[pt_ind]
         write_fsm2oshd_met(ds_pt,
-                           ds_tvt=ds_tvt,
+                           ds_tvt=tvt_pt,
                            n_digits=n_digits,
                            pt_name=pt_name,
                            pt_ind=pt_ind,

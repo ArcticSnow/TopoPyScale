@@ -202,7 +202,13 @@ def aggregate_all_open_forest(fname_df_forest,
 
 
 def read_pt_fsm2oshd(fname):
-    df = pd.read_csv(fname, delim_whitespace=True, header=None,names=['year', 'month', 'day', 'hour', 'sd', 'scf', 'swe', 'tsurf','tsoil_1','tsoil_2','tsoil_3','tsoil_4'])
+    df = pd.read_csv(fname, delim_whitespace=True, header=None, names=['year', 'month', 'day', 'hour', 'sd', 'scf', 'swe', 'tsurf','tsoil_1','tsoil_2','tsoil_3','tsoil_4'])
+    df['time'] = pd.to_datetime(df[['year', 'month', 'day', 'hour']])
+    df = df.set_index('time')
+    return df
+
+def read_pt_met_fsm2oshd(fname):
+    df = pd.read_csv(fname, delim_whitespace=True, header=None, names=['year', 'month', 'day', 'hour', 'SWdir', 'SWdif', 'LW', 'Sf', 'Rf', 'Ta', 'RH', 'Ua', 'Ps', 'Sf24h', 'Tvt'])
     df['time'] = pd.to_datetime(df[['year', 'month', 'day', 'hour']])
     df = df.set_index('time')
     return df
