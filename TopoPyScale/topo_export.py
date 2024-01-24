@@ -263,8 +263,14 @@ def to_fsm2oshd(ds_down,
         ds_down:  Downscaled weather variable dataset
         fsm_param:  terrain and canopy parameter dataset
         df_centroids:  cluster centroids statistics (terrain + canopy)
-        ds_tvt (dataset):  transmisivity dataset
+        ds_tvt (dataset, int, float, or str):  transmisivity. Can be a dataset, a constant or 'svf_for'
+        simulation_path (str): 'fsm_sim'
+        fname_format (str):'fsm_'
         namelist_param (dict): {'precip_multiplier':1, 'max_sd':4,'z_snow':[0.1, 0.2, 0.4], 'z_soil':[0.1, 0.2, 0.4, 0.8]}
+        n_digits (int): Number of digits (for filename system)
+        snow_partition_method (str): method for snow partitioning. Default: 'continuous'
+        cluster_method (bool): boolean to be True is using cluster appraoch
+        epsg_ds_param (int): epsg code of ds_parma: example: 2056
 
     '''
 
