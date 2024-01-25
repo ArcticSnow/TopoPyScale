@@ -250,7 +250,8 @@ def to_fsm2oshd(ds_down,
                 n_digits=None,
                 snow_partition_method='continuous',
                 cluster_method=True,
-                epsg_ds_param=2056):
+                epsg_ds_param=2056,
+                temperature_correction=0):
     '''
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
@@ -399,7 +400,8 @@ def to_fsm2oshd(ds_down,
                            pt_name,
                            pt_ind,
                            n_digits,
-                           fname_format='fsm_sim/fsm_'):
+                           fname_format='fsm_sim/fsm_',
+                           temperature_correction=0):
         '''
         Function to write meteorological forcing for FSM
 
@@ -428,7 +430,7 @@ def to_fsm2oshd(ds_down,
         rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
         df['snowfall'] = np.round(snow, 5)
         df['rainfall'] = np.round(rain, 5)
-        df['Tair'] = np.round(ds_pt.t.values, 2)
+        df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
         df['RH'] = np.round(rh * 100,2)
         df['speed'] = np.round(ds_pt.ws.values,2)
         df['p'] = np.round(ds_pt.p.values,2)
@@ -517,7 +519,8 @@ def to_fsm2oshd(ds_down,
                            n_digits=n_digits,
                            pt_name=pt_name,
                            pt_ind=pt_ind,
-                           fname_format=p/fname_format)
+                           fname_format=p/fname_format,
+                           temperature_correction=temperature_correction)
         write_fsm2oshd_namelist(row_forest,
                                 pt_ind=pt_ind,
                                 n_digits=n_digits,
