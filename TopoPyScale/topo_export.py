@@ -446,7 +446,7 @@ def to_fsm2oshd(ds_down,
                 scale_tvt = 100
             else:
                 scale_tvt = 1
-            df['tvt'] = ds_tvt * scale_tvt
+            df['tvt'] = ds_tvt / scale_tvt
         else:
             if ds_tvt.for_tau.max()>10:
                 scale_tvt = 100
