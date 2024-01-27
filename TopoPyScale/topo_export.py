@@ -441,7 +441,12 @@ def to_fsm2oshd(ds_down,
 
         #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
         if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
-            df['tvt'] = ds_tvt
+            print('Warning: tvt is constant')
+            if ds_tvt>1:
+                scale_tvt = 100
+            else:
+                scale_tvt = 1
+            df['tvt'] = ds_tvt * scale_tvt
         else:
             if ds_tvt.for_tau.max()>10:
                 scale_tvt = 100
