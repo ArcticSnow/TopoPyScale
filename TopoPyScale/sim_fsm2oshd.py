@@ -11,6 +11,8 @@ TODO:
 
 
 '''
+import pdb
+
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_export as te
 from pathlib import Path
@@ -41,7 +43,7 @@ def _run_fsm2oshd(fsm_exec, nam_file):
 
 def fsm2oshd_sim_parallel(simulation_path='./fsm_sim,',
                           fsm_forest_nam='fsm__forest*.nam',
-                          fsm_open_nam='fsm_sim/fsm__open*.nam',
+                          fsm_open_nam='fsm__open*.nam',
                           fsm_exec='./FSM_OSHD',
                           n_cores=6,
                           delete_nlst_files=False):
@@ -59,15 +61,15 @@ def fsm2oshd_sim_parallel(simulation_path='./fsm_sim,',
         NULL (FSM simulation file written to disk)
     '''
     print('---> Run FSM simulation in parallel')
-
+    p = Path(simulation_path)
     # 2. execute FSM on multicore for Forest
-    nlst_forest = glob.glob(fsm_forest_nam)
+    nlst_forest = glob.glob(str(p / fsm_forest_nam))
     fun_param = zip([fsm_exec]*len(nlst_forest), nlst_forest)
     tu.multicore_pooling(_run_fsm2oshd, fun_param, n_cores)
     print('---> FSM2oshd forest simulations finished.')
 
     # 2. execute FSM on multicore for Open
-    nlst_open = glob.glob(fsm_open_nam)
+    nlst_open = glob.glob(str(p / fsm_open_nam))
     fun_param = zip([fsm_exec]*len(nlst_open), nlst_open)
     tu.multicore_pooling(_run_fsm2oshd, fun_param, n_cores)
     print('---> FSM2oshd open simulations finished.')
@@ -111,6 +113,25 @@ def txt2ds(fname):
         })
 
     return ds
+
+def output_to_ds(fname_pattern, complevel=9, remove_file=False, fout='fsm_outputs'):
+    flist = glob.glob(fname_pattern)
+    flist.sort()
+
+    def _to_ds(fname, fout='fsm_outputs', complevel=9, remove_file=False, n_digits=3):
+        ds = xr.open_dataset(fname)
+        point_ind = ds.point_ind.values
+        fname_out = f'{fout}_{str(point_ind).zfill(n_digits)}.nc'
+        te.to_netcdf(ds, fname_out)
+        if remove_file:
+            os.remove(fname)
+        print(f'--> File {fname_out} saved')
+
+    fun_param = zip(flist,
+                    ['fsm_output_open'] * len(flist),
+                    flist_open,)
+    tu.multicore_pooling(_to_ds, fun_param, n_cores)
+    print('---> All fsm outputs stored as netcdf')
 
 
 def to_netcdf(fname_fsm_sim, complevel=9):
@@ -169,6 +190,7 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
     dso = xr.open_dataset(fname_open)
     point_ind = dsf.point_ind.values
     ds = dsf * df_forest.proportion_with_forest.iloc[point_ind] + dso * (1-df_forest.proportion_with_forest.iloc[point_ind])
+    pdb.set_trace()
 
     fname_out = f'{fout}_{str(point_ind).zfill(n_digits)}.nc'
     te.to_netcdf(ds, fname_out)
