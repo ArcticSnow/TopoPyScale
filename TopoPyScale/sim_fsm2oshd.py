@@ -190,7 +190,6 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckle',
     dso = xr.open_dataset(fname_open)
     point_ind = dsf.point_ind.values
     ds = dsf * df_forest.proportion_with_forest.iloc[point_ind] + dso * (1-df_forest.proportion_with_forest.iloc[point_ind])
-    pdb.set_trace()
 
     fname_out = f'{fout}_{str(point_ind).zfill(n_digits)}.nc'
     te.to_netcdf(ds, fname_out)
