@@ -483,9 +483,6 @@ def to_fsm2oshd(ds_down,
     if cluster_method:
         # extract FSM forest parameters for each clusters
         # Aggregate forest parameters only to fores area
-        fsm_df = ts.ds_to_indexed_dataframe(fsm_param)
-        fsm_df['lon'], fsm_df['lat'] = tp.convert_epsg_pts(fsm_df.x, fsm_df.y, epsg_ds_param, 4326)
-
 
         dx = np.abs(np.diff(fsm_param.x)[0])
         dy = np.abs(np.diff(fsm_param.y)[0])
@@ -496,6 +493,10 @@ def to_fsm2oshd(ds_down,
         #df_forest['cluster_domain_size'] = np.sqrt(fsm_param.drop('point_name').groupby(fsm_param.point_name).count().to_dataframe().LAI5)*dx
         df_forest['forest_cover'] = fsm_param.drop('point_name').groupby(fsm_param.point_name).mean().forcov.values
         df_forest.forest_cover.loc[df_forest.proportion_with_forest<0.01] = 0
+        df_forest['x'] = fsm_param.drop('point_name').groupby(fsm_param.point_name).mean().x.values
+        df_forest['y'] = fsm_param.drop('point_name').groupby(fsm_param.point_name).mean().y.values
+        df_forest['lon'], df_forest['lat'] = tp.convert_epsg_pts(df_forest.x, df_forest.y, epsg_ds_param, 4326)
+
     else:
         pass
 
