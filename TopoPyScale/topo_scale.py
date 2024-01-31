@@ -78,7 +78,7 @@ def downscale_climate(project_directory,
                       interp_method='idw',
                       lw_terrain_flag=True,
                       tstep='1H',
-                      precip_lapse_rate_flag=True,
+                      precip_lapse_rate_flag=False,
                       file_pattern='down_pt*.nc',
                       n_core=4):
     """
