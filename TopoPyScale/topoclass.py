@@ -87,7 +87,7 @@ class Topoclass(object):
 
         # climate path
         if os.path.isabs(self.config.climate.era5.path):
-            self.config.climate.path = self.config.climate.era5.path
+            self.config.climate.path = self.config.climate.era5.path +"/"
         else:
             self.config.climate.path = '/'.join((self.config.project.directory, 'inputs/climate/'))
         self.config.climate.tmp_path = '/'.join((self.config.climate.path, 'tmp'))
