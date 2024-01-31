@@ -671,7 +671,8 @@ class Topoclass(object):
                 os.makedirs(self.config.outputs.path / "downscaled")
             except:
                 os.makedirs(self.config.outputs.path / "downscaled")
-
+                
+        realtime = False # always false now as redownload of current month handled elsewhere ? key required only to dynamically set config.project.end
         # retreive ERA5 surface data
         fe.retrieve_era5(
             self.config.climate[self.config.project.climate].product,
