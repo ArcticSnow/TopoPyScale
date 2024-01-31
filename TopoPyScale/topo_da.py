@@ -18,11 +18,18 @@ from rasterio.plot import show
 from osgeo import gdal
 from osgeo import osr 
 from scipy.interpolate import interp1d
-from TopoPyScale import sim_fsm as sim
+from TopoPyScale import topo_sim as sim
 from datetime import datetime
 import xarray as xr
 import rioxarray
 from scipy.special import logsumexp
+import geopandas as gpd
+from shapely.geometry import Polygon
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+import xml.etree.ElementTree as ET
+import os
 
 
 # import gdal
@@ -244,6 +251,10 @@ def modis_tile(latmax, latmin, lonmax, lonmin):
     """
     Function to retrieve MODIS tile indexes based on a lon/lat bbox
 
+    DEPRECATED - DEPRECATED! Does not conside rectangle v rhombus spatial footprint intersection.
+
+    use get_modis_tile_list
+
     Args:
 
 
@@ -295,7 +306,210 @@ def get_modis_wrapper(vertmax, horizmax, vertmin, horizmin, startDate, endDate):
     """
 
 
-def pymodis_download(wdir, vert, horiz, STARTDATE, ENDDATE):
+
+def get_modis_tile_list(bbox_n, bbox_s, bbox_e, bbox_w):
+    """
+    Retrieves a list of MODIS tiles that intersect with a given bounding box.
+
+    Parameters:
+    - bbox_n (float): North latitude of the bounding box.
+    - bbox_s (float): South latitude of the bounding box.
+    - bbox_e (float): East longitude of the bounding box.
+    - bbox_w (float): West longitude of the bounding box.
+
+    Returns:
+    - list: List of MODIS tiles (e.g., ['h23v04', 'h24v05']) that intersect with the bounding box.
+
+    Usage: 
+         tiles_to_get = get_modis_tile_list( 42.305,41.223, 69.950, 71.981)   
+    """
+
+    def get_intersecting_modis_tiles(csv_path, bounding_box):
+        """
+        Extracts MODIS tiles that intersect with a given bounding box.
+
+        Parameters:
+        - csv_path (str): Path to the CSV file containing MODIS tile coordinates.
+        - bounding_box (dict): Dictionary defining the bounding box with keys 'latN', 'latS', 'lonW', 'lonE'.
+
+        Returns:
+        - list: List of MODIS tiles (e.g., ['h23v04', 'h24v05']) that intersect with the bounding box.
+        """
+        # Specify the number of rows to skip in the first read (header and body)
+        skiprows = 6
+        nrows_header_body = 647  # You can adjust this based on the actual number of rows you want to read
+
+        # Read the header and body of the file
+        df_header_body = pd.read_csv(csv_path, delim_whitespace=True, skiprows=skiprows, nrows=nrows_header_body, names=['iv', 'ih', 'lon_min', 'lon_max', 'lat_min', 'lat_max'])
+
+        # Filter out rows with invalid coordinates (-999.0000 or -99.0000)
+        df_header_body = df_header_body[(df_header_body['lon_min'] != -999.0000) & (df_header_body['lat_min'] != -99.0000)]
+
+        # Create a GeoDataFrame with a geometry column representing polygons
+        gdf = gpd.GeoDataFrame(
+            df_header_body,
+            geometry=[Polygon([(row['lon_min'], row['lat_min']),
+                              (row['lon_max'], row['lat_min']),
+                              (row['lon_max'], row['lat_max']),
+                              (row['lon_min'], row['lat_max'])])
+                      for _, row in df_header_body.iterrows()],
+            crs='EPSG:4326'  # Assuming your coordinates are in WGS 84
+        )
+
+        # Create a bounding box polygon
+        bounding_box_polygon = Polygon([(bounding_box['lonW'], bounding_box['latS']),
+                                        (bounding_box['lonE'], bounding_box['latS']),
+                                        (bounding_box['lonE'], bounding_box['latN']),
+                                        (bounding_box['lonW'], bounding_box['latN'])])
+
+        # Check which polygons (MODIS tiles) intersect with the bounding box
+        intersects = gdf[gdf.intersects(bounding_box_polygon)].copy()
+
+        # Extract relevant information from the intersecting MODIS tiles
+        intersects['tiles'] = intersects.apply(lambda row: f'h{row["ih"]:02}v{row["iv"]:02}', axis=1)
+
+        # Convert the tiles to a list
+        tiles = intersects['tiles'].tolist()
+
+        return tiles
+
+    def get_xml_paths(base_url, target_tile):
+        """
+        Get the full paths of XML files for a specific target tile from the given base URL.
+
+        Parameters:
+        - base_url (str): The base URL of the directory containing the XML files.
+        - target_tile (str): The target tile (e.g., "h22v04").
+
+        Returns:
+        - List of str: Full paths of XML files for the target tile.
+        """
+        response = requests.get(base_url)
+
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Find all links on the page
+            links = soup.find_all('a')
+
+            # Extract file names
+            file_names = [link['href'] for link in links if link['href'].endswith('.hdf.xml') and target_tile in link['href']]
+
+            # Prepend the base URL to each file name to get the full path
+            full_paths = [urljoin(base_url, file_names[0])]
+
+            return full_paths
+        else:
+            print(f"Failed to fetch the page. Status code: {response.status_code}")
+            return []
+
+    def download_modis_xml(xml_url):
+        """
+        Downloads and parses the XML file from the given URL, extracting the coordinates.
+
+        Parameters:
+        - xml_url (str): The URL of the MODIS XML file.
+
+        Returns:
+        - list of tuple or None: A list of coordinate tuples [(longitude, latitude), ...] 
+          if the XML file is successfully downloaded and parsed. Returns None if there
+          are any issues with the request or parsing.
+        """
+        response = requests.get(xml_url)
+
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            # Parse the XML content
+            root = ET.fromstring(response.content)
+
+            # Find the SpatialDomainContainer
+            spatial_domain = root.find(".//SpatialDomainContainer")
+
+            if spatial_domain is not None:
+                # Find the GPolygon
+                g_polygon = spatial_domain.find(".//GPolygon")
+
+                if g_polygon is not None:
+                    # Find all the Point elements
+                    points = g_polygon.findall(".//Point")
+
+                    # Extract and return the coordinates
+                    coordinates = []
+                    for point in points:
+                        longitude = float(point.find("PointLongitude").text)
+                        latitude = float(point.find("PointLatitude").text)
+                        coordinates.append((longitude, latitude))
+
+                    return coordinates
+                else:
+                    print(f"Failed to find GPolygon in XML file for tile {tile}")
+        else:
+            print(f"Failed to download XML file for tile {xml_url}. Status code: {response.status_code}")
+
+        return None
+
+    def check_intersection(lat_north, lat_south, lon_west, lon_east, rhombus_coords):
+        """
+        Checks if a bounding box intersects with a rhombus-shaped MODIS tile.
+
+        Parameters:
+        - lat_north (float): North latitude of the bounding box.
+        - lat_south (float): South latitude of the bounding box.
+        - lon_west (float): West longitude of the bounding box.
+        - lon_east (float): East longitude of the bounding box.
+        - rhombus_coords (list of tuple): List of coordinate tuples defining the rhombus.
+
+        Returns:
+        - bool: True if there is an intersection, False otherwise.
+        """
+        # Coordinates of the bounding box (rectangle)
+        bbox_coords = [(lon_west, lat_south), (lon_east, lat_south), (lon_east, lat_north), (lon_west, lat_north)]
+
+        # Create Shapely polygons for the bounding box and rhombus
+        bbox_polygon = Polygon(bbox_coords)
+        rhombus_polygon = Polygon(rhombus_coords)
+
+        # Check for intersection
+        return bbox_polygon.intersects(rhombus_polygon)
+
+    # Example usage:
+    os.system("wget --no-check-certificate https://modis-land.gsfc.nasa.gov/pdf/sn_bound_10deg.txt")
+    csv_path = 'sn_bound_10deg.txt'
+    bounding_box = {'latN': bbox_n, 'latS': bbox_s, 'lonW': bbox_w, 'lonE': bbox_e}
+    intersecting_tiles = get_intersecting_modis_tiles(csv_path, bounding_box)
+    print("First guess intersecting tiles: ", intersecting_tiles)
+
+    # Example usage:
+    base_url = "https://n5eil01u.ecs.nsidc.org/MOST/MOD10A1F.061/2023.02.09/"
+
+    modis_tiles_to_download_list = []
+    for target_tile in intersecting_tiles:
+        xml_paths = get_xml_paths(base_url, target_tile)
+        print(xml_paths)
+
+        modis_tile_coordinates = download_modis_xml(xml_paths[0])
+
+        # Example rhombus coordinates (replace with actual values)
+        rhombus_coordinates = modis_tile_coordinates
+
+        # Check for intersection
+        intersection_result = check_intersection(
+            bounding_box['latN'],
+            bounding_box['latS'],
+            bounding_box['lonW'],
+            bounding_box['lonE'],
+            rhombus_coordinates
+        )
+
+        if intersection_result:
+            print("Bounding box and MODIS tile rhombus intersect:", target_tile)
+            modis_tiles_to_download_list.append(target_tile)
+        else:
+            print("Bounding box and MODIS tile rhombus do not intersect:", target_tile)
+
+    return modis_tiles_to_download_list
+
+def pymodis_download(wdir, tile, STARTDATE, ENDDATE):
     # http://www.pymodis.org/scripts/modis_download.html
     # pip inpip install pyModis
 
@@ -310,10 +524,10 @@ def pymodis_download(wdir, vert, horiz, STARTDATE, ENDDATE):
     os.makedirs(RAWPATH, exist_ok=True)
     os.makedirs(MODPATH + "/transformed/", exist_ok=True)
 
-    hreg = ("h" + f"{horiz:02d}")  # re.compile("h2[4]")
-    vreg = ("v" + f"{vert:02d}")  # re.compile("v0[5]")
-    TILE = hreg + vreg
-    print("Downloading " + PRODUCT + " from " + STARTDATE + " to " + ENDDATE)
+    #hreg = ("h" + f"{horiz:02d}")  # re.compile("h2[4]")
+    #vreg = ("v" + f"{vert:02d}")  # re.compile("v0[5]")
+    #TILE = hreg + vreg
+    print("Downloading " + PRODUCT + " "+ tile + " from " + STARTDATE + " to " + ENDDATE)
     os.system("modis_download.py -U " +
               USER +
               " -P " + PWD +
@@ -323,7 +537,7 @@ def pymodis_download(wdir, vert, horiz, STARTDATE, ENDDATE):
               " -p " + PRODUCT +
               " -f " + STARTDATE +
               " -e " + ENDDATE +
-              " -t " + TILE + " " +
+              " -t " + tile + " " +
               RAWPATH)
 
 
