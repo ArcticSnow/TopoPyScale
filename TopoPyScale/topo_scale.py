@@ -318,6 +318,7 @@ def downscale_climate(project_directory,
 
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
         down_pt['month'] = ('time', down_pt.time.dt.month.data)
+        print("precip lapse rate = "+precip_lapse_rate_flag)
         if precip_lapse_rate_flag:
             monthly_coeffs = xr.Dataset(
                 {
