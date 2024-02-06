@@ -192,7 +192,7 @@ def SmetParser(file, doresample=True, freq='1H', NA_val=-999):
 
 def getCoordinatePixel(map_path, x_coord, y_coord, epsg_in, epsg_out):
     """
-    Function to find which sample a point exists in. Ca accept any combination of projections of the map and points.
+    Function to find which sample a point exists in. Can accept any combination of projections of the map and points.
 
     Args:
         map_path: full path to map

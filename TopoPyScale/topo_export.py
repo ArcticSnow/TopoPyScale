@@ -322,12 +322,13 @@ def to_fsm2oshd(ds_down,
             lai = row.lai5/scale
             vfhp = row.vfhp/scale
 
-        else:
+        elif mode == 'open':
             # default values for 'open' mode
             canmod = 0
             turbulent_exchange = 1
             z_offset, fveg, fves, hcan, lai, vfhp= 0, 0, 0, 0, 0, 1
-
+        else:
+            raise ValueError('mode is not available. Must be open or forest')
         if os.path.exists(file_met):
             nlst = f"""
 &nam_grid
@@ -384,7 +385,7 @@ def to_fsm2oshd(ds_down,
   hcan = {np.round(hcan,3)},                    ! canopy height (meters) (set to 0 in open)
   lai = {np.round(lai,2)},                      ! Leaf area index  (set to 0 in open)
   vfhp = {np.round(vfhp,3)},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
-  fves = {np.round(row.fves/scale,3)},                ! canopy cover fraction (larger area)
+  fves = {np.round(fves,3)},                ! canopy cover fraction (larger area)
 /
   """
 
@@ -601,6 +602,7 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n
 def to_TC(ds, fname_format='pt_*.tx'):
     """
     Function to export data for the T&C model.
+    https://hyd.ifu.ethz.ch/research-data-models/t-c.html
 
     Args:
         ds (dataset): downscaled_pts,
