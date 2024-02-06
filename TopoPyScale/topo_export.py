@@ -321,6 +321,7 @@ def to_fsm2oshd(ds_down,
             hcan = row.hcan/scale
             lai = row.lai5/scale
             vfhp = row.vfhp/scale
+            fves = row.fves/scale
 
         elif mode == 'open':
             # default values for 'open' mode
