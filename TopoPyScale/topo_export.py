@@ -316,7 +316,7 @@ def to_fsm2oshd(ds_down,
             z_offset = 1
             fveg = row.fveg/scaler.get('fveg')
             hcan = row.hcan/scaler.get('hcan')
-            lai5 = row.lai5/scaler.get('lai')
+            lai5 = row.lai5/scaler.get('lai5')
             vfhp = row.vfhp/scaler.get('vfhp')
             fves = row.fves/scaler.get('fves')
 
