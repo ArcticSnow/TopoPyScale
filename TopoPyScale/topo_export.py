@@ -251,7 +251,8 @@ def to_fsm2oshd(ds_down,
                 snow_partition_method='continuous',
                 cluster_method=True,
                 epsg_ds_param=2056,
-                temperature_correction=0):
+                temperature_correction=0,
+                forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100, 'lai50':100}):
     '''
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
@@ -281,7 +282,8 @@ def to_fsm2oshd(ds_down,
                                 fname_format='fsm_sim/fsm_',
                                 mode='forest',
                                 namelist_param=None,
-                                modconf=None):
+                                modconf=None,
+                                scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100, 'lai50':100}):
         # Function to write namelist file (.nam) for each point where to run FSM.
 
         file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'
@@ -305,11 +307,6 @@ def to_fsm2oshd(ds_down,
         z_wind = namelist_param.get('z_wind')
         diag_var_outputs = namelist_param.get('diag_var_outputs')
         state_var_outputs = namelist_param.get('state_var_outputs')
-        
-        if (row.fveg.max()>10) | (row.lai5 > 10):
-            scale = 100
-        else:
-            scale = 1
 
 
         if mode == 'forest':
@@ -317,17 +314,17 @@ def to_fsm2oshd(ds_down,
             canmod = 1
             turbulent_exchange = 2
             z_offset = 1
-            fveg = row.fveg/scale
-            hcan = row.hcan/scale
-            lai = row.lai5/scale
-            vfhp = row.vfhp/scale
-            fves = row.fves/scale
+            fveg = row.fveg/scaler.get('fveg')
+            hcan = row.hcan/scaler.get('hcan')
+            lai5 = row.lai5/scaler.get('lai')
+            vfhp = row.vfhp/scaler.get('vfhp')
+            fves = row.fves/scaler.get('fves')
 
         elif mode == 'open':
             # default values for 'open' mode
             canmod = 0
             turbulent_exchange = 1
-            z_offset, fveg, fves, hcan, lai, vfhp= 0, 0, 0, 0, 0, 1
+            z_offset, fveg, fves, hcan, lai5, vfhp= 0, 0, 0, 0, 0, 1
         else:
             raise ValueError('mode is not available. Must be open or forest')
         if os.path.exists(file_met):
@@ -384,7 +381,7 @@ def to_fsm2oshd(ds_down,
   pmultf = {precip_multi},          ! precip multiplier default 1
   fveg = {np.round(fveg,3)},                    ! local canopy cover fraction (set to 0 in open)
   hcan = {np.round(hcan,3)},                    ! canopy height (meters) (set to 0 in open)
-  lai = {np.round(lai,2)},                      ! Leaf area index  (set to 0 in open)
+  lai = {np.round(lai5,2)},                      ! Leaf area index  (set to 0 in open)
   vfhp = {np.round(vfhp,3)},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
   fves = {np.round(fves,3)},                ! canopy cover fraction (larger area)
 /
@@ -520,6 +517,8 @@ def to_fsm2oshd(ds_down,
             tvt_pt = df_forest.vfhp.iloc[pt_ind]
         else:
             tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
+
+
         row_forest = df_forest.iloc[pt_ind]
         write_fsm2oshd_met(ds_pt,
                            ds_tvt=tvt_pt,
@@ -533,7 +532,8 @@ def to_fsm2oshd(ds_down,
                                 n_digits=n_digits,
                                 fname_format=p/fname_format,
                                 mode='forest',
-                                namelist_param=namelist_param) # write forest namelist
+                                namelist_param=namelist_param,
+                                scaler=forest_param_scaler) # write forest namelist
 
         if cluster_method:
             row_open = df_forest.iloc[pt_ind]
