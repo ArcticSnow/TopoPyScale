@@ -168,10 +168,10 @@ def downscale_climate(project_directory,
     ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
     # Check tvec is within time period of ds_plev.time or return error
     if ds_plev.time.min() > tvec.min():
-        print(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
+        raise ValueError(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
         return
     elif ds_plev.time.max() < tvec.max():
-        print(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
+        raise ValueError(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
         return
     else:
         ds_plev = ds_plev.sel(time=tvec.values)
@@ -273,7 +273,7 @@ def downscale_climate(project_directory,
         })
 
         if (row.elevation < plev_interp.z.isel(level=-1)).sum():
-            print("---> WARNING: Point {} is {} m lower than the {} hPa geopotential\n=> "
+            raise Warning("---> WARNING: Point {} is {} m lower than the {} hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation".
                   format(i,
                          np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values), 0),
@@ -296,7 +296,7 @@ def downscale_climate(project_directory,
             try:
                 ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
             except:
-                print(
+                raise ValueError(
                     f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation')
 
             top = plev_interp.isel(level=ind_z_top)

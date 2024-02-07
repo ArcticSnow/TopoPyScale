@@ -38,10 +38,10 @@ def multicore_pooling(fun, fun_param, n_cores):
     '''
     if n_cores is None:
         n_cores = mproc.cpu_count() - 2
-        print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
+        raise Warning(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
     elif n_cores > mproc.cpu_count():
         n_cores = mproc.cpu_count() - 2
-        print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
+        raise Warning(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
 
     # make sure it will run on one core at least
     if n_cores == 0:
@@ -96,7 +96,7 @@ def FsmMetParser(file, freq="1h", resample=False):
     df.columns = ['ISWR', 'ILWR', 'Sf', 'Rf', 'TA', 'RH', 'VW', 'P']
 
     if resample == "TRUE":
-        print('ERROR: line 24 to be fixed!')
+        raise ValueError('ERROR: line 24 to be fixed!')
         #df = df.resample(freq).apply(resample_func)
 
     return (df)
@@ -113,7 +113,7 @@ def FsmSnowParser(file, freq="1H", resample=False):
     df.columns = ['albedo', 'Rof', 'HS', 'SWE', 'TS10', 'TS50']
 
     if resample == "TRUE":
-        print('ERROR: line 39 to be fixed!')
+        raise ValueError('ERROR: line 39 to be fixed!')
         #df = df.resample(freq).apply(resample_func)
 
     return (df)

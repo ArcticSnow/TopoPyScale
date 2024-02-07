@@ -89,7 +89,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
 
     elif method.lower() == 'jennings2018_bivariate':
         if rh is None:
-            print('ERROR: Relative humidity is required')
+            raise ValueError('ERROR: Relative humidity is required')
         else:
             # Compute probability of snowfall
             psnow = 1/(1 + np.exp(-10.04 + 1.41 * (temp - 273.15) + 0.09 * rh))
@@ -100,9 +100,9 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
 
     elif method.lower() == 'jennings2018_trivariate':
         if rh is None:
-            print('ERROR: Relative humidity is required')
+            raise ValueError('ERROR: Relative humidity is required')
         elif sp is None:
-            print('ERROR: Surface pressure is required')
+            raise ValueError('ERROR: Surface pressure is required')
         else:
 
             # Compute probability of snowfall
@@ -112,7 +112,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
             snow_IO = np.array([func(xi) for xi in psnow]).flatten()
             snow = precip * snow_IO
     else:
-        print(f"ERROR, {method} is not available. Choose from: ['continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'] ")
+        raise ValueError(f"ERROR, {method} is not available. Choose from: ['continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'] ")
 
     rain = precip - snow
     return rain, snow

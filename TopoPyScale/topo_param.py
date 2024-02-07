@@ -124,7 +124,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
                                                                                                    d_mini.aspect_sin,
                                                                                                  d_mini.svf.values))
     else:
-        print('ERROR: Method not implemented. Only nearest, linear or idw available')
+        raise ValueError('ERROR: Method not implemented. Only nearest, linear or idw available')
     return df_pts
 
 def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'), output_folder='outputs'):
@@ -151,7 +151,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
             ds = ds.rename({1: 'elevation'})
 
         else:
-            print(f'ERROR: No DEM or dataset available')
+            raise ValueError(f'ERROR: No DEM or dataset available')
 
     var_in = list(ds.variables.keys())
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')

@@ -443,7 +443,7 @@ class Topoclass(object):
                 self.toposub.df_centroids['point_name'] = self.toposub.df_centroids.index
 
             else:
-                print('ERROR: Extraction method not available')
+                raise ValueError('ERROR: Extraction method not available')
 
             self.toposub.df_centroids['lon'], self.toposub.df_centroids['lat'] = tp.convert_epsg_pts(
                 self.toposub.df_centroids.x,
@@ -550,7 +550,7 @@ class Topoclass(object):
 
         if '*' not in f_pattern:
             raise ValueError(
-                f'The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
+                f'ERROR: The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
 
         # clean directory from files with the same downscaled output file pattern (so they get replaced)
         existing_files = sorted(downscaled_dir.glob(f_pattern))
