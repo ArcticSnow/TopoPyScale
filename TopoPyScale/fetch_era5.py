@@ -333,7 +333,8 @@ def return_last_fullday():
 	# if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
 	if five_days_ago_utc.hour < 23:
 		last_fullday_data = five_days_ago_utc - timedelta(days=1)
-
+	else:
+		last_fullday_data = five_days_ago_utc
 	last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
 	print("Current time (rounded down) in UTC:", current_time_utc_str)
 	print("Last ERA5T data in UTC:", five_days_ago_utc_str)
