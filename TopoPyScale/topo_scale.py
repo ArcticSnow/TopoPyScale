@@ -74,7 +74,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     # convert gridcells coordinates from WGS84 to DEM projection
     lons, lats = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
-    trans = Transformer.from_crs("epsg:4326", "epsg:" + str(target_EPSG), always_xy=True)
+    trans = Transformer.from_crs("epsg:4326", "epsg:" + str(meta.get(target_epsg)), always_xy=True)
     Xs, Ys = trans.transform(lons.flatten(), lats.flatten())
     Xs = Xs.reshape(lons.shape)
     Ys = Ys.reshape(lons.shape)
@@ -369,7 +369,8 @@ def downscale_climate(project_directory,
                           'lw_terrain_flag': lw_terrain_flag,
                           'tstep': tstep_dict.get(tstep),
                           'n_digits': n_digits,
-                          'file_pattern': file_pattern})
+                          'file_pattern': file_pattern,
+                          'target_epsg':target_EPSG})
         i+=1
 
 
