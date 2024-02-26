@@ -250,7 +250,7 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
                          surf_interp['cse']
     # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
     surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
-    if lw_terrain_flag:
+    if meta.get('lw_terrain_flag'):
         down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4 + \
                         0.5 * (1 + np.cos(row.slope)) * (1 - row.svf) * 0.99 * 5.67e-8 * (273.15 ** 4)
     else:
@@ -483,7 +483,8 @@ def downscale_climate(project_directory,
                           'file_pattern': file_pattern,
                           'target_epsg':target_EPSG,
                           'precip_lapse_rate_flag':precip_lapse_rate_flag,
-                          'output_directory':output_directory})
+                          'output_directory':output_directory,
+                          'lw_terrain_flag':lw_terrain_flag})
         i+=1
 
     fun_param = zip(row_list, plev_pt_list, surf_pt_list, meta_list)  # construct here the tuple that goes into the pooling for arguments
