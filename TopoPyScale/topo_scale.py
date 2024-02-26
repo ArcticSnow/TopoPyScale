@@ -227,6 +227,7 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     pt_id = row.point_name
 
     file_pattern = meta.get('file_pattern')
+    output_directory = meta.get('output_directory')
     print(f'Downscaling LW, SW for point: {pt_id}')
 
     down_pt = xr.open_dataset(output_dir / 'tmp' / f'down_pt_{pt_id}.nc',
