@@ -204,7 +204,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     down_pt.attrs = {'title':'Downscale point using TopoPyScale',
                           'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
-
+    output_directory = meta.get('output_directory')
     print(f'---> Storing point {pt_id} to {output_directory.name}/tmp/')
 
     comp = dict(zlib=True, complevel=5)
@@ -371,7 +371,8 @@ def downscale_climate(project_directory,
                           'n_digits': n_digits,
                           'file_pattern': file_pattern,
                           'target_epsg':target_EPSG,
-                          'precip_lapse_rate_flag':precip_lapse_rate_flag})
+                          'precip_lapse_rate_flag':precip_lapse_rate_flag,
+                          'output_directory':output_directory})
         i+=1
 
 
