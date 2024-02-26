@@ -221,6 +221,117 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     top, bot = None, None
 
 
+def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
+    # insrt here downscaling routine for sw and lw
+    # save file final file
+    pt_id = row.point_name
+
+    file_pattern = meta.get('file_pattern')
+    print(f'Downscaling LW, SW for point: {pt_id}')
+
+    down_pt = xr.open_dataset(output_dir / 'tmp' / f'down_pt_{pt_id}.nc',
+                              engine='h5netcdf')
+    surf_interp = xr.open_dataset(output_dir / 'tmp' / f'surf_interp_{pt_id}.nc', engine='h5netcdf')
+
+    # ======== Longwave downward radiation ===============
+    x1, x2 = 0.43, 5.7
+    sbc = 5.67e-8
+
+    down_pt = mu.mixing_ratio(down_pt, mu.var_era_plevel)
+    down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
+    surf_interp = mu.mixing_ratio(surf_interp, mu.var_era_surf)
+    surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
+
+    # ========= Compute clear sky emissivity ===============
+    down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
+    surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
+    # Calculate the "cloud" emissivity, UNIT OF STRD (J/m2)
+    surf_interp['cle'] = (surf_interp.strd / pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m ** 4) - \
+                         surf_interp['cse']
+    # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
+    surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
+    if lw_terrain_flag:
+        down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4 + \
+                        0.5 * (1 + np.cos(row.slope)) * (1 - row.svf) * 0.99 * 5.67e-8 * (273.15 ** 4)
+    else:
+        down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
+
+    kt = surf_interp.ssrd * 0
+    sunset = ds_solar.sunset.astype(bool).compute()
+    mu0 = ds_solar.mu0
+    SWtoa = ds_solar.SWtoa
+
+    # pdb.set_trace()
+    kt[~sunset] = (surf_interp.ssrd[~sunset] / pd.Timedelta('1H').seconds) / SWtoa[~sunset]  # clearness index
+    kt[kt < 0] = 0
+    kt[kt > 1] = 1
+    kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index
+
+    surf_interp['SW'] = surf_interp.ssrd / pd.Timedelta('1H').seconds
+    surf_interp['SW'][surf_interp['SW'] < 0] = 0
+    surf_interp['SW_diffuse'] = kd * surf_interp.SW
+    down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
+
+    surf_interp['SW_direct'] = surf_interp.SW - surf_interp.SW_diffuse
+    # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
+    ka = surf_interp.ssrd * 0
+    # pdb.set_trace()
+    ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
+    # Illumination angle
+    down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
+                                      np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
+    down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (
+            down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
+    down_pt = down_pt.drop(['cos_illumination_tmp'])
+    illumination_mask = down_pt['cos_illumination'] < 0
+    illumination_mask = illumination_mask.compute()
+    down_pt['cos_illumination'][illumination_mask] = 0
+
+    # Binary shadow masks.
+    horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth), method='nearest')
+    shade = (horizon > ds_solar.elevation)
+    down_pt['SW_direct_tmp'] = down_pt.t * 0
+    down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
+        -ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
+    down_pt['SW_direct'] = down_pt.t * 0
+    down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
+            down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
+    down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
+
+    # currently drop azimuth and level as they are coords. Could be passed to variables instead.
+    # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
+    down_pt = down_pt.drop(['level']).round(5)
+
+    # adding metadata
+    down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
+                        'standard_name': 'longwave_radiation_downward'}
+    down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+    down_pt = down_pt.drop(['SW_direct_tmp'])
+    down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
+                        'standard_name': 'shortwave_radiation_downward'}
+    down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
+                                'standard_name': 'shortwave_diffuse_radiation_downward'}
+    ver_dict = tu.get_versionning()
+    down_pt.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
+                     'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                      'package_version':ver_dict.get('package_version'),
+                      'git_commit': ver_dict.get('git_commit'),
+                     'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                     'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+
+    comp = dict(zlib=True, complevel=5)
+    encoding = {var: comp for var in down_pt.data_vars}
+    down_pt.to_netcdf(output_directory / 'downscaled' / file_pattern.replace("*", str(pt_id)),
+                      engine='h5netcdf', encoding=encoding, mode='a')
+    # Clear memory
+    down_pt, surf_interp = None, None
+    ds_solar = None
+    kt, ka, kd, sunset = None, None, None, None
+    sunset = None
+    horizon = None
+    shade = None
+
+
 def downscale_climate(project_directory,
                       climate_directory,
                       output_directory,
@@ -375,123 +486,11 @@ def downscale_climate(project_directory,
                           'output_directory':output_directory})
         i+=1
 
-
-
     fun_param = zip(row_list, plev_pt_list, surf_pt_list, meta_list)  # construct here the tuple that goes into the pooling for arguments
     tu.multicore_pooling(pt_downscale_interp, fun_param, n_core)
     fun_param = None
     plev_pt_list = None
     surf_pt_list = None
-
-    def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
-        # insrt here downscaling routine for sw and lw
-        # save file final file
-        pt_id = row.point_name
-
-        file_pattern = meta.get('file_pattern')
-        print(f'Downscaling LW, SW for point: {pt_id}')
-
-        down_pt = xr.open_dataset(output_dir / 'tmp' / f'down_pt_{pt_id}.nc',
-                                  engine='h5netcdf')
-        surf_interp = xr.open_dataset(output_dir / 'tmp' / f'surf_interp_{pt_id}.nc', engine='h5netcdf')
-
-        # ======== Longwave downward radiation ===============
-        x1, x2 = 0.43, 5.7
-        sbc = 5.67e-8
-
-        down_pt = mu.mixing_ratio(down_pt, mu.var_era_plevel)
-        down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
-        surf_interp = mu.mixing_ratio(surf_interp, mu.var_era_surf)
-        surf_interp = mu.vapor_pressure(surf_interp, mu.var_era_surf)
-
-        # ========= Compute clear sky emissivity ===============
-        down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
-        surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
-        # Calculate the "cloud" emissivity, UNIT OF STRD (J/m2)
-        surf_interp['cle'] = (surf_interp.strd / pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m ** 4) - \
-                             surf_interp['cse']
-        # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
-        surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
-        if lw_terrain_flag:
-            down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4 + \
-                            0.5 * (1 + np.cos(row.slope)) * (1 - row.svf) * 0.99 * 5.67e-8 * (273.15 ** 4)
-        else:
-            down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
-
-        kt = surf_interp.ssrd * 0
-        sunset = ds_solar.sunset.astype(bool).compute()
-        mu0 = ds_solar.mu0
-        SWtoa = ds_solar.SWtoa
-
-        # pdb.set_trace()
-        kt[~sunset] = (surf_interp.ssrd[~sunset] / pd.Timedelta('1H').seconds) / SWtoa[~sunset]  # clearness index
-        kt[kt < 0] = 0
-        kt[kt > 1] = 1
-        kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index
-
-        surf_interp['SW'] = surf_interp.ssrd / pd.Timedelta('1H').seconds
-        surf_interp['SW'][surf_interp['SW'] < 0] = 0
-        surf_interp['SW_diffuse'] = kd * surf_interp.SW
-        down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
-
-        surf_interp['SW_direct'] = surf_interp.SW - surf_interp.SW_diffuse
-        # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
-        ka = surf_interp.ssrd * 0
-        # pdb.set_trace()
-        ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
-        # Illumination angle
-        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
-                                          np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
-        down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (
-                down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
-        down_pt = down_pt.drop(['cos_illumination_tmp'])
-        illumination_mask = down_pt['cos_illumination'] < 0
-        illumination_mask = illumination_mask.compute()
-        down_pt['cos_illumination'][illumination_mask] = 0
-
-        # Binary shadow masks.
-        horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth), method='nearest')
-        shade = (horizon > ds_solar.elevation)
-        down_pt['SW_direct_tmp'] = down_pt.t * 0
-        down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
-            -ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
-        down_pt['SW_direct'] = down_pt.t * 0
-        down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
-                down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
-        down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
-
-        # currently drop azimuth and level as they are coords. Could be passed to variables instead.
-        # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
-        down_pt = down_pt.drop(['level']).round(5)
-
-        # adding metadata
-        down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
-                            'standard_name': 'longwave_radiation_downward'}
-        down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
-        down_pt = down_pt.drop(['SW_direct_tmp'])
-        down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
-                            'standard_name': 'shortwave_radiation_downward'}
-        down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
-                                    'standard_name': 'shortwave_diffuse_radiation_downward'}
-        ver_dict = tu.get_versionning()
-        down_pt.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
-                         'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
-                          'package_version':ver_dict.get('package_version'),
-                          'git_commit': ver_dict.get('git_commit'),
-                         'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
-                         'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
-
-        comp = dict(zlib=True, complevel=5)
-        encoding = {var: comp for var in down_pt.data_vars}
-        down_pt.to_netcdf(output_directory / 'downscaled' / file_pattern.replace("*", str(pt_id)),
-                          engine='h5netcdf', encoding=encoding, mode='a')
-        # Clear memory
-        down_pt, surf_interp = None, None
-        ds_solar = None
-        kt, ka, kd, sunset = None, None, None, None
-        sunset = None
-        horizon = None
-        shade = None
 
     fun_param = zip(row_list, ds_solar_list, horizon_da_list, meta_list, [output_directory]*len(row_list))  # construct here tuple to feed pool function's argument
     tu.multicore_pooling(pt_downscale_radiations, fun_param, n_core)
