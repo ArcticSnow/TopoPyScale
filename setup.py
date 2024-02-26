@@ -58,6 +58,7 @@ setup(
                         'matplotlib',
                         'scikit-learn',
                         'pandas',
+                        'geopandas',
                         'numpy',
                         'netcdf4',
                         'h5netcdf',
