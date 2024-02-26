@@ -74,7 +74,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     # convert gridcells coordinates from WGS84 to DEM projection
     lons, lats = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
-    trans = Transformer.from_crs("epsg:4326", "epsg:" + str(meta.get(target_epsg)), always_xy=True)
+    trans = Transformer.from_crs("epsg:4326", "epsg:" + str(meta.get('target_epsg')), always_xy=True)
     Xs, Ys = trans.transform(lons.flatten(), lats.flatten())
     Xs = Xs.reshape(lons.shape)
     Ys = Ys.reshape(lons.shape)
@@ -165,8 +165,8 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
     down_pt['month'] = ('time', down_pt.time.dt.month.data)
-    print("precip lapse rate = " + str(precip_lapse_rate_flag))
-    if precip_lapse_rate_flag:
+    print("precip lapse rate = " + str(meta.get('precip_lapse_rate_flag')))
+    if meta.get('precip_lapse_rate_flag'):
         monthly_coeffs = xr.Dataset(
                 {
                     'coef': (['month'], [0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
@@ -370,7 +370,8 @@ def downscale_climate(project_directory,
                           'tstep': tstep_dict.get(tstep),
                           'n_digits': n_digits,
                           'file_pattern': file_pattern,
-                          'target_epsg':target_EPSG})
+                          'target_epsg':target_EPSG,
+                          'precip_lapse_rate_flag':precip_lapse_rate_flag})
         i+=1
 
 
