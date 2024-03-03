@@ -6,11 +6,109 @@ TODO:
 - [ ] ArcticDEM
 - [ ] ASTER dem
 - [ ] Norwegian DEM
+- [x] Copernicus DEM
 
 """
 
-import sys
-import os
+import sys, os
+import requests
+from xml.dom.minidom import parse, parseString
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import warnings, os
+warnings.filterwarnings('ignore')
+
+class copernicus_dem():
+    """Class to download Publicly available Copernicus DEM products
+    
+    Online Resources:
+        - [Sentinel Online blog post](https://sentinels.copernicus.eu/web/sentinel/-/copernicus-dem-new-direct-data-download-access)
+        - [Airbus data description](https://spacedata.copernicus.eu/documents/20123/122407/GEO1988-CopernicusDEM-SPE-002_ProductHandbook_I5.0+%281%29.pdf)
+        - [tutorial](https://spacedata.copernicus.eu/documents/20123/121286/Copernicus+DEM+Open+HTTPS+Access.pdf)
+
+    Args:
+        directory (str): directory where to store downloads
+    """
+    
+
+    def __init__(self, directory):
+        self.directory = directory
+        self.copernicus_public_url = 'https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs'
+        
+
+    def fetch_copernicus_dem_product_list(self):
+        self.r_prod = requests.get(self.copernicus_public_url)
+        products_xml = parseString(r_prod.content)
+        products = products_xml.getElementsByTagName('datasetId')
+
+        self.product_list = []
+        print('---> List of product available:')
+        for d in products:
+            self.product_list.append(d.firstChild.data)
+            print(f'\t- {d.firstChild.data}')
+
+            
+    def request_tile_list(self, product, fname_tile='tiles.csv'):
+        """Function to 
+
+        Args:
+            product (_type_): _description_
+            fname_tile (str, optional): _description_. Defaults to 'tiles.csv'.
+
+        Returns:
+            _type_: _description_
+        """
+        headers = {'accept': 'csv',}
+        url = f"{self.copernicus_public_url}/{product.replace('/', '__')}"
+        r = requests.get(url, headers=headers)
+        
+        with open(fname_tile, 'w') as file:
+            file.write(r.content.decode("utf-8"))
+
+        print(f'---> All tile URL written to {fname_tile}')
+
+        df = pd.read_csv(fname_tile, header=None)
+        df.columns=['url']
+
+        # extract latitude and longitude of tiles from filename
+        df['lat_str'] = df.url.apply(lambda x: x[-18:-12])
+        df['lon_str'] = df.url.apply(lambda x: x[-11:-4])
+
+        # Convert latitude and longitude strings to float
+        df['hemisphere'] = df.lat_str.apply(lambda x: x[:1])
+        df['lat'] = df.lat_str.apply(lambda x: float(x.split('_')[0][1:]) + float(x.split('_')[1]))
+        df.lat.loc[df.hemisphere=='S'] = -df.lat.loc[df.hemisphere=='S']
+
+        df['east'] = df.lon_str.apply(lambda x: x[:1])
+        df['lon'] = df.lon_str.apply(lambda x: float(x.split('_')[0][1:]) + float(x.split('_')[1]))
+        df.lon.loc[df.east=='W'] = -df.lon.loc[df.east=='W']
+
+        self.df_tile_list = df
+
+
+    def download_tiles_in_extent(self, extent=[22,28,44,45]):
+        """Function to download tiles falling into the extent requested
+
+        Args:
+            extent (list, int): [South, North, East, West] longitudes and latitudes of the extent of interest. Defaults to [22,28,44,45].
+
+        Returns:
+            dataframe: dataframes of the tile properties (url, lat, lon, etc.)
+        """
+        import urllib.request as ur
+        
+        sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
+        
+        for i, row in sub.iterrows():
+            print(f'---> Downloading {row.url}')
+            ur.urlretrieve(row.url, f"{self.directory}/{row.url.split('/')[-1]}")
+        
+        self.df_downloaded = sub
+
+    
+
+
 
 def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
     """
