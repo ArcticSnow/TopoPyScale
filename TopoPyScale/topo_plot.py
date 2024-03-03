@@ -101,7 +101,7 @@ def map_variable(ds_down,
 
     if len(list(ds.keys()))==1:
         var = list(ds.keys())[0]
-    ds[var].sel(point_name=ds_param.cluster_labels).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
+    ds[var].sel(point_name=ds_param.point_name).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
 
 
     return ax
@@ -110,6 +110,6 @@ def map_clusters(ds_down,
                  ds_param,
                  df_centroids=None,
                  **kwargs):
-    ds_down.point_name.sel(point_name=ds_param.cluster_labels).plot.imshow(**kwargs)
+    ds_down.point_name.sel(point_name=ds_param.point_name).plot.imshow(**kwargs)
     if df_centroids is not None:
         plt.scatter(df_centroids.x, df_centroids.y, c='k', s=2)
