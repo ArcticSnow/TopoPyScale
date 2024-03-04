@@ -190,7 +190,6 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
         shutil.move(pdir / output_folder / 'tmp' /fname, file_ds)
         ds = xr.open_dataset(file_ds)
     else:
-        print(str(file_ds))
         te.to_netcdf(ds, fname=file_ds)
 
     return ds
