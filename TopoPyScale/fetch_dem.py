@@ -161,7 +161,11 @@ Further online Resources:
         print('--->        eula_F.pdf               <---\n')
         
         
-def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_GLO-90-DTED/2023_1', file_extension=None):
+def fetch_copernicus_dem(directory='.', 
+                        extent=[23,24,44,45], 
+                        product='COP-DEM_GLO-90-DTED/2023_1', 
+                        file_extension=None,
+                        n_download_threads=1):
     """Routine to download Copernicus DEM product for a given extent
 
     Args:
@@ -170,7 +174,7 @@ def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_G
         product (str, optional): name of product to download. Default is 'COP-DEM_GLO-90-DTED/2023_1'
         file_extension (str, optional): last 7 characters of the file to extract from the tar archive. for DEM, 'DEM.tif' for the DGED products
     """
-    dn = copernicus_dem(directory=directory, product=product)
+    dn = copernicus_dem(directory=directory, product=product, n_download_threads=n_download_threads)
     dn.request_tile_list()
     dn.download_tiles_in_extent(extent=extent)
     if file_extension is None:
