@@ -135,7 +135,7 @@ Further online Resources:
 
         # Parallelize download of tiles
         fun_param = zip(url_list, tar_list)
-        tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
+        tu.multithread_pooling(self._download_single_tile, fun_param, n_threads=self.n_download_threads)
 
         sub['tar_file'] = tar_list
         self.df_downloaded = sub
