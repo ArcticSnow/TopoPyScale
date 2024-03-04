@@ -108,9 +108,7 @@ Further online Resources:
 
         self.df_tile_list = df
 
-    def _download_single_tile(url, tar_file):
-        print(f'---> Downloading {url}')
-        ur.urlretrieve(url, tar_file)
+    
 
 
     def download_tiles_in_extent(self, extent=[22,28,44,45]):
@@ -125,6 +123,10 @@ Further online Resources:
         import urllib.request as ur
         
         sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
+        
+        def _download_single_tile(url, tar_file):
+            print(f'---> Downloading {url}')
+            ur.urlretrieve(url, tar_file)
 
         tar_list = []
         url_list = []
@@ -135,7 +137,7 @@ Further online Resources:
 
         # Parallelize download of tiles
         fun_param = zip(url_list, tar_list)
-        tu.multithread_pooling(self._download_single_tile, fun_param, n_threads=self.n_download_threads)
+        tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
 
         sub['tar_file'] = tar_list
         self.df_downloaded = sub
