@@ -16,7 +16,7 @@ import requests
 from xml.dom.minidom import parse, parseString
 import pandas as pd
 import matplotlib.pyplot as plt
-import pdb
+from TopoPyScale import topo_utils as tu
 
 import warnings, os
 warnings.filterwarnings('ignore')
@@ -28,9 +28,10 @@ class copernicus_dem():
         directory (str): directory where to store downloads
     """
 
-    def __init__(self, directory='.', product=None):
+    def __init__(self, directory='.', product=None, n_download_threads=1):
         self.directory = Path(directory)
-        self.product=product
+        self.product = product
+        self.n_download_threads = n_download_threads
         self.dem_file_extension = {'COP-DEM_GLO-30-DGED/2023_1':'DEM.tif',
                                         'COP-DEM_GLO-90-DGED/2023_1':'DEM.tif',
                                         'COP-DEM_GLO-30-DTED/2023_1':'DEM.dt2',
@@ -107,6 +108,10 @@ Further online Resources:
 
         self.df_tile_list = df
 
+    def _download_single_tile(url, tar_file):
+        print(f'---> Downloading {url}')
+        ur.urlretrieve(url, tar_file)
+
 
     def download_tiles_in_extent(self, extent=[22,28,44,45]):
         """Function to download tiles falling into the extent requested
@@ -122,11 +127,15 @@ Further online Resources:
         sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
 
         tar_list = []
+        url_list = []
         for i, row in sub.iterrows():
-            print(f'---> Downloading {row.url}')
             tar_file = self.directory / row.url.split('/')[-1]
-            ur.urlretrieve(row.url, tar_file)
             tar_list.append(tar_file)
+            url_list.append(row.url)
+
+        # Parallelize download of tiles
+        fun_param = zip(url_list, tar_list)
+        tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
 
         sub['tar_file'] = tar_list
         self.df_downloaded = sub
@@ -153,12 +162,13 @@ Further online Resources:
         
         
 def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_GLO-90-DTED/2023_1', file_extension=None):
-    """Routine to downlaod Copernicus DEM product for a given extent
+    """Routine to download Copernicus DEM product for a given extent
 
     Args:
         directory (str, optional): _description_. Defaults to '.'.
-        extent (list, optional): extent in [east, west, south, north]. Defaults to [23,24,44,45].
+        extent (list of int, optional): extent in [east, west, south, north] in lat/lon degrees. Defaults to [23,24,44,45].
         product (str, optional): name of product to download. Default is 'COP-DEM_GLO-90-DTED/2023_1'
+        file_extension (str, optional): last 7 characters of the file to extract from the tar archive. for DEM, 'DEM.tif' for the DGED products
     """
     dn = copernicus_dem(directory=directory, product=product)
     dn.request_tile_list()
@@ -169,6 +179,8 @@ def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_G
         else:
             raise ValueError('File extension of product not known. Add new extension to copernicus_dem.dem_file_extension dictionnary')
     dn.extract_all_tar(dem_extension=file_extension)
+
+    return dn
     
     
 
