@@ -221,7 +221,7 @@ class Topoclass(object):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                      fname=self.config.outputs.file.ds_param,
                                                      project_directory=Path(self.config.project.directory),
-                                                     output_folder=self.config.outputs.path.name)
+                                                     output_folder=self.config.outputs.path)
 
     def search_optimum_number_of_clusters(self,
                                           cluster_range=np.arange(100, 1000, 200),
