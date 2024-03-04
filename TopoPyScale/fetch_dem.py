@@ -16,6 +16,7 @@ import requests
 from xml.dom.minidom import parse, parseString
 import pandas as pd
 import matplotlib.pyplot as plt
+import pdb
 
 import warnings, os
 warnings.filterwarnings('ignore')
@@ -27,8 +28,9 @@ class copernicus_dem():
         directory (str): directory where to store downloads
     """
 
-    def __init__(self, directory='.'):
+    def __init__(self, directory='.', product=None):
         self.directory = Path(directory)
+        self.product=product
         self.copernicus_public_url = 'https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs'
 
         print("""
@@ -53,27 +55,28 @@ Further online Resources:
         for i, d in enumerate(products):
             self.product_list.append(d.firstChild.data)
             print(f'\t [{i}]-> {d.firstChild.data}')
-        self._product_ind = int(input('Which product to download?'))
+        if self.product is None:
+            self._product_ind = int(input('Which product to download?'))
             
-    def request_tile_list(self, product=None, fname_tile=None):
+    def request_tile_list(self, fname_tile=None):
         """Function to 
 
         Args:
             product (_type_): _description_
             fname_tile (str, optional): _description_. Defaults to 'tiles.csv'.
         """
-        if product is None:
-            product = self.product_list[self._product_ind]
+        if self.product is None:
+            self.product = self.product_list[self._product_ind]
         if fname_tile is None:
             fname_tile = 'tar_list_' + self.product_list[self._product_ind].replace('/', '__') + '.csv'
             
         # Add code to check first if fname_file does not exist already
         if not os.path.isfile(self.directory / fname_tile):
 
-            print(f'---> Requesting list of tile for {product}')
+            print(f'---> Requesting list of tile for {self.product}')
 
             headers = {'accept': 'csv',}
-            url = f"{self.copernicus_public_url}/{product.replace('/', '__')}"
+            url = f"{self.copernicus_public_url}/{self.product.replace('/', '__')}"
             r = requests.get(url, headers=headers)
             
             with open(fname_tile, 'w') as file:
@@ -105,7 +108,7 @@ Further online Resources:
         """Function to download tiles falling into the extent requested
 
         Args:
-            extent (list, int): [South, North, East, West] longitudes and latitudes of the extent of interest. Defaults to [22,28,44,45].
+            extent (list, int): [east, west, south, north] longitudes and latitudes of the extent of interest. Defaults to [22,28,44,45].
 
         Returns:
             dataframe: dataframes of the tile properties (url, lat, lon, etc.)
@@ -123,49 +126,42 @@ Further online Resources:
 
         sub['tar_file'] = tar_list
         self.df_downloaded = sub
-
-    def _extract_tar(tar_obj, file_to_extract, target_dir='.'):
-        """Function extract a file from a .tar archive
-
-        Args:
-            tar_obj (tarfile obj): tarfile object
-            file_to_extract (_type_): _description_
-            target_dir (str, optional): _description_. Defaults to '.'.
-        """
-        
-        file = tar_obj.extractfile(file_to_extract)
-
-        p = Path(target_dir)
-        print(f'---> Extracting file {(p / file_to_extract).name} \tfrom {fname}')
-
-        with open((p / file_to_extract).name, 'wb') as outfile:
-            outfile.write(file.read())
-        file = None
         
 
-    def extract_all_tar(self):
-        print('Not finished: does not find dt2 file as is')
+    def extract_all_tar(self, dem_extension='dt2'):
         
         for i, row in self.df_downloaded.iterrows():
-            
             tar_file = Path(row.url).name
             tar = tarfile.open(tar_file, "r")
             file = None
+            #print(f'---> Content of tar archive: \n{tar.getmembers()}\n')
             for tarinfo in tar.getmembers():
-                if tarinfo.name[-3:] == 'dt2':
+                if (tarinfo.name[-3:] == dem_extension):
                     file = tarinfo.name
-            if file is not None:
-                self._extract_tar(tar, file_to_extract=file)
-            else:
-                raise ValueError('No .dt2 file in tar archive')
+                    file_ext = tar.extractfile(file)
+                    with open((self.directory / file).name, 'wb') as outfile:
+                        outfile.write(file_ext.read())
+
+                file = None
             
         print('\n---> READ DATA LICENSING IN TAR FILE <---')
         print('--->        eula_F.pdf               <---\n')
         
         
+def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_GLO-90-DTED/2023_1'):
+    """Routine to downlaod Copernicus DEM product for a given extent
+
+    Args:
+        directory (str, optional): _description_. Defaults to '.'.
+        extent (list, optional): extent in [east, west, south, north]. Defaults to [23,24,44,45].
+        product (str, optional): name of product to download. Default is 'COP-DEM_GLO-90-DTED/2023_1'
+    """
+    dn = fetch_dem.copernicus_dem(directory=directory, product=product)
+    dn.request_tile_list()
+    dn.download_tiles_in_extent(extent=extent)
+    dn.extract_all_tar(dem_extension='dt1')
     
-
-
+    
 
 def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
     """
