@@ -31,6 +31,10 @@ class copernicus_dem():
     def __init__(self, directory='.', product=None):
         self.directory = Path(directory)
         self.product=product
+        self.dem_file_extension = {'COP-DEM_GLO-30-DGED/2023_1':'DEM.tif',
+                                        'COP-DEM_GLO-90-DGED/2023_1':'DEM.tif',
+                                        'COP-DEM_GLO-30-DTED/2023_1':'DEM.dt2',
+                                        'COP-DEM_GLO-90-DTED/2023_1':'DEM.dt1'}
         self.copernicus_public_url = 'https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs'
 
         print("""
@@ -68,12 +72,12 @@ Further online Resources:
         if self.product is None:
             self.product = self.product_list[self._product_ind]
         if fname_tile is None:
-            fname_tile = 'tar_list_' + self.product_list[self._product_ind].replace('/', '__') + '.csv'
+            fname_tile = 'tar_list_' + self.product.replace('/', '__') + '.csv'
             
         # Add code to check first if fname_file does not exist already
         if not os.path.isfile(self.directory / fname_tile):
 
-            print(f'---> Requesting list of tile for {self.product}')
+            print(f'---> Requesting list of tiles for {self.product}')
 
             headers = {'accept': 'csv',}
             url = f"{self.copernicus_public_url}/{self.product.replace('/', '__')}"
@@ -128,7 +132,7 @@ Further online Resources:
         self.df_downloaded = sub
         
 
-    def extract_all_tar(self, dem_extension='dt2'):
+    def extract_all_tar(self, dem_extension='DEM.dt2'):
         
         for i, row in self.df_downloaded.iterrows():
             tar_file = Path(row.url).name
@@ -136,7 +140,7 @@ Further online Resources:
             file = None
             #print(f'---> Content of tar archive: \n{tar.getmembers()}\n')
             for tarinfo in tar.getmembers():
-                if (tarinfo.name[-3:] == dem_extension):
+                if (tarinfo.name[-7:] == dem_extension):
                     file = tarinfo.name
                     file_ext = tar.extractfile(file)
                     with open((self.directory / file).name, 'wb') as outfile:
@@ -148,7 +152,7 @@ Further online Resources:
         print('--->        eula_F.pdf               <---\n')
         
         
-def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_GLO-90-DTED/2023_1'):
+def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_GLO-90-DTED/2023_1', file_extension=None):
     """Routine to downlaod Copernicus DEM product for a given extent
 
     Args:
@@ -156,10 +160,15 @@ def fetch_copernicus_dem(directory='.', extent=[23,24,44,45], product='COP-DEM_G
         extent (list, optional): extent in [east, west, south, north]. Defaults to [23,24,44,45].
         product (str, optional): name of product to download. Default is 'COP-DEM_GLO-90-DTED/2023_1'
     """
-    dn = fetch_dem.copernicus_dem(directory=directory, product=product)
+    dn = copernicus_dem(directory=directory, product=product)
     dn.request_tile_list()
     dn.download_tiles_in_extent(extent=extent)
-    dn.extract_all_tar(dem_extension='dt1')
+    if file_extension is None:
+        if dn.product in dn.dem_file_extension.keys():
+            file_extension = dn.dem_file_extension.get(dn.product)
+        else:
+            raise ValueError('File extension of product not known. Add new extension to copernicus_dem.dem_file_extension dictionnary')
+    dn.extract_all_tar(dem_extension=file_extension)
     
     
 
