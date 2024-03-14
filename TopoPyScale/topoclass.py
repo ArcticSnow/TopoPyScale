@@ -407,8 +407,13 @@ class Topoclass(object):
         n_digits = len(str(self.toposub.df_centroids.cluster_labels.max()))
         self.toposub.df_centroids['point_name'] = self.toposub.df_centroids.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
         self.toposub.df_centroids['point_ind'] = self.toposub.df_centroids.cluster_labels.astype(int)
-        df_param['point_name'] = df_param.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
-        df_param['point_ind'] = df_param.cluster_labels.astype(int)
+        if df_param.cluster_labels.isnull().values.any():
+            df_param['point_name'] = '-9999'
+            df_param['point_name'].loc[~df_param.cluster_labels.isnull()] = df_param.cluster_labels.loc[~df_param.cluster_labels.isnull()].astype(int).astype(str).str.zfill(n_digits)
+            df_param['point_ind'] = df_param.point_name.astype(int)
+        else:
+            df_param['point_name'] = df_param.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
+            df_param['point_ind'] = df_param.cluster_labels.astype(int)
 
         # Build the final cluster map
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.cluster_labels.astype(int).values, self.toposub.ds_param.slope.shape))
