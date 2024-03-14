@@ -318,7 +318,7 @@ class Topoclass(object):
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
             # get mask
-            mask = ts.ds_to_indexed_dataframe(ds)['mask'] == 1
+            mask = ts.ds_to_indexed_dataframe(ds_mask)['mask'] == 1
 
         # add cluster groups. Groups can be landcover classes for instance
         if groups_file in [None, {}]:
