@@ -32,6 +32,8 @@ class copernicus_dem():
         self.directory = Path(directory)
         self.product = product
         self.n_download_threads = n_download_threads
+        self.sub = None
+        self.df_downloaded = None
         self.dem_file_extension = {'COP-DEM_GLO-30-DGED/2023_1':'DEM.tif',
                                         'COP-DEM_GLO-90-DGED/2023_1':'DEM.tif',
                                         'COP-DEM_GLO-30-DTED/2023_1':'DEM.dt2',
@@ -51,6 +53,10 @@ Further online Resources:
         
 
     def fetch_copernicus_dem_product_list(self):
+        '''
+        Function to fetch the list of Copernicus DEM products available to download.
+
+        '''
         self.r_products = requests.get(self.copernicus_public_url)
         products_xml = parseString(self.r_products.content)
         products = products_xml.getElementsByTagName('datasetId')
@@ -64,10 +70,9 @@ Further online Resources:
             self._product_ind = int(input('Which product to download?'))
             
     def request_tile_list(self, fname_tile=None):
-        """Function to 
+        """Function to download list of tiles of a given Copernicus product
 
         Args:
-            product (_type_): _description_
             fname_tile (str, optional): _description_. Defaults to 'tiles.csv'.
         """
         if self.product is None:
@@ -108,8 +113,26 @@ Further online Resources:
 
         self.df_tile_list = df
 
-    
+    def _check_file_downloaded(self):
+        '''
+        Function to check which files have been downloaded. It will update self.sub dataframe
 
+        '''
+        # Loop to check if file exist and has been downloaded.
+        downloaded_list = []
+        tar_list = []
+        for i, row in self.sub.iterrows():
+            tar_file = self.directory / row.url.split('/')[-1]
+            tar_list.append(tar_file)
+
+            if (not os.path.isfile(tar_file)) | (os.path.getsize(tar_file) < 100):
+                downloaded_list.append(False)
+            else:
+                print(f'-> File {tar_file} already exists')
+                downloaded_list.append(True)
+
+        self.sub['downloaded'] = downloaded_list
+        self.sub['tar_file'] = tar_list
 
     def download_tiles_in_extent(self, extent=[22,28,44,45]):
         """Function to download tiles falling into the extent requested
@@ -122,35 +145,21 @@ Further online Resources:
         """
         import urllib.request as ur
         
-        sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
+        self.sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
 
         def _download_single_tile(url, tar_file):
             print(f'---> Downloading {url}')
             ur.urlretrieve(url, tar_file)
 
-        # Loop to check if file exist and has been downloaded.
-        downloaded_list = []
-        tar_list = []
-        for i, row in sub.iterrows():
-            tar_file = self.directory / row.url.split('/')[-1]
-            tar_list.append(tar_file)
-
-            if (not os.path.isfile(tar_file)) | (os.path.getsize(tar_file)<100):
-                downloaded_list.append(False)
-            else:
-                print(f'-> File {tar_file} already exists')
-                downloaded_list.append(True)
-
-        sub['downloaded'] = downloaded_list
-        sub['tar_file'] = tar_list
-
-        if sub.downloaded.sum()>0:
+        _check_file_downloaded()
+        while self.sub.downloaded.sum()>0:
             tar_download = sub.tar_file.loc[~sub.downloaded].values
             url_download = sub.url.loc[~sub.downloaded].values
 
             # Parallelize download of tiles
             fun_param = zip(url_download, tar_download)
             tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
+            _check_file_downloaded()
 
         print("---> All tiles downloaded")
         sub['downloaded'] = True
@@ -158,6 +167,12 @@ Further online Resources:
         
 
     def extract_all_tar(self, dem_extension='DEM.dt2'):
+        '''
+        Function to extract DEM file from Copernicus tar file
+        Args:
+            dem_extension: extension of the DEM raster file. for instance: .dt2, .tif, .dt1
+
+        '''
         
         for i, row in self.df_downloaded.iterrows():
             tar_file = Path(row.url).name
@@ -165,7 +180,7 @@ Further online Resources:
             file = None
             #print(f'---> Content of tar archive: \n{tar.getmembers()}\n')
             for tarinfo in tar.getmembers():
-                if (tarinfo.name[-7:] == dem_extension):
+                if tarinfo.name[-7:] == dem_extension:
                     file = tarinfo.name
                     file_ext = tar.extractfile(file)
                     with open((self.directory / file).name, 'wb') as outfile:
@@ -189,6 +204,7 @@ def fetch_copernicus_dem(directory='.',
         extent (list of int, optional): extent in [east, west, south, north] in lat/lon degrees. Defaults to [23,24,44,45].
         product (str, optional): name of product to download. Default is 'COP-DEM_GLO-90-DTED/2023_1'
         file_extension (str, optional): last 7 characters of the file to extract from the tar archive. for DEM, 'DEM.tif' for the DGED products
+        n_download_threads (int): number of download threads
     """
     dn = copernicus_dem(directory=directory, product=product, n_download_threads=n_download_threads)
     dn.request_tile_list()
