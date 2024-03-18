@@ -135,6 +135,8 @@ Further online Resources:
             if not os.path.isfile(tar_file):
                 tar_list.append(tar_file)
                 url_list.append(row.url)
+            else:
+                print(f'-> File {tar_file} already exists')
 
         # Parallelize download of tiles
         fun_param = zip(url_list, tar_list)
