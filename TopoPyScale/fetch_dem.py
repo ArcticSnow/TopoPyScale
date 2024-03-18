@@ -123,6 +123,8 @@ Further online Resources:
         import urllib.request as ur
         
         sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
+        sub['downloaded'] = False
+        sub['tar_path'] = 'None'
         
         def _download_single_tile(url, tar_file):
             print(f'---> Downloading {url}')
@@ -132,21 +134,22 @@ Further online Resources:
         url_list = []
         for i, row in sub.iterrows():
             tar_file = self.directory / row.url.split('/')[-1]
+            sub.iloc[i]['tar_file'] = tar_file
             if (not os.path.isfile(tar_file)) | (os.path.getsize(tar_file)<100):
                 tar_list.append(tar_file)
                 url_list.append(row.url)
             else:
+                sub.iloc[i]['downloaded'] = True
                 print(f'-> File {tar_file} already exists')
 
         if len(tar_list) > 0:
             # Parallelize download of tiles
             fun_param = zip(url_list, tar_list)
             tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
-
-            sub['tar_file'] = tar_list
-            self.df_downloaded = sub
         else:
             print("---> All tiles downloaded")
+
+        self.df_downloaded = sub
         
 
     def extract_all_tar(self, dem_extension='DEM.dt2'):
