@@ -145,16 +145,14 @@ Further online Resources:
         sub['tar_file'] = tar_list
 
         if sub.downloaded.sum()>0:
-            tar_download = sub.tar_file.loc[sub.downloaded].values
-            url_download = sub.url.loc[sub.downloaded].values
+            tar_download = sub.tar_file.loc[~sub.downloaded].values
+            url_download = sub.url.loc[~sub.downloaded].values
 
             # Parallelize download of tiles
             fun_param = zip(url_download, tar_download)
             tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
 
-        else:
-            print("---> All tiles downloaded")
-
+        print("---> All tiles downloaded")
         sub['downloaded'] = True
         self.df_downloaded = sub
         
