@@ -132,18 +132,21 @@ Further online Resources:
         url_list = []
         for i, row in sub.iterrows():
             tar_file = self.directory / row.url.split('/')[-1]
-            if not os.path.isfile(tar_file):
+            if (not os.path.isfile(tar_file)) | (os.path.getsize(tar_file)<100):
                 tar_list.append(tar_file)
                 url_list.append(row.url)
             else:
                 print(f'-> File {tar_file} already exists')
 
-        # Parallelize download of tiles
-        fun_param = zip(url_list, tar_list)
-        tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
+        if len(tar_list) > 0:
+            # Parallelize download of tiles
+            fun_param = zip(url_list, tar_list)
+            tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
 
-        sub['tar_file'] = tar_list
-        self.df_downloaded = sub
+            sub['tar_file'] = tar_list
+            self.df_downloaded = sub
+        else:
+            print("---> All tiles downloaded")
         
 
     def extract_all_tar(self, dem_extension='DEM.dt2'):
