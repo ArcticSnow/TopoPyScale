@@ -132,8 +132,9 @@ Further online Resources:
         url_list = []
         for i, row in sub.iterrows():
             tar_file = self.directory / row.url.split('/')[-1]
-            tar_list.append(tar_file)
-            url_list.append(row.url)
+            if not os.path.isfile(tar_file):
+                tar_list.append(tar_file)
+                url_list.append(row.url)
 
         # Parallelize download of tiles
         fun_param = zip(url_list, tar_list)
