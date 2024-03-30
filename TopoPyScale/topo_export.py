@@ -490,7 +490,7 @@ def to_fsm2oshd(ds_down,
         df_forest['proportion_with_forest'] = fsm_param.isfor.groupby(fsm_param.point_ind).mean().values
         df_forest['cluster_domain_size'] = np.sqrt(df_forest.cluster_total_area)
         #df_forest['cluster_domain_size'] = np.sqrt(fsm_param.drop('point_name').groupby(fsm_param.point_name).count().to_dataframe().LAI5)*dx
-        df_forest['forest_cover'] = fsm_param.forcov.groupby(fsm_param.point_name).mean().values
+        df_forest['forest_cover'] = fsm_param.forcov.groupby(fsm_param.point_ind).mean().values
         df_forest.forest_cover.loc[df_forest.proportion_with_forest<0.01] = 0
         df_forest['lon'], df_forest['lat'] = tp.convert_epsg_pts(df_forest.x, df_forest.y, epsg_ds_param, 4326)
 
