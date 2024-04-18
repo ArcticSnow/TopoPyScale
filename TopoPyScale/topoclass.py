@@ -87,8 +87,8 @@ class Topoclass(object):
             self.config.outputs.downscaled = self.config.outputs.path / 'downscaled'
 
         # climate path
-        if os.path.isabs(self.config.climate.era5.path):
-            self.config.climate.path = self.config.climate.era5.path
+        if os.path.isabs(self.config.climate[self.config.project.climate].path):
+            self.config.climate.path = self.config.climate[self.config.project.climate].path
         else:
             self.config.climate.path = '/'.join((self.config.project.directory, 'inputs/climate/'))
         self.config.climate.tmp_path = '/'.join((self.config.climate.path, 'tmp'))
@@ -144,6 +144,9 @@ class Topoclass(object):
 
         if self.config.project.climate.lower() == 'era5':
             self.get_era5()
+
+        if self.config.project.climate.lower() == 'ifs_forecast':
+            self.get_ifs_forecast()        
 
         if self.config.project.split.IO:
             self.time_splitter = self.TimeSplitter(self.config.project.start,
@@ -486,9 +489,9 @@ class Topoclass(object):
                                      self.config.dem.epsg,
                                      start,
                                      end,
+                                     self.config.climate[self.config.project.climate].timestep,
                                      self.config.toposcale.interpolation_method,
                                      self.config.toposcale.LW_terrain_contribution,
-                                     self.config.climate[self.config.project.climate].timestep,
                                      self.config.climate.precip_lapse_rate,
                                      fname,
                                      self.config.project.CPU_cores)
@@ -523,9 +526,9 @@ class Topoclass(object):
                                  self.config.dem.epsg,
                                  self.config.project.start,
                                  self.config.project.end,
+                                 self.config.climate[self.config.project.climate].timestep,
                                  self.config.toposcale.interpolation_method,
                                  self.config.toposcale.LW_terrain_contribution,
-                                 self.config.climate[self.config.project.climate].timestep,
                                  self.config.climate.precip_lapse_rate,
                                  self.config.outputs.file.downscaled_pt,
                                  self.config.project.CPU_cores)
@@ -596,6 +599,9 @@ class Topoclass(object):
             realtime=realtime
         )
 
+    def get_ifs_forecast(self):
+        # run openData script here
+        print("doing forecast stuff here")
     def get_WMO_observations(self):
         """
         Function to download and parse in-situ data from WMO database
