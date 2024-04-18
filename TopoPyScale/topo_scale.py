@@ -246,7 +246,7 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     # ========= Compute clear sky emissivity ===============
     down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
     surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
-    # Calculate the "cloud" emissivity, UNIT OF STRD (J/m2)
+    # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
     surf_interp['cle'] = (surf_interp.strd / pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m ** 4) - \
                          surf_interp['cse']
     # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
@@ -305,6 +305,7 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
 
     # adding metadata
     down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         'standard_name': 'longwave_radiation_downward'}
     down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
     down_pt = down_pt.drop(['SW_direct_tmp'])
@@ -342,9 +343,10 @@ def downscale_climate(project_directory,
                       target_EPSG,
                       start_date,
                       end_date,
+                      tstep,
                       interp_method='idw',
                       lw_terrain_flag=True,
-                      tstep='1H',
+                      precip_lapse_rate_flag=True,  
                       precip_lapse_rate_flag=False,
                       file_pattern='down_pt*.nc',
                       n_core=4):
