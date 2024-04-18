@@ -11,20 +11,37 @@ from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 
+def ds_to_indexed_dataframe(ds):
+    """
+    Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
+    WARNING: this only works if the variable of the dataset have all the same dimensions!
+
+    By default the ds.to_dataframe() returns a multi-index dataframe. Here the coordinates are transfered as columns in the dataframe
+
+    Args:
+        ds (dataset): xarray dataset with all variable of same number of dimensions
+
+    Returns:
+        pandas dataframe:
+    """
+    df = ds.to_dataframe()
+    n_levels = df.index.names.__len__()
+    return df.reset_index(level=list(range(0, n_levels)))
+
 def multicore_pooling(fun, fun_param, n_cores):
     '''
     Function to perform multiprocessing on n_cores
     Args:
         fun (obj): function to distribute
-        fun_param zip(list): zip list of functino arguments
-        n_core (int): number o cores
+        fun_param zip(list): zip list of function arguments
+        n_core (int): number of cores
     '''
     if n_cores is None:
         n_cores = mproc.cpu_count() - 2
-        print(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
+        raise Warning(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
     elif n_cores > mproc.cpu_count():
         n_cores = mproc.cpu_count() - 2
-        print(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
+        raise Warning(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
 
     # make sure it will run on one core at least
     if n_cores == 0:
@@ -79,7 +96,7 @@ def FsmMetParser(file, freq="1h", resample=False):
     df.columns = ['ISWR', 'ILWR', 'Sf', 'Rf', 'TA', 'RH', 'VW', 'P']
 
     if resample == "TRUE":
-        print('ERROR: line 24 to be fixed!')
+        raise ValueError('ERROR: line 24 to be fixed!')
         #df = df.resample(freq).apply(resample_func)
 
     return (df)
@@ -96,7 +113,7 @@ def FsmSnowParser(file, freq="1H", resample=False):
     df.columns = ['albedo', 'Rof', 'HS', 'SWE', 'TS10', 'TS50']
 
     if resample == "TRUE":
-        print('ERROR: line 39 to be fixed!')
+        raise ValueError('ERROR: line 39 to be fixed!')
         #df = df.resample(freq).apply(resample_func)
 
     return (df)
@@ -175,7 +192,7 @@ def SmetParser(file, doresample=True, freq='1H', NA_val=-999):
 
 def getCoordinatePixel(map_path, x_coord, y_coord, epsg_in, epsg_out):
     """
-    Function to find which sample a point exists in. Ca accept any combination of projections of the map and points.
+    Function to find which sample a point exists in. Can accept any combination of projections of the map and points.
 
     Args:
         map_path: full path to map

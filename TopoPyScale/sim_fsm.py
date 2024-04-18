@@ -6,6 +6,7 @@ TODO:
 
 """
 import os, re
+import sys
 import glob
 import re
 import pandas as pd
@@ -339,6 +340,9 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob(fsm_path+"/sim_FSM_pt*")
 
+    if len(a) == 0:                                                                                                                                                                                                                           
+        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")   
+
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -356,7 +360,7 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
-        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'tsl']")
+        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
 
     file_list = natural_sort(a)
 
@@ -714,7 +718,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     # Build a "lookup array" where the index is the original value and the value
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
-    nclust = ds_var.shape[1]
+    nclust = ds_var.shape[0]
     lookup = np.arange(nclust, dtype=dtype)
 
     # replicate looup through timedimens (dims Time X sample )
@@ -722,6 +726,10 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
 
     for i in range(0, nclust):
         lookup2D[:, i] = ds_var[i]
+
+
+
+
 
     from osgeo import gdal
     inputFile = "outputs/landform.tif"
@@ -989,6 +997,58 @@ def climatology_plot2(mytitle, HSdf_daily_median, HSdf_daily_quantiles, HSdf_rea
 # # da.process_modis(wdir, epsg, bbox)
 
 # fsca = da.extract_fsca_timeseries(clim_dir, plot=True)
+
+
+def concat_fsm(mydir):
+    
+    """ 
+    A small routine to concatinate fsm results from separate years in a single file. 
+    This is mainly needed when a big job is split into years for parallel processing on eg a cluster
+
+    rsync -avz --include="<file_pattern>" --include="*/" --exclude="*" <username>@<remote_server_address>:/path/to/remote/directory/ <local_destination_directory>
+    
+    """
+    #mydir = "/home/joel/sim/tscale_projects/aws_debug/b6/"
+    
+
+
+    def natural_sort(l):
+        def convert(text): return int(text) if text.isdigit() else text.lower()
+        def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
+        return sorted(l, key=alphanum_key)
+
+    # find all the differnt files we have (1 per cluster)
+    file_paths = glob.glob(mydir +"fsm_clim/sim_2000/fsm_sims/*")
+    nclust = len(files)
+
+
+
+    def get_file_names(file_paths):
+        file_names = []
+        for file_path in file_paths:
+            file_name = os.path.basename(file_path)
+            file_names.append(file_name)
+        return file_names
+
+    names = get_file_names(file_paths)
+    filenames = natural_sort(names)
+
+
+
+    for myname in filenames:
+        a = glob.glob(mydir + "/fsm_clim/sim_*/fsm_sims/" + myname)
+
+        filenames2 = natural_sort(a)
+        with open(mydir +"/fsm_clim/" + myname, 'w') as outfile:
+            for fname in filenames2:
+                with open(fname) as infile:
+                    outfile.write(infile.read())
+
+    
+
+    
+    
+
 
 
 

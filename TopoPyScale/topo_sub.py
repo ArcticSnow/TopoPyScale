@@ -19,28 +19,28 @@ from matplotlib.colors import LightSource
 from matplotlib import pyplot as plt
 import numpy as np
 import time
+from typing import Union, Optional
+from pathlib import Path
+from TopoPyScale import topo_utils as tu
 
 
 def ds_to_indexed_dataframe(ds):
-    """
-    Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
-    WARNING: this only works if the variable of the dataset have all the same dimensions!
+    '''
+    Function to convert dataset to dataframe
 
-    By default the ds.to_dataframe() returns a multi-index dataframe. Here the coordinates are transfered as columns in the dataframe
-    
+    See definition of function in topo_utils.py
     Args:
-        ds (dataset): xarray dataset with all variable of same number of dimensions
-    
+        ds (dataset): xarray dataset N * 2D Dataarray
+
     Returns:
-        pandas dataframe: 
-    """
-    df = ds.to_dataframe()
-    n_levels = df.index.names.__len__()
-    return df.reset_index(level=list(range(0, n_levels)))
+
+    '''
+    return tu.ds_to_indexed_dataframe(ds)
+
 
 def scale_df(df_param,
              scaler=StandardScaler(),
-             features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1}):
+             features={'x': 1, 'y': 1, 'elevation': 4, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1}):
     """
     Function to scale features of a pandas dataframe
 
@@ -62,9 +62,10 @@ def scale_df(df_param,
 
     return df_scaled, scaler
 
+
 def inverse_scale_df(df_scaled,
                      scaler,
-                     features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1}):
+                     features={'x': 1, 'y': 1, 'elevation': 4, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1}):
     """
     Function to inverse feature scaling of a pandas dataframe
     
@@ -87,8 +88,8 @@ def inverse_scale_df(df_scaled,
 
 
 def kmeans_clustering(df_param,
-                      features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1},
                       n_clusters=100,
+                      features={'x': 1, 'y': 1, 'elevation': 4, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1},
                       seed=None,
                       **kwargs):
     """
@@ -113,15 +114,15 @@ def kmeans_clustering(df_param,
     print('---> Clustering with K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
     kmeans = cluster.KMeans(n_clusters=n_clusters, random_state=seed, **kwargs).fit(X)
-    print('---> Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
+    print('---> Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
-    df_param['cluster_labels'] = kmeans.labels_
-    return df_centers, kmeans, df_param
+    cluster_labels = kmeans.labels_
+    return df_centers, kmeans, cluster_labels
 
 
 def minibatch_kmeans_clustering(df_param,
                                 n_clusters=100,
-                                features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1},
+                                features={'x': 1, 'y': 1, 'elevation': 4, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1},
                                 n_cores=4,
                                 seed=None,
                                 **kwargs):
@@ -145,19 +146,22 @@ def minibatch_kmeans_clustering(df_param,
     col_names = df_param.columns
     print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
-    miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256*n_cores, random_state=seed, **kwargs).fit(X)
-    print('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time()-start_time), 0))
+    miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256 * n_cores, random_state=seed,
+                                          **kwargs).fit(X)
+    print('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
     df_centers = pd.DataFrame(miniBkmeans.cluster_centers_, columns=col_names)
     df_param['cluster_labels'] = miniBkmeans.labels_
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
 def search_number_of_clusters(df_param,
-                            method='minibatchkmean',
-                            cluster_range=np.arange(100, 1000, 200),
-                            features={'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1},
-                            scaler_type=StandardScaler(),
-                            plot=True):
+                              method='minibatchkmean',
+                              cluster_range=np.arange(100, 1000, 200),
+                              features={'x': 1, 'y': 1, 'elevation': 4, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1},
+                              scaler_type=StandardScaler(),
+                              scaler=None,
+                              seed=2,
+                              plot=True):
     '''
     Function to help identify an optimum number of clusters using the elbow method
     Args:
@@ -166,6 +170,8 @@ def search_number_of_clusters(df_param,
         range_n_clusters (array int): array of number of clusters to derive scores for
         features (dict): dictionnary of features to use as predictors with their respect importance. {'x':1, 'y':1}
         scaler_type (scikit_learn obj): type of scaler to use: e.g. StandardScaler() or RobustScaler()
+        scaler (scikit_learn obj): fitted scaler to dataset. Implies that df_param is already scaled
+        seed (int): random seed for kmeans clustering
         plot (bool): plot results or not
 
     Returns:
@@ -173,7 +179,7 @@ def search_number_of_clusters(df_param,
 
     '''
     feature_list = features.keys()
-    wcss = [] # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
+    wcss = []  # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
     db_scores = []
     ch_scores = []
     rmse_elevation = []
@@ -183,22 +189,33 @@ def search_number_of_clusters(df_param,
     n_pixels_mean = []
 
     for n_clusters in cluster_range:
-        df_scaled, scaler = scale_df(df_param[feature_list], scaler=scaler_type, features=features)
-
-        if method == 'minibatchkmean':
+        if scaler_type is not None:
+            df_scaled, scaler_l = scale_df(df_param[feature_list], scaler=scaler_type, features=features)
+        else:
+            df_scaled = df_param[feature_list]
+        
+        if method.lower() in ['minibatchkmean', 'minibatchkmeans']:
             df_centroids, kmeans_obj, df_param['cluster_labels'] = minibatch_kmeans_clustering(df_scaled,
                                                                                                n_clusters,
-                                                                                               seed=2,
-                                                                                               features=features)
-        elif method == 'kmean':
+                                                                                               features=features,
+                                                                                               seed=seed)
+        elif method.lower() in ['kmean', 'kmeans']:
             df_centroids, kmeans_obj, df_param['cluster_labels'] = kmeans_clustering(df_scaled,
                                                                                      n_clusters,
-                                                                                     seed=2,
-                                                                                     features=features)
+                                                                                     features=features,
+                                                                                     seed=seed)
 
         labels = kmeans_obj.labels_
-        cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler, features=features).elevation.loc[df_param.cluster_labels].values
-        rmse = (((df_param.elevation - cluster_elev)**2).mean())**0.5
+        if scaler_type is not None:
+            cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler_l, features=features).elevation.loc[
+                df_param.cluster_labels].values
+            rmse = (((df_param.elevation - cluster_elev) ** 2).mean()) ** 0.5
+        elif scaler is not None:
+            cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler, features=features).elevation.loc[
+                df_param.cluster_labels].values
+            rmse = (((df_param.elevation - cluster_elev) ** 2).mean()) ** 0.5
+        else:
+            rmse = 0
 
         # compute scores
         wcss.append(kmeans_obj.inertia_)
@@ -213,19 +230,19 @@ def search_number_of_clusters(df_param,
         n_pixels_mean.append(pix_count.mean())
         n_pixels_median.append(pix_count.median())
 
-    df = pd.DataFrame({'n_clusters':cluster_range,
+    df = pd.DataFrame({'n_clusters': cluster_range,
                        'wcss_score': wcss,
-                       'db_score':db_scores,
-                       'ch_score':ch_scores,
-                       'rmse_elevation':rmse_elevation,
-                       'n_pixels_min':n_pixels_min,
-                       'n_pixels_median':n_pixels_median,
-                       'n_pixels_mean':n_pixels_mean,
-                       'n_pixels_max':n_pixels_max})
+                       'db_score': db_scores,
+                       'ch_score': ch_scores,
+                       'rmse_elevation': rmse_elevation,
+                       'n_pixels_min': n_pixels_min,
+                       'n_pixels_median': n_pixels_median,
+                       'n_pixels_mean': n_pixels_mean,
+                       'n_pixels_max': n_pixels_max})
 
     if plot:
-        fig, ax = plt.subplots(4,1,sharex=True)
-        #------ Elbow method ------
+        fig, ax = plt.subplots(4, 1, sharex=True)
+        # ------ Elbow method ------
         ax[0].plot(df.n_clusters, df.wcss_score, label="Within-Cluster-Sum-of-Squares (WCSS)")
         ax[0].set_ylabel("Score")
         ax[0].legend()
@@ -244,8 +261,7 @@ def search_number_of_clusters(df_param,
     return df
 
 
-
-def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=plt.cm.viridis, figsize=(14,10)):
+def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=plt.cm.viridis, figsize=(14, 10)):
     """
     Function to plot the location of the cluster centroids over the DEM
 
@@ -266,15 +282,16 @@ def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=p
     shade = ls.hillshade(ds_param.elevation.values, vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
     rgb = (ds_param[var] * shade).plot(cmap=cmap)
     ax.scatter(df_centers.x, df_centers.y, c='r', edgecolors='k')
-    #cb = plt.colorbar(rgb)
-    #cb.set_label(var)
+    # cb = plt.colorbar(rgb)
+    # cb.set_label(var)
     ax.set_title('Cluster Centroids')
     ax.set_ylabel('y-coordinate')
     ax.set_xlabel('x-coordinate')
     plt.show()
 
 
-def write_landform(dem_file, df_param, project_directory='./'):
+def write_landform(dem_file, df_param, project_directory='./', out_dir: Optional[Union[str, Path]] = None,
+                   out_name: Optional[str] = None) -> Union[str, Path]:
     """
     Function to write a landform file which maps cluster ids to dem pixels
     
@@ -282,10 +299,27 @@ def write_landform(dem_file, df_param, project_directory='./'):
         dem_file (str): path to dem raster file
         ds_param (dataset): topo_param parameters ['elev', 'slope', 'aspect_cos', 'aspect_sin', 'svf']
     """
+    # derive output path
+    if out_name is None:
+        out_name = 'landform.tif'
+    if out_dir is None:
+        out_dir = Path(project_directory) / 'outputs'
+        out_name = 'landform.tif'
+    else:
+        if isinstance(out_dir, str):
+            out_dir = Path(out_dir)
+
+    out_path = out_dir / out_name
+
+    # read dem
     with rasterio.open(dem_file) as dem:
         shape = dem.shape
         profile = dem.profile
     myarray = np.reshape(df_param.cluster_labels.values, shape)
+
+    # replace nan with number
+    nodata = -1
+    myarray = np.nan_to_num(myarray, nan=-1)
 
     # Register GDAL format drivers and configuration options with a
     # context manager.
@@ -294,11 +328,13 @@ def write_landform(dem_file, df_param, project_directory='./'):
         profile.update(
             dtype=rasterio.int16,
             count=1,
-            nodata= -999,
+            nodata=nodata,
             compress='lzw')
 
-        with rasterio.open(project_directory + 'outputs/landform.tif', 'w', **profile) as dst:
+        with rasterio.open(out_path, 'w', **profile) as dst:
             dst.write(myarray.astype(rasterio.int16), 1)
 
     # At the end of the ``with rasterio.Env()`` block, context
     # manager exits and all drivers are de-registered.
+
+    return out_path

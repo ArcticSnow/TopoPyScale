@@ -65,7 +65,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
                 df['referenceTime'] = pd.to_datetime(df['referenceTime'])
                 df_out = df_out.append(df)
             else:
-                print('..... Error with variable {}! Returned status code {}'.format(var, r.status_code))
+                raise ValueError('..... Error with variable {}! Returned status code {}'.format(var, r.status_code))
                 print('..... Reason: %s' % json['error']['reason'])
                 print('---> {} for {} skipped'.format(var, source))
     
@@ -89,7 +89,14 @@ def combine_metno_obs_to_xarray(fnames='metno*.pckl', path='inputs/obs/'):
     return ds
 
 
-def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/observations', product='sub_daily'):
+def fetch_WMO_insitu_observations(years,
+                                  months,
+                                  bbox,
+                                  target_path='./inputs/observations',
+                                  product='sub_daily',
+                                  var=['air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
+                                       'dew_point_temperature', 'wind_from_direction', 'wind_speed']
+                                  ):
     """
     Function to download WMO in-situ data from land surface in-situ observations from Copernicus.
     https://cds.climate.copernicus.eu/cdsapp#!/dataset/insitu-observations-surface-land?tab=overview
@@ -99,6 +106,7 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
         month (str or list): month(s) to download
         bbox (list): bonding box in lat-lon [lat_south, lon_west, lat_north, lon_east]
         target (str): filename
+        var (list): list of variable to download. available:
 
     Returns:
         Store to disk the dataset as zip file
@@ -115,18 +123,40 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
         if not os.path.isdir(target_path):
             os.makedirs(target_path)
     except:
-        print(f'ERROR: path "{target_path}" does not exist')
+        raise ValueError(f'ERROR: path "{target_path}" does not exist')
         return False
+
+    if product == 'sub_daily':
+        var_avail = ['air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
+                     'dew_point_temperature', 'wind_from_direction', 'wind_speed']
+        for v in var:
+            if v not in var_avail:
+                raise Warning(f'WARNING: fecthin {v} from WMO on CDS server not available for {product}')
+                return
+
+    elif product == 'daily':
+        var_avail = ['accumulated_precipitation', 'air_temperature', 'fresh_snow',
+                     'snow_depth', 'snow_water_equivalent', 'wind_from_direction', 'wind_speed']
+        for v in var:
+            if v not in var_avail:
+                raise Warning(f'WARNING: fecthin {v} from WMO on CDS server not available for {product}')
+                return
+
+    elif product == 'monthly':
+        var_avail = ['accumulated_precipitation', 'air_temperature']
+        for v in var:
+            if v not in var_avail:
+                raise Warning(f'WARNING: fecthin {v} from WMO on CDS server not available for {product}')
+                return
+    else:
+        raise Warning(f'WARNING: {product} not available')
 
     c = cdsapi.Client()
     c.retrieve(
         'insitu-observations-surface-land',
         {
             'time_aggregation': product,
-            'variable': [
-                'air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
-                'dew_point_temperature', 'wind_from_direction', 'wind_speed'
-            ],
+            'variable': var,
             'usage_restrictions': 'restricted',
             'data_quality': 'passed',
             'year': years,
@@ -157,7 +187,7 @@ def fetch_WMO_insitu_observations(years, months, bbox, target_path='./inputs/obs
             print(f'\t Stored in file {target_path + os.sep + "download.zip2"}')
             return
     except:
-        print(f'ERROR: Invalid target path\n\t target path used: {target_path}')
+        raise ValueError(f'ERROR: Invalid target path\n\t target path used: {target_path}')
 
 
 def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/surf*subset_csv*.csv', path='./inputs/observations'):
@@ -185,7 +215,7 @@ def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/
             res = input(pmp + 'Pick file to load:\n')
             fname = flist[int(res)]
     elif fname is None and file_pattern is None:
-        print('ERROR: choose filename or provide file naming pattern')
+        raise ValueError('ERROR: choose filename or provide file naming pattern')
         return False
 
     df = pd.read_csv(fname)

@@ -9,7 +9,7 @@ with open(path.join(this_directory, 'README.md')) as f:
 
 setup(
     name='topopyscale',
-    version='0.2.3',
+    version='0.2.5',
     description='TopoPyScale: A Python Package for Hillslope Climate Downscaling',
     long_description=long_description,
 
@@ -58,6 +58,7 @@ setup(
                         'matplotlib',
                         'scikit-learn',
                         'pandas',
+                        'geopandas',
                         'numpy',
                         'netcdf4',
                         'h5netcdf',
