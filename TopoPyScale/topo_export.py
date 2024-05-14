@@ -595,7 +595,7 @@ cd ..
 
     p = Path(simulation_path)
     # rename variable columns to match namelist functino varnames
-    new_name = {'LAI5':'lai' 'svf_for':'vfhp', 'CH5':'hcan'}
+    new_name = {'LAI5':'lai', 'svf_for':'vfhp', 'CH5':'hcan'}
     df_forest = df_forest.rename(columns=new_name)
     print(df_forest)
  
