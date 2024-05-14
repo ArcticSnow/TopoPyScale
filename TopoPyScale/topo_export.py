@@ -363,7 +363,7 @@ cd ..
         file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.nc'
 
         # populate namelist parameters
-        max_sd = n{namelist_param.get('max_sd')}amelist_param.get('max_sd')
+        max_sd = namelist_param.get('max_sd')
         z_snow = namelist_param.get('z_snow')
         z_soil = namelist_param.get('z_soil')
         z_tair = namelist_param.get('z_tair')
