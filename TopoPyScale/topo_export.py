@@ -253,7 +253,7 @@ def to_fsm2(ds_down,
                 epsg_ds_param=2056,
                 temperature_correction=0,
                 forest_param_scaler={'hcan':100, 'lai':100}):
-    '''
+    """
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
     one simulation consists of 2 driving file:
@@ -274,7 +274,12 @@ def to_fsm2(ds_down,
         cluster_method (bool): boolean to be True is using cluster appraoch
         epsg_ds_param (int): epsg code of ds_parma: example: 2056
 
-    '''
+    """
+
+    print(" \n##### WARNING ######\n")
+    print(" Method is not fully implemented")
+    print(" \n#####         ######\n")
+
 
     def write_fsm2_compilation_nc(file_compil_nc='compil_nc.sh',
                                     ALBEDO=2, 
@@ -466,7 +471,7 @@ cd ..
                            fname_format='fsm_sim/fsm_',
                            temperature_correction=0,
                            DRIV1D=1):
-        '''
+        """
         Function to write meteorological forcing for FSM2
 
 
@@ -480,7 +485,7 @@ cd ..
             year month  day   hour  SW  LW  Sf  Rf  Ta  Qa RH   Ua    Ps    
             (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (kg/kg) (RH 0-100) (m/s) (Pa)
 
-        '''
+        """
         
         # for storage optimization tvt is stored in percent.
 
@@ -655,7 +660,7 @@ def to_fsm2oshd(ds_down,
                 epsg_ds_param=2056,
                 temperature_correction=0,
                 forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100, 'lai50':100}):
-    '''
+    """
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
     one simulation consists of 2 driving file:
@@ -676,7 +681,7 @@ def to_fsm2oshd(ds_down,
         cluster_method (bool): boolean to be True is using cluster appraoch
         epsg_ds_param (int): epsg code of ds_parma: example: 2056
 
-    '''
+    """
 
     def write_fsm2oshd_namelist(row,
                                 pt_ind,
@@ -803,7 +808,7 @@ def to_fsm2oshd(ds_down,
                            n_digits,
                            fname_format='fsm_sim/fsm_',
                            temperature_correction=0):
-        '''
+        """
         Function to write meteorological forcing for FSM
 
         Format of the text file is:
@@ -813,7 +818,7 @@ def to_fsm2oshd(ds_down,
         year month  day   hour  SWdir   SWdiff  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
         (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
 
-        '''
+        """
         
         # for storage optimization tvt is stored in percent.
 
