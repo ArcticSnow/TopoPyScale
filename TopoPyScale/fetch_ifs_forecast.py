@@ -139,6 +139,27 @@ def calculate_geopotential(P, T, P0):
     return Z
 
 
+# import numpy as np
+
+# # Constants
+# R = 287  # Gas constant for dry air (J/kg/K)
+# g = 9.81  # Acceleration due to gravity (m/s^2)
+# P0 = 1013.25  # Standard mean sea level pressure (hPa)
+
+# # Function to calculate geopotential height
+# def calculate_geopotential_height(P, T):
+#     Z = (R * T / g) * np.log(P0 / P)
+#     return Z
+
+# # Example usage
+# P_surface = 1000  # Example surface pressure in hPa
+# T_surface = 288  # Example surface temperature in Kelvin
+
+# Z_surface = calculate_geopotential_height(P_surface, T_surface)
+# print("Geopotential height at surface:", Z_surface, "m")
+
+
+
 
 
 
@@ -148,7 +169,7 @@ lon_range = (59, 81)  # Example longitude range (30E to 40E)
 
 
 # Perform spatial subset on each NetCDF file
-nc_files = ['SURF_fc1.nc', 'SURF_fc2.nc']  # List of NetCDF files
+nc_files = ['SURF_fc1.nc']  # List of NetCDF files
 for nc_file in nc_files:
     subset = spatial_subset(nc_file, lat_range, lon_range)
    
@@ -193,11 +214,13 @@ for nc_file in nc_files:
 
  
 
-nc_files = [ 'PLEV_fc1.nc',  'PLEV_fc2.nc']  # List of NetCDF files
+nc_files = [ 'PLEV_fc1.nc']  # List of NetCDF files
 for nc_file in nc_files:
     subset = spatial_subset(nc_file, lat_range, lon_range)
     subset= subset.rename({'lon': 'longitude', 'lat': 'latitude', 'plev': 'level'})
     subset['z'] = subset['gh']*9.81
+    subset['level'] = subset['level']/100.  # pressure level pa to hpa
+    subset = subset.isel(level=slice(None, None, -1) ) # reverse order of levels
     subset.to_netcdf(f'subset_{nc_file}')
 
 os.remove("SURF_fc1.nc")
