@@ -22,13 +22,34 @@
 
 
 from ecmwf.opendata import Client
+import glob
+import os
+import pandas as pd
+
+fctime=00
+
+# print latest forecast data
+client = Client(source="ecmwf")
+
+print(client.latest(
+    type="fc",
+    step=24,
+    param=["2t", "msl"],
+    target="data.grib2",
+))
+
+# wait until this is 00 UTC (c. 9h UTC)
+
+#NOTE: The data is available between 7 and 9 hours after the forecast starting date and time, depending on the forecasting system and the time step specified.
+# - do forecast 9am  UTC ?
 
 # download surface variables at fc steps 0-144 available at 3h setp
 print("Downloading surface variables forecast steps 0-144")
 client = Client()
  
 client.retrieve(
-     step=[i for i in range(0, 90, 3)], #147
+	time=fctime,
+     step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["2t", "sp", "2d", "ssrd", "strd", "tp", "msl"],
      target="SURF_fc1.grib2",
@@ -38,7 +59,8 @@ client.retrieve(
 client = Client()
 print("Downloading pressure level variables forecast steps 0-144") 
 client.retrieve(
-     step=[i for i in range(0, 90, 3)], #147
+	time=fctime,
+     step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
      levelist=[1000, 925, 850, 700, 500, 300],
@@ -46,18 +68,18 @@ client.retrieve(
  )
 
 
-from ecmwf.opendata import Client
+# from ecmwf.opendata import Client
 
-client = Client(source="ecmwf")
+# client = Client(source="ecmwf")
 
-result = client.retrieve(
-    type="fc",
-    step=24,
-    param=["gh"],
-    target="data.grib2",
-)
+# result = client.retrieve(
+#     type="fc",
+#     step=24,
+#     param=["gh"],
+#     target="data.grib2",
+# )
 
-print(result.datetime)
+# print(result.datetime)
 
 # ssrd strd sp ,2d, sp
 # gh, u, v, r,q,t
@@ -68,6 +90,7 @@ from ecmwf.opendata import Client
 client = Client()
 print("Downloading surface variables forecast steps 150-244") 
 client.retrieve(
+	time= fctime,
      step=[i for i in range(150, 241, 6)], # 144 start?
      type="fc",
      param=["2t", "sp", "2d", "ssrd", "strd", "tp", "msl"],
@@ -80,6 +103,7 @@ from ecmwf.opendata import Client
 client = Client()
 print("Downloading pressure level variables forecast steps 150-244") 
 client.retrieve(
+	time= fctime,
      step=[i for i in range(150, 241, 6)],
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
@@ -169,7 +193,7 @@ lon_range = (59, 81)  # Example longitude range (30E to 40E)
 
 
 # Perform spatial subset on each NetCDF file
-nc_files = ['SURF_fc1.nc']  # List of NetCDF files
+nc_files = glob.glob("SURF*.nc")  # List of NetCDF files
 for nc_file in nc_files:
     subset = spatial_subset(nc_file, lat_range, lon_range)
    
@@ -214,7 +238,7 @@ for nc_file in nc_files:
 
  
 
-nc_files = [ 'PLEV_fc1.nc']  # List of NetCDF files
+nc_files = glob.glob("PLEV*.nc")   # List of NetCDF files
 for nc_file in nc_files:
     subset = spatial_subset(nc_file, lat_range, lon_range)
     subset= subset.rename({'lon': 'longitude', 'lat': 'latitude', 'plev': 'level'})
@@ -238,22 +262,139 @@ os.rename("subset_PLEV_fc2.nc", "PLEV_fc2.nc")
 
 
 
+import xarray as xr
+# interpolat 6h - 3h
+ds = xr.open_dataset("SURF_fc2.nc")
+# Interpolate the data from 6h to 3h timestep
+year = str(ds['time.year'][0].values)  # Extract hour and zero-pad if necessary
+month = str(ds['time.month'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+day = str(ds['time.day'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+date_string = f"{year}-{month}-{day}"  # Concatenate into a single string
+
+hour = str(ds['time.hour'][0].values).zfill(2)  # Extract hour and zero-pad if necessary
+minute = str(ds['time.minute'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+second = str(ds['time.second'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+time_string = f"{hour}:{minute}:{second}"  # Concatenate into a single string
+
+cmd = "cdo inttime,"+date_string+","+time_string+",3hour SURF_fc2.nc SURF_fc2_3h.nc"
+os.system(cmd)
+
+# interpolat 6h - 3h
+ds = xr.open_dataset("PLEV_fc2.nc")
+# Interpolate the data from 6h to 3h timestep
+year = str(ds['time.year'][0].values)  # Extract hour and zero-pad if necessary
+month = str(ds['time.month'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+day = str(ds['time.day'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+date_string = f"{year}-{month}-{day}"  # Concatenate into a single string
+
+hour = str(ds['time.hour'][0].values).zfill(2)  # Extract hour and zero-pad if necessary
+minute = str(ds['time.minute'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+second = str(ds['time.second'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+time_string = f"{hour}:{minute}:{second}"  # Concatenate into a single string
+
+cmd = "cdo inttime,"+date_string+","+time_string+",3hour PLEV_fc2.nc PLEV_fc2_3h.nc"
+os.system(cmd)
+
+import xarray as xr
+import numpy as np
+from datetime import datetime, timedelta
+
+# Open the first NetCDF file
+ds1 = xr.open_dataset('SURF_fc1.nc')
+
+# Open the second NetCDF file
+ds2 = xr.open_dataset('SURF_fc2_3h.nc')
+
+# Extract the last timestep of all variables in the first file
+last_timestep_first_file = ds1.isel(time=-1)
+
+# Extract the first timestep of all variables in the second file
+first_timestep_second_file = ds2.isel(time=0)
+
+# Calculate the average of the data
+average_ds = (last_timestep_first_file + first_timestep_second_file) / 2
+
+# Calculate the average between the last and first timesteps
+t1 = pd.to_datetime((ds1['time']))[-1]
+t2 = pd.to_datetime((ds2['time']))[0 ]
+
+# Convert Timestamps to numerical representation (seconds since epoch)
+t1_numeric = (t1 - datetime(1970, 1, 1)) / timedelta(seconds=1)
+t2_numeric = (t2 - datetime(1970, 1, 1)) / timedelta(seconds=1)
+
+# Calculate the average timestamp (seconds since epoch)
+average_numeric = (t1_numeric + t2_numeric) / 2
+
+# Convert average timestamp back to a Timestamp object
+average_timestamp = datetime.utcfromtimestamp(average_numeric)
+
+# Assign the time coordinate from the first file to the averaged dataset
+average_ds['time'] = average_timestamp
+
+ds_mean = average_ds.assign_coords(time=average_timestamp)
+
+# Concatenate the averaged time coordinate with the existing data along the time dimension
+ds_concatenated = xr.concat([ds1,ds_mean, ds2], dim='time')
+
+# Write the averaged data to a new NetCDF file
+ds_concatenated.to_netcdf('SURF_fc.nc')
 
 
 
+# Open the first NetCDF file
+ds1 = xr.open_dataset('PLEV_fc1.nc')
 
+# Open the second NetCDF file
+ds2 = xr.open_dataset('PLEV_fc2_3h.nc')
 
+# Extract the last timestep of all variables in the first file
+last_timestep_first_file = ds1.isel(time=-1)
 
+# Extract the first timestep of all variables in the second file
+first_timestep_second_file = ds2.isel(time=0)
 
+# Calculate the average of the data
+average_ds = (last_timestep_first_file + first_timestep_second_file) / 2
 
+# Calculate the average between the last and first timesteps
+t1 = pd.to_datetime((ds1['time']))[-1]
+t2 = pd.to_datetime((ds2['time']))[0 ]
 
+# Convert Timestamps to numerical representation (seconds since epoch)
+t1_numeric = (t1 - datetime(1970, 1, 1)) / timedelta(seconds=1)
+t2_numeric = (t2 - datetime(1970, 1, 1)) / timedelta(seconds=1)
 
+# Calculate the average timestamp (seconds since epoch)
+average_numeric = (t1_numeric + t2_numeric) / 2
 
+# Convert average timestamp back to a Timestamp object
+average_timestamp = datetime.utcfromtimestamp(average_numeric)
 
+# Assign the time coordinate from the first file to the averaged dataset
+average_ds['time'] = average_timestamp
 
+ds_mean = average_ds.assign_coords(time=average_timestamp)
 
+# Concatenate the averaged time coordinate with the existing data along the time dimension
+ds_concatenated = xr.concat([ds1,ds_mean, ds2], dim='time')
 
+# Write the averaged data to a new NetCDF file
+ds_concatenated.to_netcdf('PLEV_fc.nc')
 
+# creste hindcast product
+ds1 = xr.open_dataset('PLEV_fc1.nc')
+# first day of forecast
+thind = pd.to_datetime((ds1['time']))[0:8]
+day = str(thind[0])[0:10]  
+first_8_steps = ds1.isel(time=slice(0, 8))  
+first_8_steps.to_netcdf('PLEV_'+day+'.nc')
+
+ds1 = xr.open_dataset('SURF_fc1.nc')
+# first day of forecast
+thind = pd.to_datetime((ds1['time']))[0:8]
+day = str(thind[0])[0:10]  
+first_8_steps = ds1.isel(time=slice(0, 8))  
+first_8_steps.to_netcdf('SURF_'+day+'.nc')
 
 
 
