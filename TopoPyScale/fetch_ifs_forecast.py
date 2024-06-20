@@ -26,7 +26,21 @@ import glob
 import os
 import pandas as pd
 
-fctime=00
+# data must be available by UTC+6 10am (Bishkek) eg 4am UTC, therefore need to use previous major fc step which is 12 UTC
+fctime = 12
+mydate= 0 #  0 = today (default) 1 = yesterday 2 = day before yesterdaz 3 = day before that. Valid values 0-3.
+outdir = './inputs/climate/'
+
+
+# clean up
+files2delete = glob.glob("PLEV*")
+for file in files2delete:
+    os.remove(file)
+
+files2delete = glob.glob("SURF*")
+for file in files2delete:
+    os.remove(file)
+
 
 # print latest forecast data
 client = Client(source="ecmwf")
@@ -49,6 +63,7 @@ client = Client()
  
 client.retrieve(
 	time=fctime,
+	date=mydate,
      step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["2t", "sp", "2d", "ssrd", "strd", "tp", "msl"],
@@ -60,6 +75,7 @@ client = Client()
 print("Downloading pressure level variables forecast steps 0-144") 
 client.retrieve(
 	time=fctime,
+	date=mydate,
      step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
@@ -91,6 +107,7 @@ client = Client()
 print("Downloading surface variables forecast steps 150-244") 
 client.retrieve(
 	time= fctime,
+	date=mydate,
      step=[i for i in range(150, 241, 6)], # 144 start?
      type="fc",
      param=["2t", "sp", "2d", "ssrd", "strd", "tp", "msl"],
@@ -104,6 +121,7 @@ client = Client()
 print("Downloading pressure level variables forecast steps 150-244") 
 client.retrieve(
 	time= fctime,
+	date=mydate,
      step=[i for i in range(150, 241, 6)],
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
@@ -120,6 +138,14 @@ print("converting grib to nc")
 #!ncview subset_SURF_fc1.nc
 #!ncview PLEV_fc1.nc
 
+# clean up big grib files
+files2delete = glob.glob("*grib")
+for file in files2delete:
+    os.remove(file)
+
+files2delete = glob.glob("*grib")
+for file in files2delete:
+    os.remove(file)
 
 
 print("Spatial subsetting and deaccumulation of precip and rad params")
@@ -195,7 +221,7 @@ lon_range = (59, 81)  # Example longitude range (30E to 40E)
 # Perform spatial subset on each NetCDF file
 nc_files = glob.glob("SURF*.nc")  # List of NetCDF files
 for nc_file in nc_files:
-    subset = spatial_subset(nc_file, lat_range, lon_range)
+	subset = spatial_subset(nc_file, lat_range, lon_range)
    
 	accumulated_var = subset["param193.1.0"]
     # Calculate the difference between consecutive forecast steps manually, step (n) - step (n-1) in shift first timestep is filled with 0.
@@ -229,7 +255,7 @@ for nc_file in nc_files:
 	# compute geopotential z
 	subset['z'] = calculate_geopotential(subset['sp'], subset['t2m'], subset['msl'])
 
-    subset.to_netcdf(f'subset_{nc_file}')
+	subset.to_netcdf(f'subset_{nc_file}')
 
     # check de accumulation
     # subset["param193.1.0"][:,40,40].plot()
@@ -337,7 +363,7 @@ ds_mean = average_ds.assign_coords(time=average_timestamp)
 ds_concatenated = xr.concat([ds1,ds_mean, ds2], dim='time')
 
 # Write the averaged data to a new NetCDF file
-ds_concatenated.to_netcdf('SURF_fc.nc')
+ds_concatenated.to_netcdf(outdir + '/SURF_fc.nc')
 
 
 
@@ -379,7 +405,7 @@ ds_mean = average_ds.assign_coords(time=average_timestamp)
 ds_concatenated = xr.concat([ds1,ds_mean, ds2], dim='time')
 
 # Write the averaged data to a new NetCDF file
-ds_concatenated.to_netcdf('PLEV_fc.nc')
+ds_concatenated.to_netcdf(outdir +'/PLEV_fc.nc')
 
 # creste hindcast product
 ds1 = xr.open_dataset('PLEV_fc1.nc')
@@ -387,14 +413,14 @@ ds1 = xr.open_dataset('PLEV_fc1.nc')
 thind = pd.to_datetime((ds1['time']))[0:8]
 day = str(thind[0])[0:10]  
 first_8_steps = ds1.isel(time=slice(0, 8))  
-first_8_steps.to_netcdf('PLEV_'+day+'.nc')
+first_8_steps.to_netcdf(outdir + '/PLEV_'+day+'.nc')
 
 ds1 = xr.open_dataset('SURF_fc1.nc')
 # first day of forecast
 thind = pd.to_datetime((ds1['time']))[0:8]
 day = str(thind[0])[0:10]  
 first_8_steps = ds1.isel(time=slice(0, 8))  
-first_8_steps.to_netcdf('SURF_'+day+'.nc')
+first_8_steps.to_netcdf(outdir + '/SURF_'+day+'.nc')
 
 
 
