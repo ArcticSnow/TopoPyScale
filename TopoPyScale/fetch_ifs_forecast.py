@@ -28,18 +28,29 @@ import pandas as pd
 
 # data must be available by UTC+6 10am (Bishkek) eg 4am UTC, therefore need to use previous major fc step which is 12 UTC
 fctime = 12
-mydate= 0 #  0 = today (default) 1 = yesterday 2 = day before yesterdaz 3 = day before that. Valid values 0-3.
-outdir = './inputs/climate/'
 
+# removed implementation as the day is handle automatically based on last available fctime
+# can be used to specify precise forecasts up to three day ago
+mydate= -3 #  0 = today (default) -1 = yesterday -2 = day before yesterdaz -3 = day before that. Valid values 0-3.
+outdir = '/home/joel/sim/TPS_2024/master/inputs/forecast'
+os.chdir(outdir)
+
+directory_path = "final"
+# Check if the directory exists, and create it if it doesn't
+if not os.path.exists(directory_path):
+    os.makedirs(directory_path)
+    print(f"Directory created: {directory_path}")
+else:
+    print(f"Directory already exists: {directory_path}")
 
 # clean up
-files2delete = glob.glob("PLEV*")
-for file in files2delete:
-    os.remove(file)
+# files2delete = glob.glob("PLEV*")
+# for file in files2delete:
+#     os.remove(file)
 
-files2delete = glob.glob("SURF*")
-for file in files2delete:
-    os.remove(file)
+# files2delete = glob.glob("SURF*")
+# for file in files2delete:
+#     os.remove(file)
 
 
 # print latest forecast data
@@ -63,7 +74,7 @@ client = Client()
  
 client.retrieve(
 	time=fctime,
-	date=mydate,
+	date = mydate,
      step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["2t", "sp", "2d", "ssrd", "strd", "tp", "msl"],
@@ -75,7 +86,7 @@ client = Client()
 print("Downloading pressure level variables forecast steps 0-144") 
 client.retrieve(
 	time=fctime,
-	date=mydate,
+	date = mydate,
      step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
@@ -107,7 +118,7 @@ client = Client()
 print("Downloading surface variables forecast steps 150-244") 
 client.retrieve(
 	time= fctime,
-	date=mydate,
+	date = mydate,
      step=[i for i in range(150, 241, 6)], # 144 start?
      type="fc",
      param=["2t", "sp", "2d", "ssrd", "strd", "tp", "msl"],
@@ -121,7 +132,7 @@ client = Client()
 print("Downloading pressure level variables forecast steps 150-244") 
 client.retrieve(
 	time= fctime,
-	date=mydate,
+	date = mydate,
      step=[i for i in range(150, 241, 6)],
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
@@ -131,19 +142,23 @@ client.retrieve(
 
 print("converting grib to nc")
 # convert all gribs to nc ( do this in pure python cdo )
-!cdo -f nc copy SURF_fc1.grib2 SURF_fc1.nc
-!cdo -f nc copy PLEV_fc1.grib2 PLEV_fc1.nc
-!cdo -f nc copy SURF_fc2.grib2 SURF_fc2.nc
-!cdo -f nc copy PLEV_fc2.grib2 PLEV_fc2.nc
+cmd = "cdo -f nc copy SURF_fc1.grib2 SURF_fc1.nc"
+os.system(cmd)
+cmd = "cdo -f nc copy PLEV_fc1.grib2 PLEV_fc1.nc"
+os.system(cmd)
+cmd = "cdo -f nc copy SURF_fc2.grib2 SURF_fc2.nc"
+os.system(cmd)
+cmd = "cdo -f nc copy PLEV_fc2.grib2 PLEV_fc2.nc"
+os.system(cmd)
 #!ncview subset_SURF_fc1.nc
 #!ncview PLEV_fc1.nc
 
 # clean up big grib files
-files2delete = glob.glob("*grib")
+files2delete = glob.glob("*grib2")
 for file in files2delete:
     os.remove(file)
 
-files2delete = glob.glob("*grib")
+files2delete = glob.glob("*grib2")
 for file in files2delete:
     os.remove(file)
 
@@ -365,6 +380,22 @@ ds_concatenated = xr.concat([ds1,ds_mean, ds2], dim='time')
 # Write the averaged data to a new NetCDF file
 ds_concatenated.to_netcdf(outdir + '/SURF_fc.nc')
 
+# interpolat 3h - 1h
+ds = xr.open_dataset(outdir +'/SURF_fc.nc')
+# Interpolate the data from 6h to 3h timestep
+year = str(ds['time.year'][0].values)  # Extract hour and zero-pad if necessary
+month = str(ds['time.month'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+day = str(ds['time.day'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+date_string = f"{year}-{month}-{day}"  # Concatenate into a single string
+
+hour = str(ds['time.hour'][0].values).zfill(2)  # Extract hour and zero-pad if necessary
+minute = str(ds['time.minute'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+second = str(ds['time.second'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+time_string = f"{hour}:{minute}:{second}"  # Concatenate into a single string
+
+cmd = "cdo inttime,"+date_string+","+time_string+",1hour "+ outdir +"/SURF_fc.nc " + outdir +"/SURF_fc_1h.nc"
+os.system(cmd)
+
 
 
 # Open the first NetCDF file
@@ -407,60 +438,142 @@ ds_concatenated = xr.concat([ds1,ds_mean, ds2], dim='time')
 # Write the averaged data to a new NetCDF file
 ds_concatenated.to_netcdf(outdir +'/PLEV_fc.nc')
 
+
+# interpolat 3h - 1h
+ds = xr.open_dataset(outdir +'/PLEV_fc.nc')
+# Interpolate the data from 6h to 3h timestep
+year = str(ds['time.year'][0].values)  # Extract hour and zero-pad if necessary
+month = str(ds['time.month'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+day = str(ds['time.day'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+date_string = f"{year}-{month}-{day}"  # Concatenate into a single string
+
+hour = str(ds['time.hour'][0].values).zfill(2)  # Extract hour and zero-pad if necessary
+minute = str(ds['time.minute'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
+second = str(ds['time.second'][0].values).zfill(2)  # Extract second and zero-pad if necessary
+time_string = f"{hour}:{minute}:{second}"  # Concatenate into a single string
+
+cmd = "cdo inttime,"+date_string+","+time_string+",1hour "+ outdir +"/PLEV_fc.nc " + outdir +"/PLEV_fc_1h.nc"
+os.system(cmd)
+
+# cleanup
+os.rename(outdir +"/SURF_fc_1h.nc", outdir +"/final/SURF_fc.nc")
+os.rename(outdir +"/PLEV_fc_1h.nc", outdir +"/final/PLEV_fc.nc")
+
+
+
+
 # creste hindcast product
-ds1 = xr.open_dataset('PLEV_fc1.nc')
+ds1 = xr.open_dataset(outdir +"/final/PLEV_fc.nc")
 # first day of forecast
-thind = pd.to_datetime((ds1['time']))[0:8]
+thind = pd.to_datetime((ds1['time']))[0:24]
 day = str(thind[0])[0:10]  
-first_8_steps = ds1.isel(time=slice(0, 8))  
-first_8_steps.to_netcdf(outdir + '/PLEV_'+day+'.nc')
+first_24_steps = ds1.isel(time=slice(0, 24))  
+first_24_steps.to_netcdf(outdir + '/final/PLEV_'+day+'.nc')
 
-ds1 = xr.open_dataset('SURF_fc1.nc')
+ds1 = xr.open_dataset(outdir +"/final/SURF_fc.nc")
 # first day of forecast
-thind = pd.to_datetime((ds1['time']))[0:8]
+thind = pd.to_datetime((ds1['time']))[0:24]
 day = str(thind[0])[0:10]  
-first_8_steps = ds1.isel(time=slice(0, 8))  
-first_8_steps.to_netcdf(outdir + '/SURF_'+day+'.nc')
+first_24_steps = ds1.isel(time=slice(0, 24))  
+first_24_steps.to_netcdf(outdir + '/final/SURF_'+day+'.nc')
 
 
 
+# cleanup
 
-# import pygrib
-# import xarray as xr
-# import numpy as np
+# Define the pattern to match files (e.g., all .csv files in the current directory)
+pattern = "*fc*"
 
-# # Open the GRIB2 file
-# grbs = pygrib.open('fc2.grib2')
+# Find all files matching the pattern
+files_to_remove = glob.glob(pattern)
 
-# for grip in grbs:                                                                                                                                                                                                                                                     
-# 	print (grip) 
-
-# # Extract data and metadata
-# data = grbs[1].values  # Assuming you want to extract the first field, adjust index as needed
-# lat, lon = grbs[1].latlons()
-
-# # Define the latitude and longitude ranges for the subset
-# lat_range = (32, 45)  # Example latitude range (20N to 30N)
-# lon_range = (59, 81)  # Example longitude range (30E to 40E)
-
-# # Find the indices corresponding to the specified latitude and longitude ranges
-# lat_indices = np.where((lat >= lat_range[0]) & (lat <= lat_range[1]))[0]
-# lon_indices = np.where((lon >= lon_range[0]) & (lon <= lon_range[1]))[1]
-
-# # Extract the subset of data and coordinates
-# subset_data = data[lat_indices[0]:lat_indices[-1]+1, lon_indices[0]:lon_indices[-1]+1]
-# subset_lat = lat[lat_indices[0]:lat_indices[-1]+1, lon_indices[0]:lon_indices[-1]+1]
-# subset_lon = lon[lat_indices[0]:lat_indices[-1]+1, lon_indices[0]:lon_indices[-1]+1]
-
-# # Create a new NetCDF file with the subset data
-# ds_subset = xr.Dataset(
-#     {
-#         'data': (('lat', 'lon'), subset_data),
-#     },
-#     coords={'lat': subset_lat[:, 0], 'lon': subset_lon[0, :]},  # Use 1D arrays for coordinates
-# )
-
-# ds_subset.to_netcdf('subset_output.nc')
+# Loop through the list of files and remove each one
+for file_path in files_to_remove:
+    try:
+        os.remove(file_path)
+        print(f"Removed file: {file_path}")
+    except OSError as e:
+        print(f"Error removing file: {file_path}, {e}")
 
 
-# !ncview subset_output.nc
+# Concatenate PLEV
+
+cmd = "cdo mergetime  final/PLEV* final/PLEV_merged.nc"
+os.system(cmd)
+
+# remove duplicate timestamp
+
+import xarray as xr
+
+# Load the merged NetCDF file
+ds = xr.open_dataset('final/PLEV_merged.nc')
+
+# Convert the time coordinates to a pandas DateTimeIndex
+time_index = pd.to_datetime(ds['time'].values)
+
+# Identify duplicate timestamps
+duplicates = time_index[time_index.duplicated()]
+
+if len(duplicates) > 0:
+    print("Duplicate timestamps found:")
+    print(duplicates)
+else:
+    print("No duplicate timestamps found.")
+
+# Identify duplicate timestamps
+_, unique_indices = np.unique(time_index, return_index=True)
+
+# Select only the unique timestamps
+ds_unique = ds.isel(time=unique_indices)
+
+# Save the cleaned dataset to a new NetCDF file
+ds_unique.to_netcdf('../climate/PLEV_fc_cat.nc')
+
+print("Duplicate timestamps removed. Cleaned Hindcast and forecast dataset '")
+
+
+
+# Concatenate SURF
+
+cmd = "cdo mergetime  final/SURF* final/SURF_merged.nc"
+os.system(cmd)
+
+# remove duplicate timestamp
+
+import xarray as xr
+
+# Load the merged NetCDF file
+ds = xr.open_dataset('final/SURF_merged.nc')
+
+# Convert the time coordinates to a pandas DateTimeIndex
+time_index = pd.to_datetime(ds['time'].values)
+
+# Identify duplicate timestamps
+duplicates = time_index[time_index.duplicated()]
+
+if len(duplicates) > 0:
+    print("Duplicate timestamps found:")
+    print(duplicates)
+else:
+    print("No duplicate timestamps found.")
+
+# Identify duplicate timestamps
+_, unique_indices = np.unique(time_index, return_index=True)
+
+# Select only the unique timestamps
+ds_unique = ds.isel(time=unique_indices)
+
+# Save the cleaned dataset to a new NetCDF file
+ds_unique.to_netcdf('../climate/SURF_fc_cat.nc')
+
+print("Duplicate timestamps removed. Cleaned Hindcast and forecast dataset saved as 'cleaned.nc'")
+
+os.remove('final/PLEV_merged.nc')
+os.remove('final/SURF_merged.nc')
+
+# could still be overlap with era5T?
+# merge and clean with latest era5T?
+# how do we adjust the moving window?
+# always delete daily files that are more than 10days old or so?
+# how do we determine which data to keep and which to delete on duplicates? 
+
