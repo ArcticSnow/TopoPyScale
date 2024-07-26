@@ -1112,9 +1112,7 @@ def to_crocus(ds,
               scale_precip=1,
               climate_dataset_name='ERA5',
               project_author='S. Filhol',
-              snow_partition_method='continuous',
-              year_start='2023-08-01 00:00:00',
-              year_end='2024-06-30 23:00:00'):
+              snow_partition_method='continuous'):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_name
 
@@ -1126,11 +1124,6 @@ def to_crocus(ds,
         climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
         project_author (str): name of project author(s)
         snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
-
-    ToDo:
-    - [ ] split to yearly files, and concatenate over dimension Number_of_points. Default starting date of Crocus year is August 1st
-    -
-
     """
     # create one file per point_name
     n_digits = len(str(ds.point_name.values.max()))
@@ -1254,6 +1247,171 @@ def to_crocus(ds,
                                'ZREF': {'dtype': 'float64'},
                                'UREF': {'dtype': 'float64'}})
         print('---> File {} saved'.format(foutput))
+
+
+def to_surfex(ds,
+              df_pts,
+              fname_format='FORCING*.nc',
+              scale_precip=1,
+              climate_dataset_name='ERA5',
+              project_author='S. Filhol',
+              snow_partition_method='continuous',
+              year_start='2023-08-01 00:00:00',
+              year_end='2024-06-30 23:00:00'):
+    """
+    Function to export toposcale output to Surfex forcing netcdf format. Generates one file per year
+
+    Args:
+        ds (dataset): Toposcale downscaled dataset.
+        df_pts (dataframe): with point list info (x,y,elevation,slope,aspect,svf,...)
+        fname_format (str): filename format. point_name is inserted where * is
+        scale_precip (float): scaling factor to apply on precipitation. Default is 1
+        climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
+        project_author (str): name of project author(s)
+        snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
+        year_start (str): start of year for yearly Surfex forcing
+
+    ToDo:
+    - [ ] split to yearly files,
+    - [ ] concatenate over dimension Number_of_points. Default starting date of Crocus year is August 1st
+
+    """
+    # create one file per point_name
+    n_digits = len(str(ds.point_name.values.max()))
+    ver_dict = tu.get_versionning()
+
+    tvec_start, tvec_end = tu.time_vecs(start_date=year_start, end_date=year_end)
+
+    for year_id, start in tvec_start:
+        fo = ds.sel(time=slice(start.values[0], tvec_end[year_id].values[0])).copy()
+        start_str = start.strftime('%Y%m%d%H')
+        end_str = tvec_end[year_id].strftime('%Y%m%d%H')
+        foutput = f"{str(fname_format).split('*')[0]}_{start_str}06_{end_str}06.nc"
+
+        fo['point_name'] = fo.point_name.astype(int)
+        fo = fo.rename_dims({'point_name':'Number_of_points'})
+        fo = fo.rename({'t':'Tair', 
+                              'SW':'DIR_SWdown', 
+                              'LW':'LWdown',
+                              'p':'PSurf',
+                              'q':'Qair',
+                              'ws':'Wind'})
+        fo['Wind_DIR'] = fo.wd * 180 / np.pi
+        fo['HUMREL'] = (('Number_of_points','time'), mu.q_2_rh(fo.Tair.values, fo.PSurf.values, fo.Qair.values) * 100)
+        fo['precip'] = (('Number_of_points','time'), fo.tp.values / 3600 * scale_precip)  # convert from mm/hr to mm/s
+        rh = mu.q_2_rh(fo.Tair.values, fo.PSurf.values, fo.Qair.values)
+        Rainf, Snowf = mu.partition_snow(fo.precip.values, fo.Tair.values.values, rh, fo.Psurf.values,
+                                                     method=snow_partition_method)
+        fo['Rainf'] = (('Number_of_points','time'), Rainf)
+        fo['Snowf'] = (('Number_of_points','time'), Snowf)
+                
+        fo['NEB'] = (('Number_of_points','time'), np.zeros(fo.Tair.shape))
+        fo['CO2air'] = (('Number_of_points','time'), np.zeros(fo.Tair.shape))
+        fo['SCA_SWdown'] = (('Number_of_points','time'), np.zeros(fo.Tair.shape))
+
+        fo = fo.drop_vars(['precip', 'xwind', 'ywind', 'u', 'v', 'w', 'vp', 'cse','SW_direct', 'cos_illumination', 'SW_diffuse', 'precip_lapse_rate', 'tp' ])
+
+        fo.Tair.attrs = {'units': 'K', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
+                         '_FillValue': -9999999.0}
+        fo.Qair.attrs = {'units': 'kg/kg', 'standard_name': 'Qair', 'long_name': 'Near Surface Specific Humidity',
+                         '_FillValue': -9999999.0}
+        fo.HUMREL.attrs = {'units': '%', 'standard_name': 'HUMREL', 'long_name': 'Relative Humidity',
+                           '_FillValue': -9999999.0}
+        fo.Wind.attrs = {'units': 'm/s', 'standard_name': 'Wind', 'long_name': 'Wind Speed', '_FillValue': -9999999.0}
+        fo.Wind_DIR.attrs = {'units': 'deg', 'standard_name': 'Wind_DIR', 'long_name': 'Wind Direction',
+                             '_FillValue': -9999999.0}
+        fo.Rainf.attrs = {'units': 'kg/m2/s', 'standard_name': 'Rainf', 'long_name': 'Rainfall Rate',
+                          '_FillValue': -9999999.0}
+        fo.Snowf.attrs = {'units': 'kg/m2/s', 'standard_name': 'Snowf', 'long_name': 'Snowfall Rate',
+                          '_FillValue': -9999999.0}
+        fo.DIR_SWdown.attrs = {'units': 'W/m2', 'standard_name': 'DIR_SWdown',
+                               'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+        fo.LWdown.attrs = {'units': 'W/m2', 'standard_name': 'LWdown',
+                           'long_name': 'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+        fo.PSurf.attrs = {'units': 'Pa', 'standard_name': 'PSurf', 'long_name': 'Surface Pressure',
+                          '_FillValue': -9999999.0}
+        fo.SCA_SWdown.attrs = {'units': 'W/m2', 'standard_name': 'SCA_SWdown',
+                               'long_name': 'Surface Incident Diffuse Shortwave Radiation', '_FillValue': -9999999.0}
+        fo.CO2air.attrs = {'units': 'kg/m3', 'standard_name': 'CO2air', 'long_name': 'Near Surface CO2 Concentration',
+                           '_FillValue': -9999999.0}
+        fo.NEB.attrs = {'units': 'between 0 and 1', 'standard_name': 'NEB', 'long_name': 'Nebulosity',
+                        '_FillValue': -9999999.0}
+
+        fo.attrs = {'title': 'Forcing for SURFEX CROCUS',
+                    'source': 'data from {} downscaled with TopoPyScale ready for CROCUS'.format(climate_dataset_name),
+                    'creator_name': 'Dataset created by {}'.format(project_author),
+                    'package_version': ver_dict.get('package_version'),
+                    'git_commit': ver_dict.get('git_commit'),
+                    'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                    'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+
+        ds_pts = xr.Dataset(df_pts).rename_dims({'dim_0':'Number_of_points'})
+        fo['ZS'] = (('Number_of_points'), np.float64(ds_pts.sel(Number_of_points=fo.Number_of_points).elevation.values))
+        fo['aspect'] = (('Number_of_points'), np.float64(np.rad2deg(ds_pts.sel(Number_of_points=fo.Number_of_points).aspect.values)))
+        fo['slope'] = (('Number_of_points'), np.float64(np.rad2deg(ds_pts.sel(Number_of_points=fo.Number_of_points).slope.values)))
+        fo['massif_number'] = (('Number_of_points'), np.float64(0))
+        fo['LAT'] = (('Number_of_points'), ds_pts.sel(Number_of_points=fo.Number_of_points).latitude.values)
+        fo['LON'] = (('Number_of_points'), ds_pts.sel(Number_of_points=fo.Number_of_points).longitude.values)
+        ds_pts=None
+        fo.LAT.attrs = {'units': 'degrees_north', 'standard_name': 'LAT', 'long_name': 'latitude',
+                        '_FillValue': -9999999.0}
+        fo.LON.attrs = {'units': 'degrees_east', 'standard_name': 'LON', 'long_name': 'longitude',
+                        '_FillValue': -9999999.0}
+        fo['ZREF'] = (('Number_of_points'), np.float64(2))
+        fo['UREF'] = (('Number_of_points'), np.float64(10))
+        fo.ZREF.attrs = {'units': 'm', 'standard_name': 'ZREF', 'long_name': 'Reference_Height',
+                         '_FillValue': -9999999.0}
+        fo.UREF.attrs = {'units': 'm', 'standard_name': 'UREF', 'long_name': 'Reference_Height_for_Wind',
+                         '_FillValue': -9999999.0}
+        fo.aspect.attrs = {'units': 'degree from north', 'standard_name': 'aspect', 'long_name': 'slope aspect',
+                           '_FillValue': -9999999.0}
+        fo.slope.attrs = {'units': 'degrees from horizontal', 'standard_name': 'slope', 'long_name': 'slope angle',
+                          '_FillValue': -9999999.0}
+        fo.ZS.attrs = {'units': 'm', 'standard_name': 'ZS', 'long_name': 'altitude', '_FillValue': -9999999.0}
+        fo.massif_number.attrs = {'units': '', 'standard_name': 'massif_number',
+                                  'long_name': 'SAFRAN massif number in SOPRANO world', '_FillValue': -9999999.0}
+        fo.time.attrs = {'standard_name': 'time', 'long_name': 'time', '_FillValue': -9999999.0}
+        fo['FRC_TIME_STP'] = (('Number_of_points'), np.float64(3600))
+        fo.FRC_TIME_STP.attrs = {'units': 's', 'standard_name': 'FRC_TIME_STP', 'long_name': 'Forcing_Time_Step',
+                                 '_FillValue': -9999999.0}
+        fo['FORCE_TIME_STEP'] = (('Number_of_points'), np.float64(3600))
+        fo.FORCE_TIME_STEP.attrs = {'units': 's', 'standard_name': 'FORCE_TIME_STEP', 'long_name': 'Forcing_Time_Step',
+                                    '_FillValue': -9999999.0}
+
+        fo = fo.transpose()
+
+        fo.to_netcdf(foutput, mode='w', format='NETCDF3_CLASSIC', unlimited_dims={'time': True},
+                     encoding={'time': {'dtype': 'float64', 'calendar': 'standard'},
+                               'Tair': {'dtype': 'float64'},
+                               'Qair': {'dtype': 'float64'},
+                               'Snowf': {'dtype': 'float64'},
+                               'Rainf': {'dtype': 'float64'},
+                               'DIR_SWdown': {'dtype': 'float64'},
+                               'LWdown': {'dtype': 'float64'},
+                               'PSurf': {'dtype': 'float64'},
+                               'HUMREL': {'dtype': 'float64'},
+                               'Wind': {'dtype': 'float64'},
+                               'Wind_DIR': {'dtype': 'float64'},
+                               'CO2air': {'dtype': 'float64'},
+                               'NEB': {'dtype': 'float64'},
+                               'SCA_SWdown': {'dtype': 'float64'},
+                               'ZREF': {'dtype': 'float64'},
+                               'UREF': {'dtype': 'float64'}})
+        print('---> File {} saved'.format(foutput))
+        # clear memory
+        fo = None
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def to_snowpack(ds, fname_format='smet_pt_*.tx'):
