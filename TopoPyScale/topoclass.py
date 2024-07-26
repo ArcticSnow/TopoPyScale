@@ -780,6 +780,31 @@ class Topoclass(object):
                      climate_dataset_name=self.config.project.climate,
                      project_author=self.config.project.authors)
 
+    def to_surfex(self, 
+                  fname_format='FORCING_*.nc', 
+                  scale_precip=1, 
+                  year_start=None, 
+                  year_end=None):
+        """
+        function to export toposcale output to surfex format .nc. This functions saves one file per point_name
+        
+        Args:
+            fout_format (str): filename format. point_name is inserted where * is
+            scale_precip(float): scaling factor to apply on precipitation. Default is 1
+        """
+        if year_start is None or year_end is None:
+            raise ValueError("Arguments year_start and year_end are required.")
+        
+        te.to_surfex(self.downscaled_pts,
+                     self.toposub.df_centroids,
+                     fname_format=self.config.outputs.path / fname_format,
+                     scale_precip=scale_precip,
+                     climate_dataset_name=self.config.project.climate,
+                     project_author=self.config.project.authors,
+                     snow_partition_method='continuous',
+                     year_start=year_start,
+                     year_end=year_end)
+
     def to_snowmodel(self, fname_format='Snowmodel_stn_*.csv'):
         """
         function to export toposcale output to snowmodel format .ascii, for single station standard

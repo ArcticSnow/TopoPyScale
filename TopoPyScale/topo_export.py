@@ -1272,18 +1272,17 @@ def to_surfex(ds,
         year_start (str): start of year for yearly Surfex forcing
 
     ToDo:
-    - [ ] split to yearly files,
-    - [ ] concatenate over dimension Number_of_points. Default starting date of Crocus year is August 1st
+    - [x] split to yearly files,
 
     """
     # create one file per point_name
-    n_digits = len(str(ds.point_name.values.max()))
+    n_digits = len(str(ds.point_name.max().values))
     ver_dict = tu.get_versionning()
 
     tvec_start, tvec_end = tu.time_vecs(start_date=year_start, end_date=year_end)
-
-    for year_id, start in tvec_start:
-        fo = ds.sel(time=slice(start.values[0], tvec_end[year_id].values[0])).copy()
+    
+    for year_id, start in enumerate(tvec_start):
+        fo = ds.sel(time=slice(start, tvec_end[year_id])).copy()
         start_str = start.strftime('%Y%m%d%H')
         end_str = tvec_end[year_id].strftime('%Y%m%d%H')
         foutput = f"{str(fname_format).split('*')[0]}_{start_str}06_{end_str}06.nc"
@@ -1300,7 +1299,7 @@ def to_surfex(ds,
         fo['HUMREL'] = (('Number_of_points','time'), mu.q_2_rh(fo.Tair.values, fo.PSurf.values, fo.Qair.values) * 100)
         fo['precip'] = (('Number_of_points','time'), fo.tp.values / 3600 * scale_precip)  # convert from mm/hr to mm/s
         rh = mu.q_2_rh(fo.Tair.values, fo.PSurf.values, fo.Qair.values)
-        Rainf, Snowf = mu.partition_snow(fo.precip.values, fo.Tair.values.values, rh, fo.Psurf.values,
+        Rainf, Snowf = mu.partition_snow(fo.precip.values, fo.Tair.values, rh, fo.PSurf.values,
                                                      method=snow_partition_method)
         fo['Rainf'] = (('Number_of_points','time'), Rainf)
         fo['Snowf'] = (('Number_of_points','time'), Snowf)
@@ -1309,7 +1308,7 @@ def to_surfex(ds,
         fo['CO2air'] = (('Number_of_points','time'), np.zeros(fo.Tair.shape))
         fo['SCA_SWdown'] = (('Number_of_points','time'), np.zeros(fo.Tair.shape))
 
-        fo = fo.drop_vars(['precip', 'xwind', 'ywind', 'u', 'v', 'w', 'vp', 'cse','SW_direct', 'cos_illumination', 'SW_diffuse', 'precip_lapse_rate', 'tp' ])
+        fo = fo.drop_vars(['precip', 'u', 'v', 'w', 'wd', 'vp', 'cse','SW_direct', 'cos_illumination', 'SW_diffuse', 'precip_lapse_rate', 'tp' ])
 
         fo.Tair.attrs = {'units': 'K', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
                          '_FillValue': -9999999.0}
@@ -1346,19 +1345,19 @@ def to_surfex(ds,
                     'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
 
         ds_pts = xr.Dataset(df_pts).rename_dims({'dim_0':'Number_of_points'})
-        fo['ZS'] = (('Number_of_points'), np.float64(ds_pts.sel(Number_of_points=fo.Number_of_points).elevation.values))
-        fo['aspect'] = (('Number_of_points'), np.float64(np.rad2deg(ds_pts.sel(Number_of_points=fo.Number_of_points).aspect.values)))
-        fo['slope'] = (('Number_of_points'), np.float64(np.rad2deg(ds_pts.sel(Number_of_points=fo.Number_of_points).slope.values)))
-        fo['massif_number'] = (('Number_of_points'), np.float64(0))
-        fo['LAT'] = (('Number_of_points'), ds_pts.sel(Number_of_points=fo.Number_of_points).latitude.values)
-        fo['LON'] = (('Number_of_points'), ds_pts.sel(Number_of_points=fo.Number_of_points).longitude.values)
+        fo['ZS'] = (('Number_of_points'), np.float64(ds_pts.elevation.sel(Number_of_points=fo.Number_of_points).values))
+        fo['aspect'] = (('Number_of_points'), np.float64(np.rad2deg(ds_pts.aspect.sel(Number_of_points=fo.Number_of_points).values)))
+        fo['slope'] = (('Number_of_points'), np.float64(np.rad2deg(ds_pts.slope.sel(Number_of_points=fo.Number_of_points).values)))
+        fo['massif_number'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(0))
+        fo['LAT'] = (('Number_of_points'), ds_pts.latitude.sel(Number_of_points=fo.Number_of_points).values)
+        fo['LON'] = (('Number_of_points'), ds_pts.longitude.sel(Number_of_points=fo.Number_of_points).values)
         ds_pts=None
         fo.LAT.attrs = {'units': 'degrees_north', 'standard_name': 'LAT', 'long_name': 'latitude',
                         '_FillValue': -9999999.0}
         fo.LON.attrs = {'units': 'degrees_east', 'standard_name': 'LON', 'long_name': 'longitude',
                         '_FillValue': -9999999.0}
-        fo['ZREF'] = (('Number_of_points'), np.float64(2))
-        fo['UREF'] = (('Number_of_points'), np.float64(10))
+        fo['ZREF'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(2))
+        fo['UREF'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(10))
         fo.ZREF.attrs = {'units': 'm', 'standard_name': 'ZREF', 'long_name': 'Reference_Height',
                          '_FillValue': -9999999.0}
         fo.UREF.attrs = {'units': 'm', 'standard_name': 'UREF', 'long_name': 'Reference_Height_for_Wind',
@@ -1371,12 +1370,12 @@ def to_surfex(ds,
         fo.massif_number.attrs = {'units': '', 'standard_name': 'massif_number',
                                   'long_name': 'SAFRAN massif number in SOPRANO world', '_FillValue': -9999999.0}
         fo.time.attrs = {'standard_name': 'time', 'long_name': 'time', '_FillValue': -9999999.0}
-        fo['FRC_TIME_STP'] = (('Number_of_points'), np.float64(3600))
+        fo['FRC_TIME_STP'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(3600))
         fo.FRC_TIME_STP.attrs = {'units': 's', 'standard_name': 'FRC_TIME_STP', 'long_name': 'Forcing_Time_Step',
                                  '_FillValue': -9999999.0}
-        fo['FORCE_TIME_STEP'] = (('Number_of_points'), np.float64(3600))
-        fo.FORCE_TIME_STEP.attrs = {'units': 's', 'standard_name': 'FORCE_TIME_STEP', 'long_name': 'Forcing_Time_Step',
-                                    '_FillValue': -9999999.0}
+        #fo['FORCE_TIME_STEP'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(3600))
+        #fo.FORCE_TIME_STEP.attrs = {'units': 's', 'standard_name': 'FORCE_TIME_STEP', 'long_name': 'Forcing_Time_Step',
+        #                            '_FillValue': -9999999.0}
 
         fo = fo.transpose()
 
