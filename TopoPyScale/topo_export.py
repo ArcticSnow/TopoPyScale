@@ -1112,7 +1112,9 @@ def to_crocus(ds,
               scale_precip=1,
               climate_dataset_name='ERA5',
               project_author='S. Filhol',
-              snow_partition_method='continuous'):
+              snow_partition_method='continuous',
+              year_start='2023-08-01 00:00:00',
+              year_end='2024-06-30 23:00:00'):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_name
 
@@ -1124,6 +1126,10 @@ def to_crocus(ds,
         climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
         project_author (str): name of project author(s)
         snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
+
+    ToDo:
+    - [ ] split to yearly files, and concatenate over dimension Number_of_points. Default starting date of Crocus year is August 1st
+    -
 
     """
     # create one file per point_name
@@ -1227,7 +1233,7 @@ def to_crocus(ds,
         fo.FORCE_TIME_STEP.attrs = {'units': 's', 'standard_name': 'FORCE_TIME_STEP', 'long_name': 'Forcing_Time_Step',
                                     '_FillValue': -9999999.0}
 
-        fo = fo.expand_dims('Number_of_points')
+        fo = fo.rename_dims({'point_name':'Number_of_points'})
         fo = fo.transpose()
 
         fo.to_netcdf(foutput, mode='w', format='NETCDF3_CLASSIC', unlimited_dims={'time': True},
