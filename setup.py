@@ -70,6 +70,7 @@ setup(
                         'pyproj',
                         'dask',
                         'configobj',
-                        'munch'],
+                        'munch',
+                        'gitpython'],
     include_package_data=True
 )
