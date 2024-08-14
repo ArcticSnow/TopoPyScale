@@ -718,7 +718,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     # Build a "lookup array" where the index is the original value and the value
     # is the reclassified value.  Setting all of the reclassified values is cheap
     # because the memory is only allocated once for the lookup array.
-    nclust = ds_var.shape[0]
+    nclust = ds_var.shape[1]
     lookup = np.arange(nclust, dtype=dtype)
 
     # replicate looup through timedimens (dims Time X sample )
