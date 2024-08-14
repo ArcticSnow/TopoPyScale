@@ -154,7 +154,13 @@ def downscale_climate(project_directory,
         ds_ = None
         ds_tmp = None
 
-    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    #    to avoid chunk warning   
+    import dask
+    with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+        ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    
+    
     # Check tvec is within time period of ds_plev.time or return error
     if ds_plev.time.min() > tvec.min():
         print(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
