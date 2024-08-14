@@ -462,7 +462,7 @@ class Topoclass(object):
                 f'The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
 
         # clean directory from files with the same downscaled output file pattern (so they get replaced)
-        existing_files = sorted(downscaled_dir.glob(f_pattern))
+        existing_files = sorted(Path(downscaled_dir).glob(f_pattern))
         for file in existing_files:
             file.unlink()
             print(f'existing file {file.name} removed.')
