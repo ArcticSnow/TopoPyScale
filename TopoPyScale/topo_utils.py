@@ -300,5 +300,45 @@ def val_plots():
     #FsmPlot(df)
 
 
+def time_vecs(start_date, end_date):
+    """Function to build timestamp vectors of year starts and year ends for arbitrary time range.
+  
+    Args:
+        start_date (str): _description_
+        end_date (str): _description_
 
+    Returns:
+        start_year: vector of start of years (datetime64)
+        end_year: vector of end of year (datetime64)
+    """
+    
+    current_start = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+    start_year = []
+    end_year = []
+
+    while current_start <= end_date:
+        # Append the current start date
+        start_year.append(current_start)
+
+        # Calculate the end date for the current cycle
+        next_start = current_start + pd.DateOffset(years=1)
+        current_end = next_start - pd.DateOffset(days=1)
+
+        # If the cycle's end date goes beyond the overall end date, break and add the final segment
+        if current_end > end_date:
+            current_end = end_date
+            end_year.append(current_end)
+            break
+
+        # Append the current end date
+        end_year.append(current_end)
+
+        # Update current start date to next year start
+        current_start = next_start
+
+    start_year = pd.to_datetime(start_year)
+    end_year = pd.to_datetime(end_year)
+    
+    return start_year, end_year
 

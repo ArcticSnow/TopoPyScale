@@ -55,6 +55,7 @@ setup(
     packages=find_packages(),
     python_requires='>=3.8',
     install_requires=['xarray[complete]',
+                        'rioxarray',
                         'matplotlib',
                         'scikit-learn',
                         'pandas',
@@ -69,6 +70,7 @@ setup(
                         'pyproj',
                         'dask',
                         'configobj',
-                        'munch'],
+                        'munch',
+                        'gitpython'],
     include_package_data=True
 )
