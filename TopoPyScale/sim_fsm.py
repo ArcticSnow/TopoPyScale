@@ -668,11 +668,14 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
         #     resampling=Resampling.nearest
         # )
 
-    # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out))
+    # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out)) -FIXED!
         array = src.read()
         min_E, min_N, max_E, max_N = src.bounds
-        lons = np.arange(min_E, max_E, src.res[0])
-        lats = np.arange(min_N, max_N, src.res[1])
+        # lons = np.arange(min_E, max_E, src.res[0])
+        # lats = np.arange(min_N, max_N, src.res[1])
+        # lats = lats[::-1]
+        lons = np.linspace(min_E, max_E, src.width)
+        lats = np.linspace(min_N, max_N, src.height)
         lats = lats[::-1]
 
     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
@@ -769,8 +772,11 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
         # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out))
         array = src.read()
         min_E, min_N, max_E, max_N = src.bounds
-        lons = np.arange(min_E, max_E, src.res[0])
-        lats = np.arange(min_N, max_N, src.res[1])
+        # lons = np.arange(min_E, max_E, src.res[0])
+        # lats = np.arange(min_N, max_N, src.res[1])
+        # lats = lats[::-1]
+        lons = np.linspace(min_E, max_E, src.width)
+        lats = np.linspace(min_N, max_N, src.height)
         lats = lats[::-1]
 
     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
