@@ -144,7 +144,8 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
             ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
         except:
             raise ValueError(
-                f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation')
+                f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {row.elevation} {plev_interp.z}')
+               
 
         top = plev_interp.isel(level=ind_z_top)
         bot = plev_interp.isel(level=ind_z_bot)
@@ -432,8 +433,14 @@ def downscale_climate(project_directory,
                          encoding=encoding)
         ds_ = None
         ds_tmp = None
+        
+    #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    #    to avoid chunk warning   
+    import dask
+    with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+        ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
 
-    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
     # Check tvec is within time period of ds_plev.time or return error
     if ds_plev.time.min() > tvec.min():
         raise ValueError(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
