@@ -15,7 +15,7 @@ import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
 
-def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False):
+def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf'):
 	""" Sets up era5 surface retrieval.
 	* Creates list of year/month pairs to iterate through. 
 	* MARS retrievals are most efficient when subset by time. 
@@ -75,6 +75,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 	df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
 	df['bbox'] = df.step.apply(lambda x: bbox)
 	df['product_type'] = product
+	df['output_format'] = output_format
 
 	print("Start = ", df.dates[0].strftime('%Y-%b'))
 	print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%b'))
@@ -99,7 +100,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 												list(download.bbox),
 												list(download.target_file),
 												list(download.product_type),
-												list(download.time_steps)))
+												list(download.time_steps),
+												list(download.output_format)))
 			pool.close()
 			pool.join()
 		elif surf_plev == 'plev':
@@ -111,7 +113,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 												list(download.target_file),
 												list(download.product_type),
 												list(download.time_steps),
-												list(download.plevels)))
+												list(download.plevels),
+												list(download.output_format)))
 			pool.close()
 			pool.join()
 		else:
@@ -128,7 +131,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 			# redownload current month to catch missing days in realtime mode.
 			era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
 
-def era5_request_surf(dataset, year, month, bbox, target, product, time):
+def era5_request_surf(dataset, year, month, bbox, target, product, time, output_format= "netcdf"):
 	"""CDS surface api call
 
 	Args:
@@ -138,7 +141,8 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time):
 		bbox (list): bonding box in lat-lon
 		target (str): filename
 		product (str): type of model run. defaul: reanalysis
-		time (str or list): hours for which to download data 
+		time (str or list): hours for which to download data
+		format (str): "grib" or "netcdf"
 
 	Returns:
 		Store to disk dataset as indicated
@@ -170,12 +174,12 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time):
 				 ],
 		 'time': time,
 		 'grid': [0.25, 0.25],
-		 'format': 'netcdf'
+		 'format': output_format
 		 },
 		target)
 	print(target + " complete")
 
-def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels):
+def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels, output_format= "netcdf"):
 	"""CDS plevel api call
 	
 	Args:
@@ -197,7 +201,7 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
 		dataset,
 		{
 			'product_type': product,
-			'format': 'netcdf',
+			'format': output_format,
 			"area": bbox,
 			'variable': [
 				'geopotential', 'temperature', 'u_component_of_wind',
