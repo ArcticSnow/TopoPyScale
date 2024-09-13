@@ -96,6 +96,11 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
                               },
                               dims=["latitude", "longitude"]
                               )
+    # convert to float64 consequence of CDS-BETA change to dtype in netcdf download
+    ds_plev_pt = ds_plev_pt.astype('float64')
+    da_idw = da_idw.astype('float64')
+    ds_surf_pt = ds_surf_pt.astype('float64')
+
     dw = xr.Dataset.weighted(ds_plev_pt, da_idw)
     plev_interp = dw.sum(['longitude', 'latitude'],
                              keep_attrs=True)  # compute horizontal inverse weighted horizontal interpolation

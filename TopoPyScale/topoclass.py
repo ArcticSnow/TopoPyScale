@@ -719,6 +719,8 @@ class Topoclass(object):
             realtime=realtime,
             output_format=output_format
         )
+    def remap_netcdf(self):
+        fe.remap_CDSbeta(self.config.climate.path)
 
     def get_ifs_forecast(self):
         # run openData script here

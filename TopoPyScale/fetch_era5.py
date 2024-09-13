@@ -14,267 +14,274 @@ import glob
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
+import xarray as xr
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf'):
-	""" Sets up era5 surface retrieval.
-	* Creates list of year/month pairs to iterate through. 
-	* MARS retrievals are most efficient when subset by time. 
-	* Identifies preexisting downloads if restarted. 
-	* Calls api using parallel function.
+    """ Sets up era5 surface retrieval.
+    * Creates list of year/month pairs to iterate through.
+    * MARS retrievals are most efficient when subset by time.
+    * Identifies preexisting downloads if restarted.
+    * Calls api using parallel function.
 
-	Args:
-		product: "reanalysis" (HRES) or "ensemble_members" (EDA)
-		startDate:
-		endDate:
-		eraDir: directory to write output
-		latN: north latitude of bbox
-		latS: south latitude of bbox
-		lonE: easterly lon of bbox
-		lonW: westerly lon of bbox
-		step: timestep to use: 1, 3, 6
-		num_threads: number of threads to use for downloading data
-		surf_plev: download surface single level or pressure level product: 'surf' or 'plev'
+    Args:
+        product: "reanalysis" (HRES) or "ensemble_members" (EDA)
+        startDate:
+        endDate:
+        eraDir: directory to write output
+        latN: north latitude of bbox
+        latS: south latitude of bbox
+        lonE: easterly lon of bbox
+        lonW: westerly lon of bbox
+        step: timestep to use: 1, 3, 6
+        num_threads: number of threads to use for downloading data
+        surf_plev: download surface single level or pressure level product: 'surf' or 'plev'
 
-	Returns:
-		Monthly era surface files stored in disk.		 
+    Returns:
+        Monthly era surface files stored in disk.
 
-	"""
-	print('\n')
-	print('---> Loading ERA5 {} climate forcing'.format(surf_plev))
-	bbox = [str(latN), str(lonW), str(latS), str(lonE)]
-	time_step_dict = {'1H': ['00:00', '01:00', '02:00',
-							 '03:00', '04:00', '05:00',
-							 '06:00', '07:00', '08:00',
-							 '09:00', '10:00', '11:00',
-							 '12:00', '13:00', '14:00',
-							 '15:00', '16:00', '17:00',
-							 '18:00', '19:00', '20:00',
-							 '21:00', '22:00', '23:00'],
-					'3H': ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
-					'6H': ['00:00', '06:00', '12:00', '18:00']}
+    """
+    print('\n')
+    print('---> Loading ERA5 {} climate forcing'.format(surf_plev))
+    bbox = [str(latN), str(lonW), str(latS), str(lonE)]
+    time_step_dict = {'1H': ['00:00', '01:00', '02:00',
+                             '03:00', '04:00', '05:00',
+                             '06:00', '07:00', '08:00',
+                             '09:00', '10:00', '11:00',
+                             '12:00', '13:00', '14:00',
+                             '15:00', '16:00', '17:00',
+                             '18:00', '19:00', '20:00',
+                             '21:00', '22:00', '23:00'],
+                    '3H': ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
+                    '6H': ['00:00', '06:00', '12:00', '18:00']}
 
-	df = pd.DataFrame()
-	# date_range will make sure to include the month of the latest date (endDate) provided
-	df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
-	df['month'] = df.dates.dt.month
-	df['year'] = df.dates.dt.year
-	if surf_plev == 'surf':
-		df['dataset'] = 'reanalysis-era5-single-levels'
-		df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
-	elif surf_plev == 'plev':
-		df['dataset'] = 'reanalysis-era5-pressure-levels'
-		df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
-		loc_list = []
-		loc_list.extend([plevels]*df.shape[0])
-		df['plevels'] = loc_list
-	else:
-		sys.exit('ERROR: surf_plev can only be surf or plev')
-	df['file_exist'] = 0
-	df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
-	df['step'] = step
-	df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
-	df['bbox'] = df.step.apply(lambda x: bbox)
-	df['product_type'] = product
-	df['output_format'] = output_format
+    df = pd.DataFrame()
+    # date_range will make sure to include the month of the latest date (endDate) provided
+    df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
+    df['month'] = df.dates.dt.month
+    df['year'] = df.dates.dt.year
+    if surf_plev == 'surf':
+        df['dataset'] = 'reanalysis-era5-single-levels'
+        if output_format == "netcdf":
+            df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
+        if output_format == "grib":
+            df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.grib" % (x.year, x.month))
+    elif surf_plev == 'plev':
+        df['dataset'] = 'reanalysis-era5-pressure-levels'
+        if output_format == "netcdf":
+            df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
+        if output_format == "grib":
+            df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.grib" % (x.year, x.month))
+        loc_list = []
+        loc_list.extend([plevels]*df.shape[0])
+        df['plevels'] = loc_list
+    else:
+        sys.exit('ERROR: surf_plev can only be surf or plev')
+    df['file_exist'] = 0
+    df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
+    df['step'] = step
+    df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
+    df['bbox'] = df.step.apply(lambda x: bbox)
+    df['product_type'] = product
+    df['output_format'] = output_format
 
-	print("Start = ", df.dates[0].strftime('%Y-%b'))
-	print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%b'))
+    print("Start = ", df.dates[0].strftime('%Y-%b'))
+    print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%b'))
 
-	if df.file_exist.sum() > 0:
-		print("ECWMF {} data found:".format(surf_plev.upper()))
-		print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
+    if df.file_exist.sum() > 0:
+        print("ECWMF {} data found:".format(surf_plev.upper()))
+        print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
 
-	if (df.file_exist == 0).sum() > 0:
-		print("Downloading {} from ECWMF:".format(surf_plev.upper()))
-		print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
+    if (df.file_exist == 0).sum() > 0:
+        print("Downloading {} from ECWMF:".format(surf_plev.upper()))
+        print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
 
-	download = df.loc[df.file_exist == 0]
-	if download.shape[0] > 0:
-		# ans = input('---> Download ERA5 {} data? (y/n)'.format(surf_plev.upper()))
-		# if (ans.lower() == 'y') or (ans == '1'):
-		if surf_plev == 'surf':
-			pool = ThreadPool(num_threads)
-			pool.starmap(era5_request_surf, zip(list(download.dataset),
-												list(download.year),
-												list(download.month),
-												list(download.bbox),
-												list(download.target_file),
-												list(download.product_type),
-												list(download.time_steps),
-												list(download.output_format)))
-			pool.close()
-			pool.join()
-		elif surf_plev == 'plev':
-			pool = ThreadPool(num_threads)
-			pool.starmap(era5_request_plev, zip(list(download.dataset),
-												list(download.year),
-												list(download.month),
-												list(download.bbox),
-												list(download.target_file),
-												list(download.product_type),
-												list(download.time_steps),
-												list(download.plevels),
-												list(download.output_format)))
-			pool.close()
-			pool.join()
-		else:
-			sys.exit('ERROR: surf_plev can only be surf or plev')
-		#else:
-		#	sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
+    download = df.loc[df.file_exist == 0]
+    if download.shape[0] > 0:
+        # ans = input('---> Download ERA5 {} data? (y/n)'.format(surf_plev.upper()))
+        # if (ans.lower() == 'y') or (ans == '1'):
+        if surf_plev == 'surf':
+            pool = ThreadPool(num_threads)
+            pool.starmap(era5_request_surf, zip(list(download.dataset),
+                                                list(download.year),
+                                                list(download.month),
+                                                list(download.bbox),
+                                                list(download.target_file),
+                                                list(download.product_type),
+                                                list(download.time_steps),
+                                                list(download.output_format)))
+            pool.close()
+            pool.join()
+        elif surf_plev == 'plev':
+            pool = ThreadPool(num_threads)
+            pool.starmap(era5_request_plev, zip(list(download.dataset),
+                                                list(download.year),
+                                                list(download.month),
+                                                list(download.bbox),
+                                                list(download.target_file),
+                                                list(download.product_type),
+                                                list(download.time_steps),
+                                                list(download.plevels),
+                                                list(download.output_format)))
+            pool.close()
+            pool.join()
+        else:
+            sys.exit('ERROR: surf_plev can only be surf or plev')
+        #else:
+        #	sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
 
-	if realtime:
-		if surf_plev == 'surf':
-			# redownload current month to catch missing days in realtime mode.
-			era5_realtime_surf(eraDir, df.dataset[0], df.bbox[0], df.product_type[0])
+    if realtime:
+        if surf_plev == 'surf':
+            # redownload current month to catch missing days in realtime mode.
+            era5_realtime_surf(eraDir, df.dataset[0], df.bbox[0], df.product_type[0])
 
-		if surf_plev == 'plev':
-			# redownload current month to catch missing days in realtime mode.
-			era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
+        if surf_plev == 'plev':
+            # redownload current month to catch missing days in realtime mode.
+            era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
 
 def era5_request_surf(dataset, year, month, bbox, target, product, time, output_format= "netcdf"):
-	"""CDS surface api call
+    """CDS surface api call
 
-	Args:
-		dataset (str): copernicus dataset (era5)
-		year (str or list): year of interest
-		month (str or list): month of interest
-		bbox (list): bonding box in lat-lon
-		target (str): filename
-		product (str): type of model run. defaul: reanalysis
-		time (str or list): hours for which to download data
-		format (str): "grib" or "netcdf"
+    Args:
+        dataset (str): copernicus dataset (era5)
+        year (str or list): year of interest
+        month (str or list): month of interest
+        bbox (list): bonding box in lat-lon
+        target (str): filename
+        product (str): type of model run. defaul: reanalysis
+        time (str or list): hours for which to download data
+        format (str): "grib" or "netcdf"
 
-	Returns:
-		Store to disk dataset as indicated
+    Returns:
+        Store to disk dataset as indicated
 
-	"""
-	c = cdsapi.Client()
-	c.retrieve(
-		dataset,
-		{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
-					  'surface_solar_radiation_downwards','surface_pressure',
-					  'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
-					  'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
-					  ],
-		 'product_type': product,
-		 "area": bbox,
-		 'year': year,
-		 'month': '%02d'%(month),
-		 'day': ['01', '02', '03',
-				 '04', '05', '06',
-				 '07', '08', '09',
-				 '10', '11', '12',
-				 '13', '14', '15',
-				 '16', '17', '18',
-				 '19', '20', '21',
-				 '22', '23', '24',
-				 '25', '26', '27',
-				 '28', '29', '30',
-				 '31'
-				 ],
-		 'time': time,
-		 'grid': [0.25, 0.25],
-		 'format': output_format
-		 },
-		target)
-	print(target + " complete")
+    """
+    c = cdsapi.Client()
+    c.retrieve(
+        dataset,
+        {'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ],
+         'product_type': product,
+         "area": bbox,
+         'year': year,
+         'month': '%02d'%(month),
+         'day': ['01', '02', '03',
+                 '04', '05', '06',
+                 '07', '08', '09',
+                 '10', '11', '12',
+                 '13', '14', '15',
+                 '16', '17', '18',
+                 '19', '20', '21',
+                 '22', '23', '24',
+                 '25', '26', '27',
+                 '28', '29', '30',
+                 '31'
+                 ],
+         'time': time,
+         'grid': [0.25, 0.25],
+         'format': output_format
+         },
+        target)
+    print(target + " complete")
 
 def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels, output_format= "netcdf"):
-	"""CDS plevel api call
-	
-	Args:
-		dataset (str): copernicus dataset (era5)
-		year (str or list): year of interest
-		month (str or list): month of interest
-		bbox (list): bonding box in lat-lon
-		target (str): filename
-		product (str): type of model run. defaul: reanalysis
-		time (str or list): hours to query
-		plevels (str or list): pressure levels to query
+    """CDS plevel api call
 
-	Returns:
-		Store to disk dataset as indicated
+    Args:
+        dataset (str): copernicus dataset (era5)
+        year (str or list): year of interest
+        month (str or list): month of interest
+        bbox (list): bonding box in lat-lon
+        target (str): filename
+        product (str): type of model run. defaul: reanalysis
+        time (str or list): hours to query
+        plevels (str or list): pressure levels to query
 
-	"""
-	c = cdsapi.Client()
-	c.retrieve(
-		dataset,
-		{
-			'product_type': product,
-			'format': output_format,
-			"area": bbox,
-			'variable': [
-				'geopotential', 'temperature', 'u_component_of_wind',
-				'v_component_of_wind', 'relative_humidity', 'specific_humidity'
-			],
-			'pressure_level': plevels,
-			'year': year,
-			'month': '%02d'%(month),
-			'day': [
-				'01', '02', '03',
-				'04', '05', '06',
-				'07', '08', '09',
-				'10', '11', '12',
-				'13', '14', '15',
-				'16', '17', '18',
-				'19', '20', '21',
-				'22', '23', '24',
-				'25', '26', '27',
-				'28', '29', '30',
-				'31'
-			],
-			'time': time,
-			'grid': [0.25, 0.25],
-		},
-		target)
-	print(target + " complete")
+    Returns:
+        Store to disk dataset as indicated
+
+    """
+    c = cdsapi.Client()
+    c.retrieve(
+        dataset,
+        {
+            'product_type': product,
+            'format': output_format,
+            "area": bbox,
+            'variable': [
+                'geopotential', 'temperature', 'u_component_of_wind',
+                'v_component_of_wind', 'relative_humidity', 'specific_humidity'
+            ],
+            'pressure_level': plevels,
+            'year': year,
+            'month': '%02d'%(month),
+            'day': [
+                '01', '02', '03',
+                '04', '05', '06',
+                '07', '08', '09',
+                '10', '11', '12',
+                '13', '14', '15',
+                '16', '17', '18',
+                '19', '20', '21',
+                '22', '23', '24',
+                '25', '26', '27',
+                '28', '29', '30',
+                '31'
+            ],
+            'time': time,
+            'grid': [0.25, 0.25],
+        },
+        target)
+    print(target + " complete")
 
 
 def era5_realtime_surf(eraDir, dataset, bbox, product ):
-	# a small routine thaty simply redownloads the current month
-	# this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
-	# a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
+    # a small routine thaty simply redownloads the current month
+    # this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
+    # a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
 
-	# get current month
-	currentMonth = datetime.now().month 
-	currentYear = datetime.now().year 
-	print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
+    # get current month
+    currentMonth = datetime.now().month
+    currentYear = datetime.now().year
+    print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
 
-	time = ['00:00', '01:00', '02:00',
-							 '03:00', '04:00', '05:00',
-							 '06:00', '07:00', '08:00',
-							 '09:00', '10:00', '11:00',
-							 '12:00', '13:00', '14:00',
-							 '15:00', '16:00', '17:00',
-							 '18:00', '19:00', '20:00',
-							 '21:00', '22:00', '23:00']
+    time = ['00:00', '01:00', '02:00',
+                             '03:00', '04:00', '05:00',
+                             '06:00', '07:00', '08:00',
+                             '09:00', '10:00', '11:00',
+                             '12:00', '13:00', '14:00',
+                             '15:00', '16:00', '17:00',
+                             '18:00', '19:00', '20:00',
+                             '21:00', '22:00', '23:00']
 
-	target = eraDir +"/SURF_%04d%02d.nc" % (currentYear, currentMonth)
-	era5_request_surf(dataset, currentYear, currentMonth, bbox, target, product, time)
+    target = eraDir +"/SURF_%04d%02d.nc" % (currentYear, currentMonth)
+    era5_request_surf(dataset, currentYear, currentMonth, bbox, target, product, time)
 
 
 def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
-	# a small routine thaty simply redownloads the current month
-	# this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
-	# a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
+    # a small routine thaty simply redownloads the current month
+    # this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
+    # a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
 
-	# get current month
-	currentMonth = datetime.now().month
-	currentYear = datetime.now().year
-	print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
+    # get current month
+    currentMonth = datetime.now().month
+    currentYear = datetime.now().year
+    print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
 
-	time = ['00:00', '01:00', '02:00',
-							 '03:00', '04:00', '05:00',
-							 '06:00', '07:00', '08:00',
-							 '09:00', '10:00', '11:00',
-							 '12:00', '13:00', '14:00',
-							 '15:00', '16:00', '17:00',
-							 '18:00', '19:00', '20:00',
-							 '21:00', '22:00', '23:00']
+    time = ['00:00', '01:00', '02:00',
+                             '03:00', '04:00', '05:00',
+                             '06:00', '07:00', '08:00',
+                             '09:00', '10:00', '11:00',
+                             '12:00', '13:00', '14:00',
+                             '15:00', '16:00', '17:00',
+                             '18:00', '19:00', '20:00',
+                             '21:00', '22:00', '23:00']
 
-	target = eraDir + "/PLEV_%04d%02d.nc" % (currentYear, currentMonth)
-	plevels = plevels
-	era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
+    target = eraDir + "/PLEV_%04d%02d.nc" % (currentYear, currentMonth)
+    plevels = plevels
+    era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
 
 
 # def return_latest_date():
@@ -318,41 +325,65 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
 # 	return(latest_date)
 
 def return_last_fullday():
-	# Get current UTC time
-	current_time_utc = datetime.utcnow()
+    # Get current UTC time
+    current_time_utc = datetime.utcnow()
 
-	# Round down to the nearest hour
-	rounded_time_utc = current_time_utc.replace(minute=0, second=0, microsecond=0)
+    # Round down to the nearest hour
+    rounded_time_utc = current_time_utc.replace(minute=0, second=0, microsecond=0)
 
-	# Get time 5 days ago in UTC
-	five_days_ago_utc = rounded_time_utc - timedelta(days=5)
+    # Get time 5 days ago in UTC
+    five_days_ago_utc = rounded_time_utc - timedelta(days=5)
 
-	# Format the time strings
-	current_time_utc_str = rounded_time_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
-	five_days_ago_utc_str = five_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+    # Format the time strings
+    current_time_utc_str = rounded_time_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+    five_days_ago_utc_str = five_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 
-	# Print the results
-	five_days_ago_utc = datetime.strptime(five_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
+    # Print the results
+    five_days_ago_utc = datetime.strptime(five_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
 
-	# if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
-	if five_days_ago_utc.hour < 23:
-		last_fullday_data = five_days_ago_utc - timedelta(days=1)
-	else:
-		last_fullday_data = five_days_ago_utc
-	last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
-	print("Current time (rounded down) in UTC:", current_time_utc_str)
-	print("Last ERA5T data in UTC:", five_days_ago_utc_str)
-	print("Last full day ERA5T data in UTC:", last_fullday_data_str)
+    # if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
+    if five_days_ago_utc.hour < 23:
+        last_fullday_data = five_days_ago_utc - timedelta(days=1)
+    else:
+        last_fullday_data = five_days_ago_utc
+    last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
+    print("Current time (rounded down) in UTC:", current_time_utc_str)
+    print("Last ERA5T data in UTC:", five_days_ago_utc_str)
+    print("Last full day ERA5T data in UTC:", last_fullday_data_str)
 
-	return (last_fullday_data)
-
-
+    return (last_fullday_data)
 
 
+def grib2netcdf(gribname):
+    import xarray as xr
+    import cfgrib
+    gribname = "SURF_202408.grib"
+
+    ds = xr.open_dataset(gribname, engine="cfgrib")
+    ds.to_netcdf(gribname+".nc")
 
 
+def remap_CDSbeta(wdir):
+    # remapping of variables from CDS beta to CDS legacy standard.
+
+    plev_files = glob.glob(wdir+"/PLEV*.nc")  # List of NetCDF files
+    surf_files = glob.glob(wdir+"/SURF*.nc")  # List of NetCDF files
+
+    for nc_file in plev_files:
+        ds = xr.open_dataset(nc_file)
+        ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
+        ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
+        ds.to_netcdf(nc_file+ "_remap", mode='w')
+        # move remap back to orig name
+        os.rename(nc_file + "_remap", nc_file)
 
 
+    for nc_file in surf_files:
+        ds = xr.open_dataset(nc_file)
+        ds = ds.rename({ 'valid_time' : 'time'})
+        ds.to_netcdf(nc_file + "_remap", mode='w')
+        # move remap back to orig name
+        os.rename(nc_file + "_remap", nc_file)
 
 
 
