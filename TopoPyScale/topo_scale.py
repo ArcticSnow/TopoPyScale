@@ -427,8 +427,10 @@ def downscale_climate(project_directory,
         ind_lon = np.abs(ds_.longitude - row.lon).argmin()
         # from remote_pdb import set_trace
         # set_trace()
+
         ds_tmp = ds_.isel(latitude=[ind_lat - 1, ind_lat, ind_lat + 1],
-                          longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
+                              longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
+
         # convert geopotential height to elevation (in m), normalizing by g
         ds_tmp['z'] = ds_tmp.z / g
 
@@ -444,6 +446,7 @@ def downscale_climate(project_directory,
     import dask
     with dask.config.set(**{'array.slicing.split_large_chunks': True}):
         ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+
 
     #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
     # Check tvec is within time period of ds_plev.time or return error
