@@ -127,7 +127,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     if (row.elevation < plev_interp.z.isel(level=-1)).sum():
         pt_elev_diff = np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values), 0)
-        raise Warning(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {plev_interp.isel(level=-1).level.data} hPa geopotential\n=> "
+        print(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {plev_interp.isel(level=-1).level.data} hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation")
         
         ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
