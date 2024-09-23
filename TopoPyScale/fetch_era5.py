@@ -155,6 +155,31 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time, output_
         Store to disk dataset as indicated
 
     """
+    print(        {'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ],
+         'product_type': [product],
+         "area": bbox,
+         'year': year,
+         'month': '%02d'%(month),
+         'day': ['01', '02', '03',
+                 '04', '05', '06',
+                 '07', '08', '09',
+                 '10', '11', '12',
+                 '13', '14', '15',
+                 '16', '17', '18',
+                 '19', '20', '21',
+                 '22', '23', '24',
+                 '25', '26', '27',
+                 '28', '29', '30',
+                 '31'
+                 ],
+         'time': time,
+         'grid': [0.25, 0.25],
+         'format': output_format
+         })
     c = cdsapi.Client()
     c.retrieve(
         dataset,
@@ -163,7 +188,7 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time, output_
                       'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
                       'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
                       ],
-         'product_type': product,
+         'product_type': [product],
          "area": bbox,
          'year': year,
          'month': '%02d'%(month),
@@ -370,22 +395,27 @@ def remap_CDSbeta(wdir):
     surf_files = glob.glob(wdir+"/SURF*.nc")  # List of NetCDF files
 
     for nc_file in plev_files:
-        ds = xr.open_dataset(nc_file)
-        ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
-        ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
-        ds.to_netcdf(nc_file+ "_remap", mode='w')
-        # move remap back to orig name
-        os.rename(nc_file + "_remap", nc_file)
+        try:
+            ds = xr.open_dataset(nc_file)
+            ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
+            ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
+            ds.to_netcdf(nc_file+ "_remap", mode='w')
+            # move remap back to orig name
+            os.rename(nc_file + "_remap", nc_file)
+        except:
+            print(nc_file+" already remapped.")
 
 
     for nc_file in surf_files:
-        ds = xr.open_dataset(nc_file)
-        ds = ds.rename({ 'valid_time' : 'time'})
-        ds.to_netcdf(nc_file + "_remap", mode='w')
-        # move remap back to orig name
-        os.rename(nc_file + "_remap", nc_file)
+        try:
+            ds = xr.open_dataset(nc_file)
+            ds = ds.rename({ 'valid_time' : 'time'})
+            ds.to_netcdf(nc_file + "_remap", mode='w')
+            # move remap back to orig name
+            os.rename(nc_file + "_remap", nc_file)
 
-
+        except:
+            print(nc_file+" already remapped.")
 
 
 
