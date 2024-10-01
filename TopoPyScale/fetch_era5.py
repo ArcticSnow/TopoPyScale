@@ -84,8 +84,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     df['product_type'] = product
     df['output_format'] = output_format
 
-    print("Start = ", df.dates[0].strftime('%Y-%b'))
-    print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%b'))
+    print("Start = ", df.dates[0].strftime('%Y-%m-%d'))
+    print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%m-%d'))
 
     if df.file_exist.sum() > 0:
         print("ECWMF {} data found:".format(surf_plev.upper()))
@@ -182,7 +182,8 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time, output_
                  ],
          'time': time,
          'grid': [0.25, 0.25],
-         'format': output_format
+         'data_format': output_format,
+         'download_format': 'unarchived'
          },
         target)
     print(target + " complete")
@@ -209,7 +210,6 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
         dataset,
         {
             'product_type': [product],
-            'format': output_format,
             "area": bbox,
             'variable': [
                 'geopotential', 'temperature', 'u_component_of_wind',
@@ -233,6 +233,8 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
             ],
             'time': time,
             'grid': [0.25, 0.25],
+            'data_format': output_format,
+            'download_format': 'unarchived'
         },
         target)
     print(target + " complete")
@@ -332,27 +334,27 @@ def return_last_fullday():
     # Round down to the nearest hour
     rounded_time_utc = current_time_utc.replace(minute=0, second=0, microsecond=0)
 
-    # Get time 5 days ago in UTC
-    five_days_ago_utc = rounded_time_utc - timedelta(days=5)
+    # Get time 6 days ago in UTC
+    six_days_ago_utc = rounded_time_utc - timedelta(days=6)
 
     # Format the time strings
     current_time_utc_str = rounded_time_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
-    five_days_ago_utc_str = five_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+    six_days_ago_utc_str = six_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 
     # Print the results
-    five_days_ago_utc = datetime.strptime(five_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
+    six_days_ago_utc = datetime.strptime(six_days_ago_utc_str, "%Y-%m-%d %H:%M:%S UTC")
 
-    # if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
-    if five_days_ago_utc.hour < 23:
-        last_fullday_data = five_days_ago_utc - timedelta(days=1)
-    else:
-        last_fullday_data = five_days_ago_utc
-    last_fullday_data_str = last_fullday_data.strftime("%Y-%m-%d %H:%M:%S UTC")
+    # # if 5 days ago is an incomplete day h<23, Subtract one day from the datetime object to get last full day of data
+    # if six_days_ago_utc.hour < 23:
+    #     last_fullday_data = six_days_ago_utc - timedelta(days=1)
+    # else:
+    #     last_fullday_data = six_days_ago_utc
+    last_fullday_data_str = six_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
     print("Current time (rounded down) in UTC:", current_time_utc_str)
-    print("Last ERA5T data in UTC:", five_days_ago_utc_str)
-    print("Last full day ERA5T data in UTC:", last_fullday_data_str)
+    print("Last full day ERA5T data in UTC:", six_days_ago_utc_str)
 
-    return (last_fullday_data)
+
+    return (six_days_ago_utc)
 
 
 def grib2netcdf(gribname):
@@ -397,4 +399,104 @@ def remap_CDSbeta(wdir):
 
 
 
+def era5_request_surf_snowmapper(dataset, year, month, bbox, target, product, time, output_format= "netcdf"):
+    """CDS surface api call
 
+    Args:
+        dataset (str): copernicus dataset (era5)
+        year (str or list): year of interest
+        month (str or list): month of interest
+        bbox (list): bonding box in lat-lon
+        target (str): filename
+        product (str): type of model run. defaul: reanalysis
+        time (str or list): hours for which to download data
+        format (str): "grib" or "netcdf"
+
+    Returns:
+        Store to disk dataset as indicated
+
+    """
+
+    c = cdsapi.Client()
+    c.retrieve(
+        dataset,
+        {'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ],
+         'product_type': [product],
+         "area": bbox,
+         'year': year,
+         'month': '%02d'%(month),
+         'day': ['01', '02', '03',
+                 '04', '05', '06',
+                 '07', '08', '09',
+                 '10', '11', '12',
+                 '13', '14', '15',
+                 '16', '17', '18',
+                 '19', '20', '21',
+                 '22', '23', '24',
+                 '25', '26', '27',
+                 '28', '29', '30',
+                 '31'
+                 ],
+         'time': time,
+         'grid': [0.25, 0.25],
+         'data_format': output_format,
+         'download_format': 'unarchived'
+         },
+        target)
+    print(target + " complete")
+
+
+def era5_request_plev_snowmapper(dataset, year, month, bbox, target, product, time, plevels, output_format= "netcdf"):
+    """CDS plevel api call
+
+    Args:
+        dataset (str): copernicus dataset (era5)
+        year (str or list): year of interest
+        month (str or list): month of interest
+        bbox (list): bonding box in lat-lon
+        target (str): filename
+        product (str): type of model run. defaul: reanalysis
+        time (str or list): hours to query
+        plevels (str or list): pressure levels to query
+
+    Returns:
+        Store to disk dataset as indicated
+
+    """
+    c = cdsapi.Client()
+    c.retrieve(
+        dataset,
+        {
+            'product_type': [product],
+            "area": bbox,
+            'variable': [
+                'geopotential', 'temperature', 'u_component_of_wind',
+                'v_component_of_wind', 'relative_humidity', 'specific_humidity'
+            ],
+            'pressure_level': plevels,
+            'year': year,
+            'month': '%02d'%(month),
+            'day': [
+                '01', '02', '03',
+                '04', '05', '06',
+                '07', '08', '09',
+                '10', '11', '12',
+                '13', '14', '15',
+                '16', '17', '18',
+                '19', '20', '21',
+                '22', '23', '24',
+                '25', '26', '27',
+                '28', '29', '30',
+                '31'
+            ],
+            'time': time,
+            'grid': [0.25, 0.25],
+            'data_format': output_format,
+            'download_format': 'unarchived'
+        },
+        target)
+    print(target + " complete")
