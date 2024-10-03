@@ -719,8 +719,52 @@ class Topoclass(object):
             realtime=realtime,
             output_format=output_format
         )
-    def remap_netcdf(self):
-        fe.remap_CDSbeta(self.config.climate.path)
+
+
+    def get_era5_snowmapper(self, surf_plev, lastday):
+        """
+        Funtion to call fetching of ERA5 data
+        TODO:
+        - merge monthly data into one file (cdo?)- this creates massive slow down!
+        """
+        lonW = self.config.project.extent.get('lonW') - 0.4
+        lonE = self.config.project.extent.get('lonE') + 0.4
+        latN = self.config.project.extent.get('latN') + 0.4
+        latS = self.config.project.extent.get('latS') - 0.4
+
+
+        # if keyword exists in config set out_format to value or default to netcdf
+        if self.config.climate[self.config.project.climate].output_format:
+            output_format = self.config.climate[self.config.project.climate].output_format
+        # else set realtime to False
+        else:
+            output_format = 'netcdf'
+
+        if surf_plev == 'surf':
+            # retreive ERA5 surface data
+            fe.era5_request_surf_snowmapper(
+                lastday,
+                latN, latS, lonE, lonW,
+                self.config.climate.path,
+                output_format=output_format
+            )
+
+        if surf_plev == 'plev':            
+            # retrieve era5 plevels
+            fe.era5_request_plev_snowmapper(
+                lastday,
+                latN, latS, lonE, lonW,
+                self.config.climate.path,
+                plevels=self.config.climate[self.config.project.climate].plevels,
+                output_format=output_format
+            )
+
+    def get_lastday(self):
+        lastday = fe.return_last_fullday()
+        return(lastday)
+
+    def remap_netcdf(self, filepath):
+        fe.remap_CDSbeta(filepath)
 
     def get_ifs_forecast(self):
         # run openData script here

@@ -349,12 +349,12 @@ def return_last_fullday():
     #     last_fullday_data = six_days_ago_utc - timedelta(days=1)
     # else:
     #     last_fullday_data = six_days_ago_utc
-    last_fullday_data_str = six_days_ago_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+    last_fullday_data_str = six_days_ago_utc.strftime("%Y-%m-%d")
     print("Current time (rounded down) in UTC:", current_time_utc_str)
-    print("Last full day ERA5T data in UTC:", six_days_ago_utc_str)
+    print("Last full day ERA5T data in UTC:", last_fullday_data_str)
 
 
-    return (six_days_ago_utc)
+    return (last_fullday_data_str)
 
 
 def grib2netcdf(gribname):
@@ -377,36 +377,70 @@ def remap_CDSbeta(wdir):
             ds = xr.open_dataset(nc_file)
             ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
             ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
+
+            try:
+                ds = ds.drop_vars('number')
+            except:
+                print("variables not found")
+
+            try:
+                ds = ds.drop_vars('expver')
+            except:
+                print("variables not found")
+
+
             ds.to_netcdf(nc_file+ "_remap", mode='w')
             # move remap back to orig name
             os.rename(nc_file + "_remap", nc_file)
         except:
-            print(nc_file+" already remapped.")
+            print(nc_file+" already remapped or fc file.")
 
 
     for nc_file in surf_files:
         try:
             ds = xr.open_dataset(nc_file)
             ds = ds.rename({ 'valid_time' : 'time'})
+
+            try:
+                #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
+                #ds2 = ds.swap_dims({'valid_time': 'time'})
+                ds = ds.drop_vars('ishf')
+                ds = ds.drop_vars('ie')
+                ds = ds.drop_vars('zust')
+                ds = ds.drop_vars('tisr')
+            except:
+                print("variables not found")
+
+            try:
+                ds = ds.drop_vars('number')
+            except:
+                print("variables not found")
+
+            try:
+                ds = ds.drop_vars('expver')
+            except:
+                print("variables not found")
+
+
             ds.to_netcdf(nc_file + "_remap", mode='w')
             # move remap back to orig name
             os.rename(nc_file + "_remap", nc_file)
 
         except:
-            print(nc_file+" already remapped.")
+            print(nc_file+" already remapped or fc file.")
 
 
 
 
 
-def era5_request_surf_snowmapper(dataset, year, month, bbox, target, product, time, output_format= "netcdf"):
+
+
+def era5_request_surf_snowmapper( today, latN, latS, lonE, lonW, eraDir, output_format= "netcdf"):
     """CDS surface api call
 
     Args:
         dataset (str): copernicus dataset (era5)
-        year (str or list): year of interest
-        month (str or list): month of interest
-        bbox (list): bonding box in lat-lon
+        today (datetime object): day to download
         target (str): filename
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours for which to download data
@@ -416,31 +450,32 @@ def era5_request_surf_snowmapper(dataset, year, month, bbox, target, product, ti
         Store to disk dataset as indicated
 
     """
+    time = ['00:00', '01:00', '02:00',
+                             '03:00', '04:00', '05:00',
+                             '06:00', '07:00', '08:00',
+                             '09:00', '10:00', '11:00',
+                             '12:00', '13:00', '14:00',
+                             '15:00', '16:00', '17:00',
+                             '18:00', '19:00', '20:00',
+                             '21:00', '22:00', '23:00']
+
+    bbox = [str(latN), str(lonW), str(latS), str(lonE)]
+
+    target = eraDir + "/forecast/SURF_%04d%02d%02d.nc" % (today.year, today.month, today.day)
 
     c = cdsapi.Client()
     c.retrieve(
-        dataset,
+        'reanalysis-era5-single-levels',
         {'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
                       'surface_solar_radiation_downwards','surface_pressure',
                       'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
                       'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
                       ],
-         'product_type': [product],
+         'product_type': ['reanalysis'],
          "area": bbox,
-         'year': year,
-         'month': '%02d'%(month),
-         'day': ['01', '02', '03',
-                 '04', '05', '06',
-                 '07', '08', '09',
-                 '10', '11', '12',
-                 '13', '14', '15',
-                 '16', '17', '18',
-                 '19', '20', '21',
-                 '22', '23', '24',
-                 '25', '26', '27',
-                 '28', '29', '30',
-                 '31'
-                 ],
+         'year': [today.year],
+         'month': '%02d'%(today.month),
+         'day': [today.day],
          'time': time,
          'grid': [0.25, 0.25],
          'data_format': output_format,
@@ -450,7 +485,7 @@ def era5_request_surf_snowmapper(dataset, year, month, bbox, target, product, ti
     print(target + " complete")
 
 
-def era5_request_plev_snowmapper(dataset, year, month, bbox, target, product, time, plevels, output_format= "netcdf"):
+def era5_request_plev_snowmapper(today, latN, latS, lonE, lonW, eraDir, plevels, output_format= "netcdf"):
     """CDS plevel api call
 
     Args:
@@ -467,32 +502,34 @@ def era5_request_plev_snowmapper(dataset, year, month, bbox, target, product, ti
         Store to disk dataset as indicated
 
     """
+    time = ['00:00', '01:00', '02:00',
+                             '03:00', '04:00', '05:00',
+                             '06:00', '07:00', '08:00',
+                             '09:00', '10:00', '11:00',
+                             '12:00', '13:00', '14:00',
+                             '15:00', '16:00', '17:00',
+                             '18:00', '19:00', '20:00',
+                             '21:00', '22:00', '23:00']
+
+    bbox = [str(latN), str(lonW), str(latS), str(lonE)]
+
+    target = eraDir + "/forecast/PLEV_%04d%02d%02d.nc" % (today.year, today.month, today.day)
+
+
     c = cdsapi.Client()
     c.retrieve(
-        dataset,
+        'reanalysis-era5-pressure-levels',
         {
-            'product_type': [product],
+            'product_type': ['reanalysis'],
             "area": bbox,
             'variable': [
                 'geopotential', 'temperature', 'u_component_of_wind',
                 'v_component_of_wind', 'relative_humidity', 'specific_humidity'
             ],
             'pressure_level': plevels,
-            'year': year,
-            'month': '%02d'%(month),
-            'day': [
-                '01', '02', '03',
-                '04', '05', '06',
-                '07', '08', '09',
-                '10', '11', '12',
-                '13', '14', '15',
-                '16', '17', '18',
-                '19', '20', '21',
-                '22', '23', '24',
-                '25', '26', '27',
-                '28', '29', '30',
-                '31'
-            ],
+            'year': [today.year],
+            'month': '%02d'%(today.month),
+            'day': [today.day],
             'time': time,
             'grid': [0.25, 0.25],
             'data_format': output_format,
