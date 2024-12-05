@@ -381,14 +381,14 @@ def process_SURF_file( wdir):
         try:
             with xr.open_dataset(file_path) as ds:
                 print(f"{file_path} is a valid NetCDF file. No processing needed.")
-                return
+                continue
         except Exception:
             print(f"{file_path} is not a valid NetCDF file. Checking if it's a ZIP file.")
         
         # Step 2: Check if it's a ZIP file
         if not zipfile.is_zipfile(file_path):
             print(f"{file_path} is neither a valid NetCDF nor a ZIP file.")
-            return
+            continue
         
         # Step 3: Rename the file if it's actually a ZIP
         zip_file_path = file_path.replace('.nc', '.zip')
@@ -405,9 +405,9 @@ def process_SURF_file( wdir):
         nc_files = [os.path.join(unzip_dir, f) for f in os.listdir(unzip_dir) if f.endswith('.nc')]
         if not nc_files:
             print(f"No .nc files found in {unzip_dir}.")
-            return
+            continue
         
-        merged_file_path = os.path.join(workdir, os.path.basename(zip_file_path).replace('.zip', '.nc'))
+        merged_file_path = os.path.join(wdir, os.path.basename(zip_file_path).replace('.zip', '.nc'))
         try:
             # Combine all `.nc` files
             datasets = [xr.open_dataset(nc_file) for nc_file in nc_files]
@@ -463,6 +463,7 @@ def remap_CDSbeta(wdir):
     for nc_file in surf_files:
         try:
             ds = xr.open_dataset(nc_file)
+            ds = ds.rename({ 'time' : 'strangetime'})
             ds = ds.rename({ 'valid_time' : 'time'})
 
             try:
