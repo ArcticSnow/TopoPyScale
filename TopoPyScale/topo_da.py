@@ -519,10 +519,10 @@ def pymodis_download(wdir, tile, STARTDATE, ENDDATE):
     HOST = "https://n5eil01u.ecs.nsidc.org/"
     FOLDER = "MOST"
     PRODUCT = "MOD10A1F.061"
-    RAWPATH = MODPATH + "/raw/"
+    RAWPATH = MODPATH + "/" + tile + "/raw/"
     os.makedirs(MODPATH, exist_ok=True)
     os.makedirs(RAWPATH, exist_ok=True)
-    os.makedirs(MODPATH + "/transformed/", exist_ok=True)
+    os.makedirs(MODPATH + "/" +tile + "/transformed/", exist_ok=True)
 
     #hreg = ("h" + f"{horiz:02d}")  # re.compile("h2[4]")
     #vreg = ("v" + f"{vert:02d}")  # re.compile("v0[5]")
@@ -600,7 +600,54 @@ def process_modis(wdir, epsg, bbox, layer=0):
 
     return print(str(len(files)) + " MODIS files processed")
 
+def process_modis2(modpath, epsg, bbox, layer=0):
+    """
+    Function to convert hdf to tiff, extract layer, and reproject
 
+    Args:
+        modpath: path to 'modis' directory
+        layer: layer to extract from hdf
+        epsg: reprojected target epsg code
+        bbox: output bounds as list [minX, minY, maxX, maxY] in target
+
+    Returns:
+        Spatially subsetted reprojected tiffs of data layer specified (still NDSI)
+
+
+        Docs: https://nsidc.org/sites/nsidc.org/files/technical-references/C6.1_MODIS_Snow_User_Guide.pdf
+    """
+
+    MODPATH = modpath
+    RAWPATH = MODPATH + "/raw/"
+
+    # list all downloaded hdf files
+    files = glob.glob(RAWPATH + "/*.hdf")
+
+    # extract
+    for in_file in files:
+        out_file = MODPATH + "/transformed/" + os.path.basename(in_file).replace('.hdf', '.tif')
+
+        # open dataset
+        dataset = gdal.Open(in_file, gdal.GA_ReadOnly)
+
+        # extract subset layer [default = 0, this is The cloud-gap-filled (CGF) daily snow cover tiled product.]
+        subdataset = gdal.Open(dataset.GetSubDatasets()[layer][0], gdal.GA_ReadOnly)
+
+        # gdalwarp to longlat
+        # kwargs = {'format': 'GTiff', 'ouputBounds': str(bbox), 'dstSRS': 'EPSG:'+ str(epsg)}
+        # ds = gdal.Warp(destNameOrDestDS=out_file, srcDSOrSrcDSTab=subdataset, **kwargs)
+        ds = gdal.Warp(destNameOrDestDS=out_file,
+                       srcDSOrSrcDSTab=subdataset,
+                       format='GTiff',
+                       outputBounds=bbox,
+                       outputBoundsSRS='EPSG:' + str(epsg),
+                       dstSRS='EPSG:' + str(epsg))
+        del ds
+
+    return print(str(len(files)) + " MODIS files processed")
+    
+    
+    
 def extract_fsca_timeseries(wdir, plot=True):
     """
     Function to extract mean NDSI from domain and converts to fSCA using the empirical formula based on landsat

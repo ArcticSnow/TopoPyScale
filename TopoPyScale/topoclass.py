@@ -763,8 +763,27 @@ class Topoclass(object):
         lastday = fe.return_last_fullday()
         return(lastday)
 
+    pattern1 = './inputs/climate/forecast/SURF_2*.nc'
+    # Expand the wildcard pattern into a list of files
+    file_list = glob.glob(pattern1)
+
+    if not file_list:
+        print(f"No files matched the pattern: {input_pattern}")
+    else:
+        for file_path in file_list:
+            print(f"Processing file: {file_path}")
+            # check if SURF is a netcdf
+            process_file(file_path, "./inputs/climate/forecast/")
+
+
+
+    def process_SURF_file(self, wdir):
+        fe.process_SURF_file(wdir)
+
     def remap_netcdf(self, filepath):
         fe.remap_CDSbeta(filepath)
+
+
 
     def get_ifs_forecast(self):
         # run openData script here
