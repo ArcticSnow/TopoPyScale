@@ -465,6 +465,9 @@ def remap_CDSbeta(wdir):
             ds = xr.open_dataset(nc_file)
             ds = ds.rename({ 'time' : 'strangetime'})
             ds = ds.rename({ 'valid_time' : 'time'})
+            ds = ds.isel({'strangetime': 0})
+            
+            
 
             try:
                 #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
