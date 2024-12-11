@@ -169,7 +169,7 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time):
 				 '31'
 				 ],
 		 'time': time,
-		 'grid': [0.25, 0.25],
+		 'grid': "0.25/0.25",
 		 'format': 'netcdf'
 		 },
 		target)
@@ -220,7 +220,7 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
 				'31'
 			],
 			'time': time,
-			'grid': [0.25, 0.25],
+			'grid': "0.25/0.25",
 		},
 		target)
 	print(target + " complete")
