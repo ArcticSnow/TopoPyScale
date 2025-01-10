@@ -96,6 +96,11 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
                               },
                               dims=["latitude", "longitude"]
                               )
+    # convert to float64 consequence of CDS-BETA change to dtype in netcdf download
+    ds_plev_pt = ds_plev_pt.astype('float64')
+    da_idw = da_idw.astype('float64')
+    ds_surf_pt = ds_surf_pt.astype('float64')
+
     dw = xr.Dataset.weighted(ds_plev_pt, da_idw)
     plev_interp = dw.sum(['longitude', 'latitude'],
                              keep_attrs=True)  # compute horizontal inverse weighted horizontal interpolation
@@ -122,7 +127,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     if (row.elevation < plev_interp.z.isel(level=-1)).sum():
         pt_elev_diff = np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values), 0)
-        raise Warning(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {plev_interp.isel(level=-1).level.data} hPa geopotential\n=> "
+        print(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {plev_interp.isel(level=-1).level.data} hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation")
         
         ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
@@ -422,8 +427,10 @@ def downscale_climate(project_directory,
         ind_lon = np.abs(ds_.longitude - row.lon).argmin()
         # from remote_pdb import set_trace
         # set_trace()
+
         ds_tmp = ds_.isel(latitude=[ind_lat - 1, ind_lat, ind_lat + 1],
-                          longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
+                              longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
+
         # convert geopotential height to elevation (in m), normalizing by g
         ds_tmp['z'] = ds_tmp.z / g
 
@@ -439,6 +446,7 @@ def downscale_climate(project_directory,
     import dask
     with dask.config.set(**{'array.slicing.split_large_chunks': True}):
         ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+
 
     #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
     # Check tvec is within time period of ds_plev.time or return error
