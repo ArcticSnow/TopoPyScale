@@ -5,6 +5,7 @@
 [![GitHub license](https://img.shields.io/github/license/ArcticSnow/TopoPyScale)](https://github.com/ArcticSnow/TopoPyScale/blob/main/LICENSE)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/ArcticSnow/TopoPyScale)
 [![][docs-dev-img]][docs-dev-url]
+[![PyPI Downloads](https://static.pepy.tech/badge/topopyscale)](https://pepy.tech/projects/topopyscale)
 ![Test](https://github.com/ArcticSnow/TopoPyScale/actions/workflows/test_topopyscale.yml/badge.svg)
 
 Binder Notebooks Examples: [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ArcticSnow/TopoPyScale_examples/HEAD)
