@@ -20,6 +20,7 @@ import zipfile
 import shutil
 import glob
 
+
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf'):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
