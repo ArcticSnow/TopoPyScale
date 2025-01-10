@@ -781,7 +781,7 @@ class Topoclass(object):
                      project_author=self.config.project.authors)
 
     def to_surfex(self, 
-                  fname_format='FORCING_*.nc', 
+                  fname_format='FORCING*.nc',
                   scale_precip=1, 
                   year_start=None, 
                   year_end=None):

@@ -1285,9 +1285,7 @@ def to_surfex(ds,
         fo = ds.sel(time=slice(start, tvec_end[year_id])).copy()
         start_str = start.strftime('%Y%m%d%H')
         end_str = tvec_end[year_id].strftime('%Y%m%d%H')
-        foutput = f"{str(fname_format).split('*')[0]}_{start_str}06_{end_str}06.nc"
-
-        fo['point_name'] = fo.point_name.astype(int)
+        foutput = f"{str(fname_format).split('*')[0]}_{start_str}_{end_str}.nc"
         fo = fo.rename_dims({'point_name':'Number_of_points'})
         fo = fo.rename({'t':'Tair', 
                               'SW':'DIR_SWdown', 
@@ -1370,7 +1368,7 @@ def to_surfex(ds,
         fo.massif_number.attrs = {'units': '', 'standard_name': 'massif_number',
                                   'long_name': 'SAFRAN massif number in SOPRANO world', '_FillValue': -9999999.0}
         fo.time.attrs = {'standard_name': 'time', 'long_name': 'time', '_FillValue': -9999999.0}
-        fo['FRC_TIME_STP'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(3600))
+        fo['FRC_TIME_STP'] = ((), np.float64(3600))
         fo.FRC_TIME_STP.attrs = {'units': 's', 'standard_name': 'FRC_TIME_STP', 'long_name': 'Forcing_Time_Step',
                                  '_FillValue': -9999999.0}
         #fo['FORCE_TIME_STEP'] = (('Number_of_points'), np.zeros(fo.ZS.shape) + np.float64(3600))

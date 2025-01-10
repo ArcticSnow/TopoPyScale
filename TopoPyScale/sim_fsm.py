@@ -292,7 +292,7 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
             os.remove(file)
 
 
-def fsm_sim(nlstfile, fsm_exec):
+def fsm_sim(nlstfile, fsm_exec, delete_nlst_files=True):
     """
     Function to simulate the FSM model
     https://github.com/RichardEssery/FSM
@@ -306,7 +306,10 @@ def fsm_sim(nlstfile, fsm_exec):
     """
 
     os.system(fsm_exec + ' < ' + nlstfile)
-    os.remove(nlstfile)
+    if delete_nlst_files:
+        print('---> Removing FSM simulation config file')
+        for file in nlst_flist:
+            os.remove(nlstfile)
     print('Simulation done: ' + nlstfile)
 
 
@@ -730,10 +733,6 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     for i in range(0, nclust):
         lookup2D[:, i] = ds_var[i]
 
-
-
-
-
     from osgeo import gdal
     inputFile = "outputs/landform.tif"
     outputFile = "outputs/landform_newres.tif"
@@ -1015,8 +1014,6 @@ def concat_fsm(mydir):
     
     """
     #mydir = "/home/joel/sim/tscale_projects/aws_debug/b6/"
-    
-
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -1026,7 +1023,6 @@ def concat_fsm(mydir):
     # find all the differnt files we have (1 per cluster)
     file_paths = glob.glob(mydir +"fsm_clim/sim_2000/fsm_sims/*")
     nclust = len(files)
-
 
 
     def get_file_names(file_paths):
@@ -1039,8 +1035,6 @@ def concat_fsm(mydir):
     names = get_file_names(file_paths)
     filenames = natural_sort(names)
 
-
-
     for myname in filenames:
         a = glob.glob(mydir + "/fsm_clim/sim_*/fsm_sims/" + myname)
 
@@ -1049,16 +1043,4 @@ def concat_fsm(mydir):
             for fname in filenames2:
                 with open(fname) as infile:
                     outfile.write(infile.read())
-
-    
-
-    
-    
-
-
-
-
-
-
-
 
