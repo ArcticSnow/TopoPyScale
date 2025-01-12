@@ -186,7 +186,7 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time, output_
                  '31'
                  ],
          'time': time,
-         'grid': [0.25, 0.25],
+         'grid': "0.25/0.25",
          'data_format': output_format,
          'download_format': 'unarchived'
          },
@@ -237,7 +237,7 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
                 '31'
             ],
             'time': time,
-            'grid': [0.25, 0.25],
+            'grid': "0.25/0.25",
             'data_format': output_format,
             'download_format': 'unarchived'
         },
