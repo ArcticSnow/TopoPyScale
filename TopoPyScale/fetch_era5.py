@@ -408,7 +408,7 @@ def process_SURF_file( wdir):
             print(f"No .nc files found in {unzip_dir}.")
             return
         
-        merged_file_path = os.path.join(workdir, os.path.basename(zip_file_path).replace('.zip', '.nc'))
+        merged_file_path = os.path.join(wdir, os.path.basename(zip_file_path).replace('.zip', '.nc'))
         try:
             # Combine all `.nc` files
             datasets = [xr.open_dataset(nc_file) for nc_file in nc_files]

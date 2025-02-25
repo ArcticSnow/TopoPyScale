@@ -308,8 +308,7 @@ def fsm_sim(nlstfile, fsm_exec, delete_nlst_files=True):
     os.system(fsm_exec + ' < ' + nlstfile)
     if delete_nlst_files:
         print('---> Removing FSM simulation config file')
-        for file in nlst_flist:
-            os.remove(nlstfile)
+        os.remove(nlstfile)
     print('Simulation done: ' + nlstfile)
 
 
@@ -341,7 +340,7 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
     """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
-    a = glob.glob(fsm_path+"/sim_FSM_pt*")
+    a = glob.glob(fsm_path+"/sim_*")
 
     if len(a) == 0:                                                                                                                                                                                                                           
         sys.exit("ERROR: " +fsm_path + " does not exist or is empty")   
@@ -360,6 +359,7 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
                    'gt50':-1}
 
 
+
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
@@ -367,7 +367,7 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
 
     file_list = natural_sort(a)
 
-    mydf = pd.read_csv(file_list[0], delim_whitespace=True, parse_dates=[[0, 1, 2]], header=None)
+    mydf = pd.read_csv(file_list[0], sep='\s+', parse_dates=[[0, 1, 2]], header=None)
     mydates = mydf.iloc[:, 0]
 
     # can do temp subset here
