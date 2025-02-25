@@ -253,7 +253,7 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
     surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
     # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
-    surf_interp['cle'] = (surf_interp.strd / pd.Timedelta('1H').seconds) / (sbc * surf_interp.t2m ** 4) - \
+    surf_interp['cle'] = (surf_interp.strd / pd.Timedelta(meta.get('tstep')).seconds) / (sbc * surf_interp.t2m ** 4) - \
                          surf_interp['cse']
     # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
     surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
@@ -269,12 +269,12 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     SWtoa = ds_solar.SWtoa
 
     # pdb.set_trace()
-    kt[~sunset] = (surf_interp.ssrd[~sunset] / pd.Timedelta('1H').seconds) / SWtoa[~sunset]  # clearness index
+    kt[~sunset] = (surf_interp.ssrd[~sunset] / pd.Timedelta(meta.get('tstep')).seconds) / SWtoa[~sunset]  # clearness index
     kt[kt < 0] = 0
     kt[kt > 1] = 1
     kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index
 
-    surf_interp['SW'] = surf_interp.ssrd / pd.Timedelta('1H').seconds
+    surf_interp['SW'] = surf_interp.ssrd / pd.Timedelta(meta.get('tstep')).seconds
     surf_interp['SW'][surf_interp['SW'] < 0] = 0
     surf_interp['SW_diffuse'] = kd * surf_interp.SW
     down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
