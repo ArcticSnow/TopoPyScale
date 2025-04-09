@@ -317,8 +317,12 @@ class Topoclass(object):
             # check if bounds and resolution match
             dem = self.toposub.ds_param
             if not ds_mask.rio.bounds() == dem.rio.bounds() or not ds_mask.rio.resolution() == dem.rio.resolution():
+
+                str_bounds = f"mask bounds: {ds_mask.rio.bounds()} \t|\t dem bounds: {dem.rio.bounds()}"
+                str_res = f"mask resoltuion: {ds_mask.rio.resoltuion()} \t|\t dem resoltuion: {dem.rio.resoltuion()}"
+
                 raise ValueError(
-                    'The GeoTIFFS of the DEM and the MASK need to habe the same bounds/resolution. Please check.')
+                    f'The GeoTIFFS of the DEM and the MASK need to habe the same bounds/resolution. \n{str_bounds}\n{str_res}')
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
             # get mask
