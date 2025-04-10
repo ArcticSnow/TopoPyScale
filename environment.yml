@@ -40,3 +40,5 @@ dependencies:
       - topocalc==0.5.0
       - pyModis==2.3.0
       - gitpython==3.1.31
+      - era5_downloader
+      - cfgrib

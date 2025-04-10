@@ -15,10 +15,91 @@ import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
 import xarray as xr
+import cfgrib
 import os
 import zipfile
 import shutil
 import glob
+
+import era5_downloader as era5down
+
+
+def fetch_era5_google(eraDir, lonW, latS, lonE, latN, region_name, plevels, step='3H',num_threads=10):
+
+    print('\n')
+    print(f'---> Downloading ERA5 climate forcing from Google Cloud Storage')
+
+    
+    bbox = (lonW, latS, lonE, latN)
+    time_step_dict = {'1H': (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23),
+                    '3H': (0,3,6,9,12,15,18,21),
+                    '6H': (0,6,12,18)}
+
+    # prepare download of PLEVEL variables
+    local_plev_path = eraDir + "PLEV_{region_name}-{time:%Y%m%d}.nc"
+    era5_plevel = era5down.ERA5Downloader(
+        bbox_WSEN=bbox,  # Bounding box: West, South, East, North
+        region_name=region_name,  # variable passed here will be substituted in the local path (for better naming practices)
+        dest_path=local_plev_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
+        levels=plevels,  # Pressure levels (can also be None)
+        variables=[
+                'geopotential', 'temperature', 'u_component_of_wind',
+                'v_component_of_wind', 'relative_humidity', 'specific_humidity'
+            ],
+        time_steps = time_step_dict.get(step), 
+    )
+
+    # prepare download of SURFACE variables
+    local_surf_path = eraDir + "SURF_{region_name}-{time:%Y%m%d}.nc"
+    era5_surf = era5down.ERA5Downloader(
+        bbox_WSEN=bbox,  # Bounding box: West, South, East, North
+        region_name=region_name,  # variable passed here will be substituted in the local path (for better naming practices)
+        dest_path=local_surf_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
+        levels=plevels,  # Pressure levels (can also be None)
+        variables=['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ],
+        time_steps = time_step_dict.get(step), 
+    )
+
+
+    # date_range will make sure to include the month of the latest date (endDate) provided
+    date_vec = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='D', inclusive='both')
+    date_list = list(date_vec.strftime("%Y-%m-%d").values)
+  
+    if download_type=='sequential':
+        for date in date_list:
+            era5_surf.download(date)
+            era5_plevel.download(date)
+
+    elif download_type == 'parallel':
+        # pool multithread for fetching surface data
+        pool = ThreadPool(num_threads)
+        pool.starmap(era5_surf.download, zip(date_list))
+        pool.close()
+        pool.join()
+
+        # pool multithread for fetching surface data
+        pool = ThreadPool(num_threads)
+        pool.starmap(era5_plev.download, zip(date_list))
+        pool.close()
+        pool.join()
+    else:
+        raise ValueError("download_type not available. Currently implemented: sequential, parallel")
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf'):
@@ -332,7 +413,14 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
 #
 # 	return(latest_date)
 
+
+
 def return_last_fullday():
+    """
+    TODO: NEED docstring and explanation 
+    """
+
+
     # Get current UTC time
     current_time_utc = datetime.utcnow()
 
@@ -362,17 +450,29 @@ def return_last_fullday():
     return (last_fullday_data_str)
 
 
-def grib2netcdf(gribname):
-    import xarray as xr
-    import cfgrib
-    gribname = "SURF_202408.grib"
+
+
+def grib2netcdf(gribname, outname+None):
+    """
+    Function to convert grib file to netcdf
+
+    Args:
+        gribname: filename fo grib file to convert
+    """
 
     ds = xr.open_dataset(gribname, engine="cfgrib")
-    ds.to_netcdf(gribname+".nc")
+    if outname is None:
+        outname = gribname[:-5] + ".nc"
+
+    ds.to_netcdf(outname)
 
 
 
 def process_SURF_file( wdir):
+    """
+    TODO: NEED docstring and explanation 
+    """
+
     surf_files = glob.glob(wdir+"/SURF*.nc")
 
     for file_path in surf_files:
@@ -432,7 +532,14 @@ def process_SURF_file( wdir):
 
 
 def remap_CDSbeta(wdir):
-    # remapping of variables from CDS beta to CDS legacy standard.
+    """
+    Remapping of variable names from CDS beta to CDS legacy standard.
+    
+    Args:
+        wdir: d
+    """
+
+    
 
     plev_files = glob.glob(wdir+"/PLEV*.nc")  # List of NetCDF files
     surf_files = glob.glob(wdir+"/SURF*.nc")  # List of NetCDF files
