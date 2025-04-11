@@ -695,34 +695,49 @@ class Topoclass(object):
         else:
             output_format = 'netcdf'
 
+        data_repository = self.config.climate[self.config.project.climate].data_repository
+        if data_repository == 'cds':
+            # retreive ERA5 surface data
+            fe.retrieve_era5(
+                self.config.climate[self.config.project.climate].product,
+                self.config.project.start,
+                self.config.project.end,
+                self.config.climate.path,
+                latN, latS, lonE, lonW,
+                self.config.climate[self.config.project.climate].timestep,
+                self.config.climate[self.config.project.climate].download_threads,
+                surf_plev='surf',
+                realtime=realtime,
+                output_format=output_format
+            )
+            # retrieve era5 plevels
+            fe.retrieve_era5(
+                self.config.climate[self.config.project.climate].product,
+                self.config.project.start,
+                self.config.project.end,
+                self.config.climate.path,
+                latN, latS, lonE, lonW,
+                self.config.climate[self.config.project.climate].timestep,
+                self.config.climate[self.config.project.climate].download_threads,
+                surf_plev='plev',
+                plevels=self.config.climate[self.config.project.climate].plevels,
+                realtime=realtime,
+                output_format=output_format
+            )
 
-        # retreive ERA5 surface data
-        fe.retrieve_era5(
-            self.config.climate[self.config.project.climate].product,
-            self.config.project.start,
-            self.config.project.end,
-            self.config.climate.path,
-            latN, latS, lonE, lonW,
-            self.config.climate[self.config.project.climate].timestep,
-            self.config.climate[self.config.project.climate].download_threads,
-            surf_plev='surf',
-            realtime=realtime,
-            output_format=output_format
-        )
-        # retrieve era5 plevels
-        fe.retrieve_era5(
-            self.config.climate[self.config.project.climate].product,
-            self.config.project.start,
-            self.config.project.end,
-            self.config.climate.path,
-            latN, latS, lonE, lonW,
-            self.config.climate[self.config.project.climate].timestep,
-            self.config.climate[self.config.project.climate].download_threads,
-            surf_plev='plev',
-            plevels=self.config.climate[self.config.project.climate].plevels,
-            realtime=realtime,
-            output_format=output_format
-        )
+        elif data_repository == 'google_cloud_storage':
+
+            fe.fetch_era5_google(, self.config.project.start, 
+                self.config.project.end,
+                lonW,
+                latS,
+                lonE,
+                latN,
+                self.config.climate[self.config.project.climate].plevels,
+                step=self.config.climate[self.config.project.climate].timestep,
+                num_threads=self.config.climate[self.config.project.climate].download_threads)
+        else:
+            raise ValueError("Config file for climate data specification issues.")
 
 
     def get_era5_snowmapper(self, surf_plev, lastday):

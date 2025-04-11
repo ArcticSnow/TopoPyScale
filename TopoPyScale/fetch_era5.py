@@ -24,7 +24,7 @@ import glob
 import era5_downloader as era5down
 
 
-def fetch_era5_google(eraDir, lonW, latS, lonE, latN, region_name, plevels, step='3H',num_threads=10):
+def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
 
     print('\n')
     print(f'---> Downloading ERA5 climate forcing from Google Cloud Storage')
@@ -36,24 +36,22 @@ def fetch_era5_google(eraDir, lonW, latS, lonE, latN, region_name, plevels, step
                     '6H': (0,6,12,18)}
 
     # prepare download of PLEVEL variables
-    local_plev_path = eraDir + "PLEV_{region_name}-{time:%Y%m%d}.nc"
+    local_plev_path = eraDir + "PLEV_{time:%Y%m%d}.nc"
     era5_plevel = era5down.ERA5Downloader(
         bbox_WSEN=bbox,  # Bounding box: West, South, East, North
-        region_name=region_name,  # variable passed here will be substituted in the local path (for better naming practices)
         dest_path=local_plev_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
         levels=plevels,  # Pressure levels (can also be None)
         variables=[
                 'geopotential', 'temperature', 'u_component_of_wind',
-                'v_component_of_wind', 'relative_humidity', 'specific_humidity'
+                'v_component_of_wind', 'specific_humidity'
             ],
         time_steps = time_step_dict.get(step), 
     )
 
     # prepare download of SURFACE variables
-    local_surf_path = eraDir + "SURF_{region_name}-{time:%Y%m%d}.nc"
+    local_surf_path = eraDir + "SURF_{time:%Y%m%d}.nc"
     era5_surf = era5down.ERA5Downloader(
         bbox_WSEN=bbox,  # Bounding box: West, South, East, North
-        region_name=region_name,  # variable passed here will be substituted in the local path (for better naming practices)
         dest_path=local_surf_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
         levels=plevels,  # Pressure levels (can also be None)
         variables=['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
@@ -69,12 +67,14 @@ def fetch_era5_google(eraDir, lonW, latS, lonE, latN, region_name, plevels, step
     date_vec = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='D', inclusive='both')
     date_list = list(date_vec.strftime("%Y-%m-%d").values)
   
-    if download_type=='sequential':
+    if num_threads==1:
+        print("Downloading data sequentially")
         for date in date_list:
             era5_surf.download(date)
             era5_plevel.download(date)
 
-    elif download_type == 'parallel':
+    elif num_threads>1:
+        print(f"Downloading data in parallel with {num_threads} threads.")
         # pool multithread for fetching surface data
         pool = ThreadPool(num_threads)
         pool.starmap(era5_surf.download, zip(date_list))
@@ -299,7 +299,7 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
             "area": bbox,
             'variable': [
                 'geopotential', 'temperature', 'u_component_of_wind',
-                'v_component_of_wind', 'relative_humidity', 'specific_humidity'
+                'v_component_of_wind', 'specific_humidity'
             ],
             'pressure_level': plevels,
             'year': year,
