@@ -24,6 +24,59 @@ import glob
 import era5_downloader as era5down
 
 
+var_surf_name_google = {'geopotential_at_surface':'z',
+                '2m_dewpoint_temperature':'d2m', 
+                'surface_thermal_radiation_downwards':'strd',
+                'surface_solar_radiation_downwards':'ssrd',
+                'surface_pressure':'sp',
+                'total_precipitation':'tp',
+                 '2m_temperature':'t2m', 
+                 'toa_incident_solar_radiation':'tisr',
+                'friction_velocity':'zust', 
+                'instantaneous_moisture_flux':'ie', 
+                'instantaneous_surface_sensible_heat_flux':'ishf'}
+
+var_plev_name_google = {'geopotential':'z', 
+                'temperature':'t', 
+                'u_component_of_wind':'u',
+                'v_component_of_wind':'v', 
+                'specific_humidity':'q'}
+
+
+def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, 
+    bucket='gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'):
+    '''
+    Function to download data from Zarr repository on Google Cloud Storage (https://github.com/google-research/arco-era5/tree/main)
+
+    '''
+    print('!!!!!!!!!WORK IN PROGRESS!!!!!!!!!')
+    ds = xr.open_zarr(
+        bucket,
+        chunks=None,
+        storage_options=dict(token='anon'),
+    )
+    ds_plev = ds[[
+                'geopotential', 'temperature', 'u_component_of_wind',
+                'v_component_of_wind', 'specific_humidity'
+            ]].sel(
+        time=slice(startDate, endDate), 
+        latitude=slice(latN,latS), 
+        longitude=slice(lonE, lonW),
+        levels=plevels)
+    ds_plev.to_zarr('PLEV.zarr')
+    ds_plev = None
+    ds_surf = ds.sel(
+        time=slice(startDate, endDate), 
+        latitude=slice(latN,latS), 
+        longitude=slice(lonE, lonW))[['geopotential_at_surface','2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ]]
+    ds_surf.to_zarr('SURF.zarr')
+
+
+
 def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
 
     print('\n')
@@ -41,6 +94,7 @@ def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevel
         bbox_WSEN=bbox,  # Bounding box: West, South, East, North
         dest_path=local_plev_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
         levels=plevels,  # Pressure levels (can also be None)
+        region_name='dummy',
         variables=[
                 'geopotential', 'temperature', 'u_component_of_wind',
                 'v_component_of_wind', 'specific_humidity'
@@ -54,7 +108,8 @@ def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevel
         bbox_WSEN=bbox,  # Bounding box: West, South, East, North
         dest_path=local_surf_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
         levels=plevels,  # Pressure levels (can also be None)
-        variables=['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+        region_name='dummy',
+        variables=['geopotential_at_surface','2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
                       'surface_solar_radiation_downwards','surface_pressure',
                       'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
                       'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
@@ -88,17 +143,6 @@ def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevel
         pool.join()
     else:
         raise ValueError("download_type not available. Currently implemented: sequential, parallel")
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -452,7 +496,7 @@ def return_last_fullday():
 
 
 
-def grib2netcdf(gribname, outname+None):
+def grib2netcdf(gribname, outname=None):
     """
     Function to convert grib file to netcdf
 
