@@ -659,7 +659,7 @@ def to_fsm2oshd(ds_down,
                 cluster_method=True,
                 epsg_ds_param=2056,
                 temperature_correction=0,
-                forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100, 'lai50':100}):
+                forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100}):
     """
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
@@ -690,7 +690,7 @@ def to_fsm2oshd(ds_down,
                                 mode='forest',
                                 namelist_param=None,
                                 modconf=None,
-                                scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100, 'lai50':100}):
+                                scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100}):
         # Function to write namelist file (.nam) for each point where to run FSM.
 
         file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'
@@ -906,7 +906,7 @@ def to_fsm2oshd(ds_down,
 
     p = Path(simulation_path)
     # rename variable columns to match namelist functino varnames
-    new_name = {'LAI5':'lai5', 'LAI50':'lai50', 'svf_for':'vfhp', 'CC5':'fveg', 'CC50':'fves', 'CH5':'hcan'}
+    new_name = {'LAI5':'lai5', 'svf_for':'vfhp', 'CC5':'fveg', 'CC50':'fves', 'CH5':'hcan'}
     df_forest = df_forest.rename(columns=new_name)
     print(df_forest)
  
