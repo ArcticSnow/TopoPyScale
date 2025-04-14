@@ -727,7 +727,7 @@ class Topoclass(object):
 
         elif data_repository == 'google_cloud_storage':
 
-            fe.fetch_era5_google(, self.config.project.start, 
+            fe.fetch_era5_google(self.config.climate.path, self.config.project.start, 
                 self.config.project.end,
                 lonW,
                 latS,
@@ -791,6 +791,7 @@ class Topoclass(object):
     def get_ifs_forecast(self):
         # run openData script here
         print("doing forecast stuff here")
+
     def get_WMO_observations(self):
         """
         Function to download and parse in-situ data from WMO database
@@ -813,6 +814,7 @@ class Topoclass(object):
                                               months=list(df.month.unique().astype(str)),
                                               bbox=bbox)
         tpo.parse_WMO_insitu_observations()
+
 
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', precip_partition='continuous'):
         """
