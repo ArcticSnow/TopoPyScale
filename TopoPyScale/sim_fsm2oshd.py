@@ -23,6 +23,21 @@ import linecache
 import glob, os, re
 
 
+def read_fsm_ds_with_mask(path):
+    '''
+    function to read fsm as ds, adding a dummy cluster for masked area
+    '''
+    ds = xr.open_mfdataset(path, concat_dim='point_ind', combine='nested')
+    tp = ds.isel(point_ind=0).copy()
+    tp['point_ind'] = -9999
+    for var in list(tp.keys()):
+        tp[var] = tp[var] * 0 -9999
+
+    ds_complete = xr.concat([tp,ds], dim='point_ind')
+    return ds_complete
+
+
+
 def _run_fsm2oshd(fsm_exec, nam_file):
     '''
     function to execute FSM

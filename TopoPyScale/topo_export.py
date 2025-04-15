@@ -832,8 +832,9 @@ def to_fsm2oshd(ds_down,
         df['SWdir'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
         df['SWdif'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
         df['LW'] = np.round(ds_pt.LW.values,2)
-        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
+
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)   #convert pressure Bar to Pascal
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)  #convert pressure Bar to Pascal
         df['snowfall'] = np.round(snow, 5)
         df['rainfall'] = np.round(rain, 5)
         df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
