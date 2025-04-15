@@ -38,6 +38,7 @@ import pdb
 
 import pandas as pd
 import xarray as xr
+import dask
 from pyproj import Transformer
 import numpy as np
 import sys, time
@@ -253,7 +254,11 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
     surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
     # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
-    surf_interp['cle'] = (surf_interp.strd / pd.Timedelta(meta.get('tstep')).seconds) / (sbc * surf_interp.t2m ** 4) - \
+
+    tstep_seconds = pd.Timedelta(f"{meta.get('tstep')}H").seconds
+    print(tstep_seconds)
+
+    surf_interp['cle'] = (surf_interp.strd / tstep_seconds) / (sbc * surf_interp.t2m ** 4) - \
                          surf_interp['cse']
     # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
     surf_interp['aef'] = down_pt['cse'] + surf_interp['cle']
@@ -269,12 +274,12 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     SWtoa = ds_solar.SWtoa
 
     # pdb.set_trace()
-    kt[~sunset] = (surf_interp.ssrd[~sunset] / pd.Timedelta(meta.get('tstep')).seconds) / SWtoa[~sunset]  # clearness index
+    kt[~sunset] = (surf_interp.ssrd[~sunset] / tstep_seconds) / SWtoa[~sunset]  # clearness index
     kt[kt < 0] = 0
     kt[kt > 1] = 1
     kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index
 
-    surf_interp['SW'] = surf_interp.ssrd / pd.Timedelta(meta.get('tstep')).seconds
+    surf_interp['SW'] = surf_interp.ssrd / tstep_seconds
     surf_interp['SW'][surf_interp['SW'] < 0] = 0
     surf_interp['SW_diffuse'] = kd * surf_interp.SW
     down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
@@ -311,7 +316,6 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
 
     # adding metadata
     down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         'standard_name': 'longwave_radiation_downward'}
     down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
     down_pt = down_pt.drop(['SW_direct_tmp'])
@@ -423,10 +427,12 @@ def downscale_climate(project_directory,
     def _subset_climate_dataset(ds_, row, type='plev'):
         print('Preparing {} for point {}'.format(type, row.point_name))
         # =========== Extract the 3*3 cells centered on a given point ============
-        ind_lat = np.abs(ds_.latitude - row.lat).argmin()
-        ind_lon = np.abs(ds_.longitude - row.lon).argmin()
-        # from remote_pdb import set_trace
-        # set_trace()
+        ind_lat = np.abs(ds_.latitude.values - row.lat).argmin()
+        ind_lon = np.abs(ds_.longitude.values - row.lon).argmin()
+
+        #print(f'Cluster number: {row.point_ind}')
+        #print(f'ind_lat: {[ind_lat.values - 1, ind_lat.values, ind_lat.values + 1]}')
+        #print(f'ind_lon: {ind_lon}')
 
         ds_tmp = ds_.isel(latitude=[ind_lat - 1, ind_lat, ind_lat + 1],
                               longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
@@ -443,7 +449,7 @@ def downscale_climate(project_directory,
         
     #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
     #    to avoid chunk warning   
-    import dask
+    
     with dask.config.set(**{'array.slicing.split_large_chunks': True}):
         ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
 
