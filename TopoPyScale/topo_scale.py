@@ -256,7 +256,6 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
 
     tstep_seconds = pd.Timedelta(f"{meta.get('tstep')}H").seconds
-    print(tstep_seconds)
 
     surf_interp['cle'] = (surf_interp.strd / tstep_seconds) / (sbc * surf_interp.t2m ** 4) - \
                          surf_interp['cse']
