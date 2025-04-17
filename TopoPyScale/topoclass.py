@@ -322,7 +322,7 @@ class Topoclass(object):
                 str_res = f"mask resoltuion: {ds_mask.rio.resoltuion()} \t|\t dem resoltuion: {dem.rio.resoltuion()}"
 
                 raise ValueError(
-                    f'The GeoTIFFS of the DEM and the MASK need to habe the same bounds/resolution. \n{str_bounds}\n{str_res}')
+                    f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
             # get mask
@@ -355,53 +355,57 @@ class Topoclass(object):
 
         # ----------cluster per group----------
         self.toposub.df_centroids = pd.DataFrame()
-        total_clusters = 0
+        i_clusters = 0
         for group in groups:
             if split_clustering:
                 print(f'cluster group: {group}')
             subset_mask = mask & (df_param.cluster_group == group)
-            df_subset = df_param[subset_mask]
 
-            # derive number of clusters
-            relative_cover = np.count_nonzero(subset_mask) / np.count_nonzero(mask)  # relative area of the group
-            n_clusters = int(np.ceil(self.config.sampling.toposub.n_clusters * relative_cover))
+            if subset_mask.sum() > 0:
+                df_subset = df_param[subset_mask]
 
-            df_scaled, scaler = ts.scale_df(df_subset, features=self.config.sampling.toposub.clustering_features)
-            if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
-                df_centroids, _, cluster_labels = ts.kmeans_clustering(
-                    df_scaled,
-                    features=self.config.sampling.toposub.clustering_features,
-                    n_clusters=n_clusters,
-                    seed=self.config.sampling.toposub.random_seed)
-            elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
-                df_centroids, _, cluster_labels = ts.minibatch_kmeans_clustering(
-                    df_scaled,
-                    n_clusters=n_clusters,
-                    features=self.config.sampling.toposub.clustering_features,
-                    n_cores=self.config.project.CPU_cores,
-                    seed=self.config.sampling.toposub.random_seed)
+                # derive number of clusters
+                relative_cover = np.count_nonzero(subset_mask) / np.count_nonzero(mask)  # relative area of the group
+                n_clusters = int(np.ceil(self.config.sampling.toposub.n_clusters * relative_cover))
+
+                df_scaled, scaler = ts.scale_df(df_subset, features=self.config.sampling.toposub.clustering_features)
+                if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
+                    df_centroids, _, cluster_labels = ts.kmeans_clustering(
+                        df_scaled,
+                        features=self.config.sampling.toposub.clustering_features,
+                        n_clusters=n_clusters,
+                        seed=self.config.sampling.toposub.random_seed)
+                elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
+                    df_centroids, _, cluster_labels = ts.minibatch_kmeans_clustering(
+                        df_scaled,
+                        n_clusters=n_clusters,
+                        features=self.config.sampling.toposub.clustering_features,
+                        n_cores=self.config.project.CPU_cores,
+                        seed=self.config.sampling.toposub.random_seed)
+                else:
+                    raise ValueError(
+                        'ERROR: {} clustering method not available'.format(self.config.sampling.toposub.clustering_method))
+
+                df_centroids = ts.inverse_scale_df(df_centroids, scaler,
+                                                   features=self.config.sampling.toposub.clustering_features)
+
+                # re-number cluster labels
+                df_param.loc[subset_mask, 'cluster_labels'] = cluster_labels + i_clusters
+                df_centroids.index = df_centroids.index + i_clusters
+
+                # merge df centroids
+                self.toposub.df_centroids = pd.concat([self.toposub.df_centroids, df_centroids])
+
+                # update total clusters
+                i_clusters += n_clusters
             else:
-                raise ValueError(
-                    'ERROR: {} clustering method not available'.format(self.config.sampling.toposub.clustering_method))
-
-            df_centroids = ts.inverse_scale_df(df_centroids, scaler,
-                                               features=self.config.sampling.toposub.clustering_features)
-
-            # re-number cluster labels
-            df_param.loc[subset_mask, 'cluster_labels'] = cluster_labels + total_clusters
-            df_centroids.index = df_centroids.index + total_clusters
-
-            # merge df centroids
-            self.toposub.df_centroids = pd.concat([self.toposub.df_centroids, df_centroids])
-
-            # update total clusters
-            total_clusters += n_clusters
+                print(f"--- Group {group} is within masked area")
 
         if not split_clustering:
             # drop cluster_group
             df_param = df_param.drop(columns=['cluster_group'])
         else:
-            print(f'-----> Created in total {total_clusters} clusters in {len(groups)} groups.')
+            print(f'-----> Created in total {i_clusters} clusters in {len(groups)} groups.')
 
         # logic to add variables not used as clustering predictors into df_centroids
         feature_list = self.config.sampling.toposub.clustering_features.keys()
