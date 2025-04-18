@@ -683,6 +683,7 @@ def to_fsm2oshd(ds_down,
 
     """
 
+
     def write_fsm2oshd_namelist(row,
                                 pt_ind,
                                 n_digits,
@@ -802,7 +803,7 @@ def to_fsm2oshd(ds_down,
 
 
     def write_fsm2oshd_met(ds_pt,
-                           ds_tvt,
+                           ds_tvt_pt,
                            pt_name,
                            pt_ind,
                            n_digits,
@@ -845,21 +846,20 @@ def to_fsm2oshd(ds_down,
         arr = df.snowfall.rolling(24).sum()  # hardcoded sum over last 24h [mm]
         arr.loc[np.isnan(arr)] = 0
         df['sf24'] = np.round(arr,3)
-
         #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
+        if type(ds_tvt_pt) in [int, float, np.float64, np.float16, np.float32]:
             print('Warning: tvt is constant')
-            if ds_tvt>1:
+            if ds_tvt_pt>1:
                 scale_tvt = 100
             else:
                 scale_tvt = 1
-            df['tvt'] = ds_tvt / scale_tvt
+            df['tvt'] = ds_tvt_pt / scale_tvt
         else:
-            if ds_tvt.for_tau.max()>10:
+            if ds_tvt_pt.for_tau.max()>10:
                 scale_tvt = 100
             else:
                 scale_tvt = 1
-            df['tvt'] = np.round(ds_tvt.sel(point_name=pt_name).for_tau.values,4)/scale_tvt
+            df['tvt'] = np.round(ds_tvt_pt.for_tau.values, 4)/scale_tvt
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
         print(f'---> Met file {foutput} saved')
@@ -917,19 +917,22 @@ def to_fsm2oshd(ds_down,
 
         ds_pt = ds_down.sel(point_name=pt_name).copy()
 
+
         # [ ] Add checking of NaNs in ds_tvt. If NaN present stop process and send ERROR message
 
         if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
             tvt_pt = ds_tvt
-        elif ds_tvt == 'svf_for':
-            tvt_pt = df_forest.vfhp.iloc[pt_ind]
+        elif type(ds_tvt) in [str]:
+            if ds_tvt == 'svf_for':
+                print('WHY')
+                tvt_pt = df_forest.vfhp.iloc[pt_ind]
         else:
+            print('not here')
             tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
-
 
         row_forest = df_forest.iloc[pt_ind]
         write_fsm2oshd_met(ds_pt,
-                           ds_tvt=tvt_pt,
+                           ds_tvt_pt=tvt_pt,
                            n_digits=n_digits,
                            pt_name=pt_name,
                            pt_ind=pt_ind,
