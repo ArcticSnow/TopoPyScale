@@ -361,6 +361,7 @@ class Topoclass(object):
                 print(f'cluster group: {group}')
             subset_mask = mask & (df_param.cluster_group == group)
 
+            # add here check in case a group bleed over the mask. 
             if subset_mask.sum() > 0:
                 df_subset = df_param[subset_mask]
 
@@ -399,7 +400,7 @@ class Topoclass(object):
                 # update total clusters
                 i_clusters += n_clusters
             else:
-                print(f"--- Group {group} is within masked area")
+                print(f"---> Group {group} is within masked area")
 
         if not split_clustering:
             # drop cluster_group
@@ -431,6 +432,8 @@ class Topoclass(object):
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.values, self.toposub.ds_param.slope.shape))
         self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, self.toposub.ds_param.slope.shape))
         self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.values, self.toposub.ds_param.slope.shape))
+        if split_clustering:
+            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.values, self.toposub.ds_param.slope.shape))
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
