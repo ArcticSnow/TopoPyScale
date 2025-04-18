@@ -924,10 +924,8 @@ def to_fsm2oshd(ds_down,
             tvt_pt = ds_tvt
         elif type(ds_tvt) in [str]:
             if ds_tvt == 'svf_for':
-                print('WHY')
                 tvt_pt = df_forest.vfhp.iloc[pt_ind]
         else:
-            print('not here')
             tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
 
         row_forest = df_forest.iloc[pt_ind]
