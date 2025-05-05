@@ -9,7 +9,7 @@ with open(path.join(this_directory, 'README.md')) as f:
 
 setup(
     name='topopyscale',
-    version='0.2.6',
+    version='0.2.7',
     description='TopoPyScale: A Python Package for Hillslope Climate Downscaling',
     long_description=long_description,
 
