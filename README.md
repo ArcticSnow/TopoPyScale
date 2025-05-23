@@ -32,9 +32,10 @@ Kristoffer Aalstad has a Matlab implementation: https://github.com/krisaalstad/T
 
 ## Contribution Workflow
 **Please follow these simple rules:**
-1. a bug -> fix it! 
-2. an idea or a bug you cannot fix? -> create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) if none doesn't already exist. If one exist, then add material to it.
-3. wanna develop a new feature/idea? -> create a new branch. Go wild. Merge with main branch when accomplished.
+1. All contribution welcome!
+2. Found a bug -> Check the issue page. If you have a solution let us know. 
+2. No idea on moving furhter -> then create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) 
+3. Wanna develop a new feature/idea? -> create a new branch. Go wild. Merge with main branch when accomplished.
 4. Create release version when significant improvements and bug fixes have been done. Coordinate with others on [Discussions](https://github.com/ArcticSnow/TopoPyScale/discussions)
 
 **Create a new release:**
@@ -128,6 +129,8 @@ from matplotlib import pyplot as plt
 config_file = './config.yml'
 mp = tc.Topoclass(config_file)
 # Compute parameters of the DEM (slope, aspect, sky view factor)
+
+mp.get_era5()
 mp.compute_dem_param()
 
 # ========== STEP 2 ===========

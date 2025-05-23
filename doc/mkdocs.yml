@@ -46,3 +46,8 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences
+  - footnotes
+plugins:
+  - search
+  - bibtex:
+      bib_file: "docs/refs.bib"

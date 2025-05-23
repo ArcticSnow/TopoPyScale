@@ -16,6 +16,7 @@ from matplotlib import pyplot as plt
 # Load Configuration
 config_file = './config.yml'
 mp = tc.Topoclass(config_file)
+mp.get_era5()
 
 # ======== STEP 2 ===========
 # Compute parameters of the DEM (slope, aspect, sky view factor)

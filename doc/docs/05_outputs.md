@@ -19,6 +19,9 @@ Snowmodel is a snow model focused on wind redistribution.
 ### CROCUS Format
 [CROCUS](https://gmd.copernicus.org/articles/5/773/2012/gmd-5-773-2012.pdf) is a 1D physical model developed by Meteo France to simulate the evolution of snowpack state variables and snow metamorphic path.
 
+### SURFEX Format
+[Surfex](http://www.cnrm.meteo.fr/surfex/) is a land -surface model devellopped at Météo-France by the Centre Nationale de Recherche Mtéorologique (CNRM). CROCUS is a snow module within Surfex. 
+
 ### SNOWPACK Format
 [SNOWPACK](https://www.slf.ch/en/services-and-products/snowpack.html) is a physical model developped at SLF, Switzerland to simulate the evolution a snowpack state variables and snow metamorphic path.
 

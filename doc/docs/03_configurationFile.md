@@ -77,9 +77,9 @@ climate:
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
     download_threads: 1    # Number of threads to request downloads with cdsapi
     realtime: False    # (Optional) Forces redownload of latest month of ERA5 data upon each run of code (allows daily updates for realtime applications)
-    data_repository: google_cloud_storage  # repository from where to download data: cds (copernicus official ERA5), google_cloud_storage (Google archive of ERA5)
+    data_repository: cds  # repository from where to download data: cds (copernicus official ERA5), google_cloud_storage (Google archive of ERA5)
 
-  precip_lapse_rate: True     # Apply precipitation lapse-rate correction (currently valid for Northern Hemisphere only)
+  precip_lapse_rate: False     # Apply precipitation lapse-rate correction (currently valid for Northern Hemisphere only)
 
 #.....................................................................................................
 dem:
@@ -106,9 +106,9 @@ sampling:
     clustering_method: minibatchkmean   # clustering method available: kmean, minibatchkmean
     n_clusters: 50                      # number of cluster to segment the DEM
     random_seed: 2                      # random seed for the K-mean clustering 
-    clustering_features: { 'x': 1, 'y': 1, 'elevation': 4, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # dictionnary of the features of choice to use in clustering with their relative importance. Relative importance is a multiplier after scaling
+    clustering_features: { 'x': 1, 'y': 1, 'elevation': 1, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # dictionnary of the features of choice to use in clustering with their relative importance. Relative importance is a multiplier after scaling
     clustering_mask: clustering/catchment_mask.tif # optional path to tif containing a mask (0/1)
-    clustering_groups: clustering/VEG_CODE.tif # optional path to a tif containing cluster groups (int values), e.g. land cover
+    clustering_groups: clustering/groups.tif # optional path to a tif containing cluster groups (int values), e.g. land cover
 
 #.....................................................................................................
 toposcale:
@@ -117,8 +117,8 @@ toposcale:
 
 #.....................................................................................................
 outputs:
-  directory: C:/ERA5/Downscaled           # (optional) absolute path where to store the final downscaled products.
-  variables: all                          # list of variables to export in netcdf. ['t','p','SW']. Default None or all
+  directory: outputs                    # (optional) absolute path where to store the final downscaled products.
+  variables: all                        # list of variables to export in netcdf. ['t','p','SW']. Default None or all
   file:
     clean_outputs: False                # (bool)    delete the entire outputs/ directory prior to downscaling
     clean_FSM: True                     # (bool)    delete the entire sim/ directory
