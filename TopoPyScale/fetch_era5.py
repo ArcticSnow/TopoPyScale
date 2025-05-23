@@ -30,8 +30,8 @@ var_surf_name_google = {'geopotential_at_surface':'z',
                 'surface_solar_radiation_downwards':'ssrd',
                 'surface_pressure':'sp',
                 'total_precipitation':'tp',
-                 '2m_temperature':'t2m', 
-                 'toa_incident_solar_radiation':'tisr',
+                '2m_temperature':'t2m', 
+                'toa_incident_solar_radiation':'tisr',
                 'friction_velocity':'zust', 
                 'instantaneous_moisture_flux':'ie', 
                 'instantaneous_surface_sensible_heat_flux':'ishf'}
@@ -146,7 +146,8 @@ def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevel
 
 
 
-def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf'):
+def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
+                    num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf', download_format="unarchived", new_CDS_API=True):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -165,6 +166,9 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         step: timestep to use: 1, 3, 6
         num_threads: number of threads to use for downloading data
         surf_plev: download surface single level or pressure level product: 'surf' or 'plev'
+        output_format (str): default is "netcdf", can be "grib".
+        download_format (str): default "unarchived". Can be "zip"
+        new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
 
     Returns:
         Monthly era surface files stored in disk.
@@ -186,21 +190,23 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 
     df = pd.DataFrame()
     # date_range will make sure to include the month of the latest date (endDate) provided
-    df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
+    #df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
+    df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate), freq='D', inclusive='both')
     df['month'] = df.dates.dt.month
+    df['day'] = df.dates.dt.day
     df['year'] = df.dates.dt.year
     if surf_plev == 'surf':
         df['dataset'] = 'reanalysis-era5-single-levels'
         if output_format == "netcdf":
-            df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / ("SURF_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
         if output_format == "grib":
-            df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.grib" % (x.year, x.month))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / ("SURF_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
     elif surf_plev == 'plev':
         df['dataset'] = 'reanalysis-era5-pressure-levels'
         if output_format == "netcdf":
-            df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / ("PLEV_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
         if output_format == "grib":
-            df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.grib" % (x.year, x.month))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / ("PLEV_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
         loc_list = []
         loc_list.extend([plevels]*df.shape[0])
         df['plevels'] = loc_list
@@ -213,32 +219,33 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     df['bbox'] = df.step.apply(lambda x: bbox)
     df['product_type'] = product
     df['output_format'] = output_format
+    df['download_format'] = download_format
 
     print("Start = ", df.dates[0].strftime('%Y-%m-%d'))
     print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%m-%d'))
 
     if df.file_exist.sum() > 0:
         print("ECWMF {} data found:".format(surf_plev.upper()))
-        print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.split('/')[-1]))
+        print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.name))
 
     if (df.file_exist == 0).sum() > 0:
         print("Downloading {} from ECWMF:".format(surf_plev.upper()))
-        print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.split('/')[-1]))
+        print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.name))
 
     download = df.loc[df.file_exist == 0]
     if download.shape[0] > 0:
-        # ans = input('---> Download ERA5 {} data? (y/n)'.format(surf_plev.upper()))
-        # if (ans.lower() == 'y') or (ans == '1'):
         if surf_plev == 'surf':
             pool = ThreadPool(num_threads)
             pool.starmap(era5_request_surf, zip(list(download.dataset),
                                                 list(download.year),
                                                 list(download.month),
+                                                list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
                                                 list(download.product_type),
                                                 list(download.time_steps),
-                                                list(download.output_format)))
+                                                list(download.output_format),
+                                                list(download.download_format)))
             pool.close()
             pool.join()
         elif surf_plev == 'plev':
@@ -246,12 +253,14 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
             pool.starmap(era5_request_plev, zip(list(download.dataset),
                                                 list(download.year),
                                                 list(download.month),
+                                                list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.plevels),
-                                                list(download.output_format)))
+                                                list(download.output_format),
+                                                list(download.download_format)))
             pool.close()
             pool.join()
         else:
@@ -268,7 +277,15 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
             # redownload current month to catch missing days in realtime mode.
             era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
 
-def era5_request_surf(dataset, year, month, bbox, target, product, time, output_format= "netcdf"):
+    if new_CDS_API:
+        # Since mid-2024, CDS API has changed variable name and the way it packages SURF variables. 
+        # These two functions apply a small post process to get things in order.
+        process_SURF_file(str(eraDir))
+        remap_CDSbeta(str(eraDir))
+
+
+
+def era5_request_surf(dataset, year, month, day, bbox, target, product, time, output_format= "netcdf", download_format="unarchived"):
     """CDS surface api call
 
     Args:
@@ -279,46 +296,39 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time, output_
         target (str): filename
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours for which to download data
-        format (str): "grib" or "netcdf"
+        output_format (str): default is "netcdf", can be "grib".
+        download_format (str): default "unarchived". Can be "zip"
 
     Returns:
         Store to disk dataset as indicated
 
     """
 
+    varnames = ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ]
+
     c = cdsapi.Client()
     c.retrieve(
         dataset,
-        {'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
-                      'surface_solar_radiation_downwards','surface_pressure',
-                      'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
-                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
-                      ],
+        {'variable': varnames,
          'product_type': [product],
          "area": bbox,
          'year': year,
          'month': '%02d'%(month),
-         'day': ['01', '02', '03',
-                 '04', '05', '06',
-                 '07', '08', '09',
-                 '10', '11', '12',
-                 '13', '14', '15',
-                 '16', '17', '18',
-                 '19', '20', '21',
-                 '22', '23', '24',
-                 '25', '26', '27',
-                 '28', '29', '30',
-                 '31'
-                 ],
+         'day': '%02d'%(day),
          'time': time,
          'grid': "0.25/0.25",
          'data_format': output_format,
-         'download_format': 'unarchived'
+         'download_format': download_format
          },
         target)
-    print(target + " complete")
+    print(str(target) + " complete")
 
-def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels, output_format= "netcdf"):
+
+def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, output_format= "netcdf", download_format="unarchived"):
     """CDS plevel api call
 
     Args:
@@ -330,6 +340,8 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours to query
         plevels (str or list): pressure levels to query
+        output_format (str): default is "netcdf", can be "grib".
+        download_format (str): default "unarchived". Can be "zip"
 
     Returns:
         Store to disk dataset as indicated
@@ -348,26 +360,14 @@ def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels
             'pressure_level': plevels,
             'year': year,
             'month': '%02d'%(month),
-            'day': [
-                '01', '02', '03',
-                '04', '05', '06',
-                '07', '08', '09',
-                '10', '11', '12',
-                '13', '14', '15',
-                '16', '17', '18',
-                '19', '20', '21',
-                '22', '23', '24',
-                '25', '26', '27',
-                '28', '29', '30',
-                '31'
-            ],
+            'day': '%02d'%(day),
             'time': time,
             'grid': "0.25/0.25",
             'data_format': output_format,
-            'download_format': 'unarchived'
+            'download_format': download_format
         },
         target)
-    print(target + " complete")
+    print(str(target) + " complete")
 
 
 def era5_realtime_surf(eraDir, dataset, bbox, product ):
@@ -389,7 +389,7 @@ def era5_realtime_surf(eraDir, dataset, bbox, product ):
                              '18:00', '19:00', '20:00',
                              '21:00', '22:00', '23:00']
 
-    target = eraDir +"/SURF_%04d%02d.nc" % (currentYear, currentMonth)
+    target = str(eraDir / "SURF_%04d%02d.nc" % (currentYear, currentMonth))
     era5_request_surf(dataset, currentYear, currentMonth, bbox, target, product, time)
 
 
@@ -412,7 +412,7 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
                              '18:00', '19:00', '20:00',
                              '21:00', '22:00', '23:00']
 
-    target = eraDir + "/PLEV_%04d%02d.nc" % (currentYear, currentMonth)
+    target = str(eraDir / "PLEV_%04d%02d.nc" % (currentYear, currentMonth))
     plevels = plevels
     era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
 
@@ -514,7 +514,10 @@ def grib2netcdf(gribname, outname=None):
 
 def process_SURF_file( wdir):
     """
-    TODO: NEED docstring and explanation 
+    Function to unpack and repack as NETCDF data sent by the new CDS API, which sends a ZIP file as NETCDF file.
+    
+    Args:
+        wdir: path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate
     """
 
     surf_files = glob.glob(wdir+"/SURF*.nc")
@@ -570,20 +573,13 @@ def process_SURF_file( wdir):
         print(f"Deleted {zip_file_path} and {unzip_dir}.")
 
 
-
-
-    
-
-
 def remap_CDSbeta(wdir):
     """
     Remapping of variable names from CDS beta to CDS legacy standard.
     
     Args:
-        wdir: d
+        wdir: path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate
     """
-
-    
 
     plev_files = glob.glob(wdir+"/PLEV*.nc")  # List of NetCDF files
     surf_files = glob.glob(wdir+"/SURF*.nc")  # List of NetCDF files

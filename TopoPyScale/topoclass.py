@@ -87,11 +87,12 @@ class Topoclass(object):
 
         # climate path
         if os.path.isabs(self.config.climate[self.config.project.climate].path):
-            self.config.climate.path = self.config.climate[self.config.project.climate].path
+            # modify pth handling with Path
+            self.config.climate.path = Path(self.config.climate[self.config.project.climate].path)
 
         else:
-            self.config.climate.path = '/'.join((self.config.project.directory, 'inputs/climate/'))
-        self.config.climate.tmp_path = '/'.join((self.config.climate.path, 'tmp'))
+            self.config.climate.path = Path(self.config.project.directory) / 'inputs' / 'climate'
+        self.config.climate.tmp_path = self.config.climate.path / 'tmp'
 
         # check if tree directory exists. If not create it
         os.makedirs(self.config.climate.path, exist_ok=True)
@@ -693,14 +694,18 @@ class Topoclass(object):
                 os.makedirs(self.config.outputs.path / "downscaled")
                 
         realtime = False # always false now as redownload of current month handled elsewhere ? key required only to dynamically set config.project.end
-        output_format = self.config.climate[self.config.project.climate].output_format
+
 
         # if keyword exists in config set out_format to value or default to netcdf
-        if self.config.climate[self.config.project.climate].output_format:
-            output_format = self.config.climate[self.config.project.climate].output_format
+        if self.config.climate[self.config.project.climate].cds_output_format:
+            output_format = self.config.climate[self.config.project.climate].cds_output_format
         # else set realtime to False
         else:
             output_format = 'netcdf'
+        if self.config.climate[self.config.project.climate].cds_download_format:
+            download_format = self.config.climate[self.config.project.climate].cds_download_format
+        else: 
+            download_format = 'unarchived'
 
         data_repository = self.config.climate[self.config.project.climate].data_repository
         if data_repository == 'cds':
@@ -715,7 +720,8 @@ class Topoclass(object):
                 self.config.climate[self.config.project.climate].download_threads,
                 surf_plev='surf',
                 realtime=realtime,
-                output_format=output_format
+                output_format=output_format,
+                download_format=download_format
             )
             # retrieve era5 plevels
             fe.retrieve_era5(
@@ -729,7 +735,8 @@ class Topoclass(object):
                 surf_plev='plev',
                 plevels=self.config.climate[self.config.project.climate].plevels,
                 realtime=realtime,
-                output_format=output_format
+                output_format=output_format,
+                download_format=download_format
             )
 
         elif data_repository == 'google_cloud_storage':

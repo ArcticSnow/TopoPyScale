@@ -71,6 +71,7 @@ setup(
                         'dask',
                         'configobj',
                         'munch',
-                        'gitpython'],
+                        'gitpython',
+                        'zipfile'],
     include_package_data=True
 )
