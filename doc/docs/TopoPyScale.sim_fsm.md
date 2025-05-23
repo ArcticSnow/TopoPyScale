@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 # <kbd>module</kbd> `TopoPyScale.sim_fsm`
 Methods to generate required simulation files and run simulations of various models using tscale forcing J. Fiddes, February 2022 
@@ -13,7 +13,7 @@ Methods to generate required simulation files and run simulations of various mod
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/fsm_nlst#L26"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L26"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fsm_nlst`
 
@@ -48,7 +48,7 @@ Function to generate namelist parameter file that is required to run the FSM mod
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/txt2ds#L88"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L88"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `txt2ds`
 
@@ -70,7 +70,7 @@ Function to read a single FSM text file output as a xarray dataset
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/to_netcdf#L118"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L118"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_netcdf`
 
@@ -95,7 +95,7 @@ Function to convert a single FSM simulation output file (.txt) to a compressed n
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/to_netcdf_parallel#L150"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L150"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_netcdf_parallel`
 
@@ -127,7 +127,7 @@ Function to convert FSM simulation output (.txt files) to compressed netcdf. Thi
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/to_dataset#L187"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L187"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_dataset`
 
@@ -148,7 +148,7 @@ Function to read FSM outputs of one simulation into a single dataset.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/read_pt_fsm#L215"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L215"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `read_pt_fsm`
 
@@ -170,7 +170,7 @@ Function to load FSM simulation output into a pandas dataframe
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/fsm_sim_parallel#L246"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L246"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fsm_sim_parallel`
 
@@ -208,7 +208,7 @@ Function to run parallelised simulations of FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/fsm_sim#L295"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L295"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fsm_sim`
 
@@ -233,7 +233,7 @@ Function to simulate the FSM model https://github.com/RichardEssery/FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/agg_by_var_fsm#L319"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L318"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `agg_by_var_fsm`
 
@@ -260,7 +260,7 @@ Currently written for FSM files but could be generalised to other models.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/agg_by_var_fsm_ensemble#L400"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L400"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `agg_by_var_fsm_ensemble`
 
@@ -288,7 +288,7 @@ ncol: 4 = rof 5 = hs 6 = swe 7 = gst
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/timeseries_means_period#L491"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L491"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `timeseries_means_period`
 
@@ -315,7 +315,7 @@ Function to extract results vectors from simulation results. This can be entire 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/topo_map#L523"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L523"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `topo_map`
 
@@ -337,7 +337,7 @@ Here 's an approach for arbitrary reclassification of integer rasters that avoid
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/topo_map_headless#L567"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L567"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `topo_map_headless`
 
@@ -359,7 +359,7 @@ Here 's an approach for arbitrary reclassification of integer rasters that avoid
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/topo_map_forcing#L607"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L607"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `topo_map_forcing`
 
@@ -386,7 +386,7 @@ Here 's an approach for arbitrary reclassification of integer rasters that avoid
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/topo_map_sim#L705"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L705"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `topo_map_sim`
 
@@ -413,7 +413,7 @@ Here 's an approach for arbitrary reclassification of integer rasters that avoid
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/write_ncdf#L790"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L790"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `write_ncdf`
 
@@ -441,7 +441,7 @@ write_ncdf(
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/agg_stats#L831"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L831"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `agg_stats`
 
@@ -456,7 +456,7 @@ agg_stats(df)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/climatology#L856"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L856"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `climatology`
 
@@ -471,7 +471,7 @@ climatology(HSdf, fsm_path)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/climatology_plot#L870"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L870"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `climatology_plot`
 
@@ -493,7 +493,7 @@ climatology_plot(
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/climatology_plot2#L929"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L929"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `climatology_plot2`
 
@@ -514,7 +514,7 @@ climatology_plot2(
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm/concat_fsm#L1007"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm.py#L1007"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `concat_fsm`
 

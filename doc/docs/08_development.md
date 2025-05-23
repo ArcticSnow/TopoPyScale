@@ -29,7 +29,7 @@ More elaborated discussion are taking place in the Github Discussion [page](http
 ## Documentation
 ### Function and Class Docstrings
 
-First when writing new function and class, please follow the Google docstring format that is compatible with `lazydocs`. Here is an example of the format:
+First when writing new function and class, please follow the *Google docstring* format that is compatible with `lazydocs`. Here is an example of the format:
 ```python
 def fsm_nlst(nconfig, metfile, nave):
     """
@@ -58,11 +58,24 @@ def fsm_nlst(nconfig, metfile, nave):
 Run this command from the TopoPyScale virtual environment with correct paths:
 
 ```bash
-lazydocs --output-path="path/to/TopoPyScale_Documentation/docs" --overview-file="README.md" --src-base-url="https://github.com/ArcticSnow/TopoPyScale" path/to/TopoPyScale
+lazydocs --output-path="path/to/TopoPyScale/doc/docs" --overview-file="README.md" --src-base-url="https://github.com/ArcticSnow/TopoPyScale" path/to/TopoPyScale
 ```
 
 
-## New Release and Pypi Version
+## New Release and Pypi Version (for the code maintainers)
 
 
+From the terminal run the following
+```sh
+# First, make sure twine is installed and you have your Pypi credentials
+pip install twine
 
+# Run from the relevant VE
+python setup.py sdist
+twine upload dist/* --verbose
+```
+
+### Push TopoPyScale
+```sh
+twine upload --config-file ~.pypirc --repository TopoPyScale dist/* --verbose
+```

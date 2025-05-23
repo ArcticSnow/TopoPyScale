@@ -10,16 +10,16 @@
 
 If reading the error message does not give you clear pointers to solving the problem, please first review your setup with the following questions:
 
-- Is `TopoPyScale` installed in a Python 3.9 (or more recent) virtual environment?
+- Is `TopoPyScale` installed in a Python 3.9/3.10 virtual environment?
 - Have its dependencies been installed via `conda` as recommended in the [installation instructions](./01_install.md)?
 - Is the file structure following the documenation recommendation (i.e. one dedicated folder for a downscaling project)? It is good practice that the project directory is seperated from the package directory.
 - Have you checked once more the config file? Might be worth one more look ;) 
-	- Are the dates right? 
-	- Is the project path correct?
-	- is the config file containing all fields according to the example in the [documentation](https://topopyscale.readthedocs.io/en/latest/3_configurationFile/)? If you observe a field is missing, please let us know about it.
-	- is the DEM  file correct?
-	- are the projection EPSG codes correct?
-	- lastly, check indents are fine as YAML is indent sensitive! 
+- Are the dates right? 
+- Is the project path correct?
+- is the config file containing all fields according to the example in the [documentation](https://topopyscale.readthedocs.io/en/latest/3_configurationFile/)? If you observe a field is missing, please let us know about it.
+- is the DEM  file correct?
+- are the projection EPSG codes correct?
+- lastly, check indents are fine as YAML is indent sensitive! 
 
 You may also have a look at the github issues currently [open](https://github.com/ArcticSnow/TopoPyScale/issues?q=is%3Aopen+is%3Aissue) or [closed](https://github.com/ArcticSnow/TopoPyScale/issues?q=is%3Aissue+is%3Aclosed).
 

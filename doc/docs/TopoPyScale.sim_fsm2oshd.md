@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 # <kbd>module</kbd> `TopoPyScale.sim_fsm2oshd`
 Methods to perform FSM2oshd simulations S. Filhol, September 2023 
@@ -19,7 +19,20 @@ Methods to perform FSM2oshd simulations S. Filhol, September 2023
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/fsm2oshd_sim_parallel#L44"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L26"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `read_fsm_ds_with_mask`
+
+```python
+read_fsm_ds_with_mask(path)
+```
+
+function to read fsm as ds, adding a dummy cluster for masked area 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L60"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fsm2oshd_sim_parallel`
 
@@ -54,7 +67,7 @@ Function to run parallelised simulations of FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/txt2ds#L87"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L103"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `txt2ds`
 
@@ -76,7 +89,7 @@ Function to read a single FSM text file output as a xarray dataset
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/output_to_ds#L117"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L133"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `output_to_ds`
 
@@ -91,7 +104,7 @@ output_to_ds(fname_pattern, complevel=9, remove_file=False, fout='fsm_outputs')
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/to_netcdf#L137"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L153"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_netcdf`
 
@@ -116,7 +129,7 @@ Function to convert a single FSM simulation output file (.txt) to a compressed n
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/aggregate_all_open_forest#L205"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L221"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `aggregate_all_open_forest`
 
@@ -139,7 +152,7 @@ aggregate_all_open_forest(
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/read_pt_fsm2oshd#L229"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L245"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `read_pt_fsm2oshd`
 
@@ -154,7 +167,7 @@ read_pt_fsm2oshd(fname)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd/read_pt_met_fsm2oshd#L235"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/sim_fsm2oshd.py#L251"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `read_pt_met_fsm2oshd`
 

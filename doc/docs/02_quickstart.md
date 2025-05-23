@@ -74,7 +74,7 @@ mp.toposub.plot_clusters_map(var='svf', cmap=plt.cm.viridis)
 mp.plot.map_variable()
 ```
 
-However, the basic plotting functions are defined within the file [`topo_plot.py`](./TopoPyScale.topo_plot.md). So after having run the downscaling in spatial (`toposub`) mode, run the following:
+However, the basic plotting functions are defined within the file [`topo_plot.py`](./TopoPyScale.topo_plot.md). So after having ran the downscaling in spatial (`toposub`) mode, run the following:
 ```python
 from TopoPyScale import topo_plot as plot
 import matplotlib.pyplot as plt

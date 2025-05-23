@@ -20,20 +20,13 @@ my_project/
 
 ```
 
-`TopoPyScale` will automatically generates the `inputs/` and `outputs/` folder structure in which climatic and
-topographic forcings will be stored. Then, `TopoPyScale` is implemented with the assumption that the Python console will
-be open from the root path of `my_project/`
+`TopoPyScale` will automatically generates the `inputs/` and `outputs/` folder structure in which climatic and topographic forcings will be stored. Then, `TopoPyScale` is implemented with the assumption that the Python console will be open from the root path of `my_project/`
 
 ## File `config.yml`
 
-The configuration file contains all parameters needed to run a downscaling job. It includes general information about
-the job, as well as specific routine and values. Examples of `config.yml` file can be found in the
-repository[TopoPyScale_examples](https://github.com/ArcticSnow/TopoPyScale_examples).
+The configuration file contains all parameters needed to run a downscaling job. It includes general information about the job, as well as specific routine and values. Examples of `config.yml` file can be found in the repository[TopoPyScale_examples](https://github.com/ArcticSnow/TopoPyScale_examples).
 
-The configuration consists of a YAML file, which is a common standard for storing configurations. Further help on YAML
-syntax can be found [here](https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html), and the Python
-packages [pyyaml](https://pyyaml.org/wiki/PyYAMLDocumentation) and [Munch](https://pypi.org/project/munch/) allows to
-interact with such kind of file. **Be aware that YAML is indent sensitive.**
+The configuration consists of a YAML file, which is a common standard for storing configurations. Further help on YAML syntax can be found [here](https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html), and the Python packages [pyyaml](https://pyyaml.org/wiki/PyYAMLDocumentation) and [Munch](https://pypi.org/project/munch/) allows to interact with such kind of file. **Be aware that YAML is indent sensitive.**
 
 For TopoPyScale, the configuration file must contain at least the following:
 
@@ -228,7 +221,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 
 ## File `csv` format for a list of points
 
-The list of points is a comma-separated value file which must contain at least the fields `x,y`. All other columns will
+The list of points is a comma-separated value file (`.csv`) which must contain at least the fields `x,y`. All other columns will
 be loaded into a dataframe and can be used for further analysis (but won't be required by TopoPyScale).
 
 An example of a list of points:

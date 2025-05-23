@@ -6,7 +6,7 @@ Each example contains the basic required `config.yml` file and its associated Py
 
 **WARNING 1:** the examples require to download the climate data from ERA5 data portal [CDS Copernicus](https://cds.climate.copernicus.eu/). Depending on the amount of data request and the servers' load, it may take up to few days to acquire the complete dataset. To perform the examples, the `cdsapi` credentials must be set as indicated in the [install](./01_instal.md) section. 
 
-**WARNING 2:** as TopoPyscale can have a large amount of verbose output for large projects, we recommand running `TopoPyScale` in a simple IPython console.
+**WARNING 2:** as TopoPyScale can have a large amount of verbose output for large projects, we recommand running `TopoPyScale` in a simple IPython console.
 
 ## Getting the Example Material
 
@@ -112,6 +112,7 @@ config_file = './config.yml'
 
 # create a topopyscale python object
 mp = tc.Topoclass(config_file)
+mp.get_era5()
 
 # Downscaling preparation routines
 mp.compute_dem_param()
@@ -125,7 +126,7 @@ mp.downscale_climate()
 
 ## Davos, Switzerland
 
-This example demonstrate `TopoPyScale` for the area of Davos. It downscales climate, and performs simulation with the snow model [FSM](https://github.com/RichardEssery/FSM/tree/master). 
+This example demonstrates `TopoPyScale` for the area of Davos. It downscales climate, and performs simulation with the snow model [FSM](https://github.com/RichardEssery/FSM/tree/master). 
 
 ### Site Description
 Davos is located in South-Eastern Switzerland. 
@@ -156,9 +157,10 @@ from TopoPyScale import topo_sim as sim
 
 
 # ========= STEP 1 ==========
-# Load Configuration
+# Load Configuration and download ERA5 data
 config_file = './config.ini'
 mp = tc.Topoclass(config_file)
+mp.get_era5()
 
 # Compute parameters of the DEM (slope, aspect, sky view factor)
 mp.compute_dem_param()
