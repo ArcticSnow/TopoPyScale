@@ -8,17 +8,17 @@ https://topopyscale.readthedocs.io
 
 ## Contributing to the Documentation
 
-The documentation is written in Markdown with the tool https://www.mkdocs.org
+The documentation is written in Markdown and compiled with the tool https://www.mkdocs.org. Edit the markdown files located in the folder `TopoPyScale/doc/docs/`. If you add a page, make sure to add its path to the file [mkdocs.yml](https://github.com/ArcticSnow/TopoPyScale/blob/main/doc/mkdocs.yml). The online *readthedocs* website will build automatically when changes are being commited. 
 
-1. Create a local Python VE 
+## Build the doc on your local machine
+
+1. Create a local Python VE and install the following packages to build the doc locally
 
    ```bash
-   conda create -n rtdoc
-   conda activate rtdoc
    pip install mkdocs sphinx_rtd_theme mkdocs-material pygments
    
    # cloning using SSH key
-   git clone git@github.com:ArcticSnow/TopoPyScale_Documentation.git
+   git clone git@github.com:ArcticSnow/TopoPyScale.git
    cd TopoPyScale_Documenation
    ```
 
@@ -31,12 +31,11 @@ The documentation is written in Markdown with the tool https://www.mkdocs.org
 For customization of the theme, please use the documentation https://squidfunk.github.io/mkdocs-material/. All custom parameters are in the file `mkdocs.yml`
 
 
-
 ## Update the API documentation
 
 Run this command from the TopoPyScale virtual environment with correct paths:
 
 ```bash
-lazydocs --output-path="path/to/TopoPyScale_Documentation/docs" --overview-file="README.md" --src-base-url="https://github.com/ArcticSnow/TopoPyScale" path/to/TopoPyScale
+lazydocs --output-path="path/to/TopoPyScale/doc/docs" --overview-file="README.md" --src-base-url="https://github.com/ArcticSnow/TopoPyScale" path/to/TopoPyScale
 ```
 
