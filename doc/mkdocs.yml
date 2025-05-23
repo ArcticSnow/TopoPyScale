@@ -50,4 +50,4 @@ markdown_extensions:
 plugins:
   - search
   - bibtex:
-      bib_file: "docs/refs.bib"
+      bib_file: "refs.bib"
