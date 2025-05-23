@@ -10,7 +10,7 @@
 
 - **Source Code Github Repository**: [https://github.com/ArcticSnow/TopoPyScale](https://github.com/ArcticSnow/TopoPyScale)
 - **Examples Repository**: [https://github.com/ArcticSnow/TopoPyScale_examples](https://github.com/ArcticSnow/TopoPyScale_examples)
-- **Documentation Repository**: [https://github.com/ArcticSnow/TopoPyScale_Documentation](https://github.com/ArcticSnow/TopoPyScale_Documentation)
+- **Documentation Repository**: [https://github.com/ArcticSnow/TopoPyScale/doc](https://github.com/ArcticSnow/TopoPyScale/doc)
 
 If you are here to use `TopoPyScale`, then head to the [Quick Start](./02_quickstart.md) page. Further configuration setup are explained in detail
 
