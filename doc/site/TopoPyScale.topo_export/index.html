@@ -1,0 +1,952 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+        <meta name="author" content="Simon Filhol, Joel Fiddes">
+      
+      
+        <link rel="canonical" href="https://example.com/TopoPyScale.topo_export/">
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-8.5.9">
+    
+    
+      
+        <title>topo_export - TopoPyScale</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.20d9efc8.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.08040f6c.min.css">
+        
+          
+          
+          <meta name="theme-color" content="#009485">
+        
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#module-topopyscaletopo_export" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="TopoPyScale" class="md-header__button md-logo" aria-label="TopoPyScale" data-md-component="logo">
+      
+  <img src="../logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            TopoPyScale
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              topo_export
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="TopoPyScale" class="md-nav__button md-logo" aria-label="TopoPyScale" data-md-component="logo">
+      
+  <img src="../logo.png" alt="logo">
+
+    </a>
+    TopoPyScale
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0_index/" class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../1_instal/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../2_quickstart/" class="md-nav__link">
+        Quick Start
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../3_configurationFile/" class="md-nav__link">
+        Project Configuration
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../4_datasetSources/" class="md-nav__link">
+        Datasets
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../5_models/" class="md-nav__link">
+        Outputs
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" checked>
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7">
+          API
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="API" data-md-level="1">
+        <label class="md-nav__title" for="__nav_7">
+          <span class="md-nav__icon md-icon"></span>
+          API
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topoclass/" class="md-nav__link">
+        topoclass
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_sub/" class="md-nav__link">
+        topo_sub
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_scale/" class="md-nav__link">
+        topo_scale
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.solar_geom/" class="md-nav__link">
+        solar_geom
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_param/" class="md-nav__link">
+        topo_param
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.fetch_era5/" class="md-nav__link">
+        fetch_era5
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.fetch_dem/" class="md-nav__link">
+        fetch_dem
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.meteo_util/" class="md-nav__link">
+        meteo_util
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_sim/" class="md-nav__link">
+        topo_sim
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          topo_export
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        topo_export
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#function-compute_scaling_and_offset" class="md-nav__link">
+    function compute_scaling_and_offset
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_musa" class="md-nav__link">
+    function to_musa
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_cryogrid" class="md-nav__link">
+    function to_cryogrid
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_fsm" class="md-nav__link">
+    function to_fsm
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_micromet_single_station" class="md-nav__link">
+    function to_micromet_single_station
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_crocus" class="md-nav__link">
+    function to_crocus
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_snowpack" class="md-nav__link">
+    function to_snowpack
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_geotop" class="md-nav__link">
+    function to_geotop
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_da.md" class="md-nav__link">
+        topo_da
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_obs/" class="md-nav__link">
+        topo_obs
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_utils.md" class="md-nav__link">
+        topo_utils
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_compare/" class="md-nav__link">
+        topo_compare
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TopoPyScale.topo_plot/" class="md-nav__link">
+        topo_plot
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#function-compute_scaling_and_offset" class="md-nav__link">
+    function compute_scaling_and_offset
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_musa" class="md-nav__link">
+    function to_musa
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_cryogrid" class="md-nav__link">
+    function to_cryogrid
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_fsm" class="md-nav__link">
+    function to_fsm
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_micromet_single_station" class="md-nav__link">
+    function to_micromet_single_station
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_crocus" class="md-nav__link">
+    function to_crocus
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_snowpack" class="md-nav__link">
+    function to_snowpack
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#function-to_geotop" class="md-nav__link">
+    function to_geotop
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<!-- markdownlint-disable -->
+
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h1 id="module-topopyscaletopo_export"><kbd>module</kbd> <code>TopoPyScale.topo_export</code></h1>
+<p>Functions to export topo_scale output to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...) </p>
+<p>S. Filhol, December 2021 </p>
+<p>TODO; 
+- SPHY forcing (grids) </p>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/compute_scaling_and_offset#L21"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-compute_scaling_and_offset"><kbd>function</kbd> <code>compute_scaling_and_offset</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">compute_scaling_and_offset</span><span class="p">(</span><span class="n">da</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
+</code></pre></div>
+<p>Compute offset and scale factor for int conversion </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>da</code></b> (dataarray):  of a given variable </li>
+<li><b><code>n</code></b> (int):  number of digits to account for </li>
+</ul>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_musa#L39"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_musa"><kbd>function</kbd> <code>to_musa</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">to_musa</span><span class="p">(</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">ds</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">df_pts</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">da_label</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">fname_met</span><span class="o">=</span><span class="s1">&#39;musa_met.nc&#39;</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">fname_labels</span><span class="o">=</span><span class="s1">&#39;musa_labels.nc&#39;</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">path</span><span class="o">=</span><span class="s1">&#39;outputs/&#39;</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">climate_dataset_name</span><span class="o">=</span><span class="s1">&#39;ERA5&#39;</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">project_authors</span><span class="o">=</span><span class="s1">&#39;S. Filhol&#39;</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">)</span>
+</code></pre></div>
+<p>Function to export to MuSa standard. </p>
+<p><strong>Args:</strong>
+  ds:  df_pts:  da_labels:  fname:  path: </p>
+<p><strong>Returns:</strong>
+  Save downscaled timeseries and toposub cluster mapping </p>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_cryogrid#L110"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_cryogrid"><kbd>function</kbd> <code>to_cryogrid</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">to_cryogrid</span><span class="p">(</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">ds</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">df_pts</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">fname_format</span><span class="o">=</span><span class="s1">&#39;Cryogrid_pt_*.nc&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">path</span><span class="o">=</span><span class="s1">&#39;outputs/&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">label_map</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">da_label</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">snow_partition_method</span><span class="o">=</span><span class="s1">&#39;continuous&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">climate_dataset_name</span><span class="o">=</span><span class="s1">&#39;ERA5&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">project_author</span><span class="o">=</span><span class="s1">&#39;S. Filhol&#39;</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">)</span>
+</code></pre></div>
+<p>Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model. </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>ds</code></b> (dataset):  downscaled values from topo_scale </li>
+<li><b><code>df_pts</code></b> (dataframe):  with metadata of all point of downscaling </li>
+<li><b><code>fname_format</code></b> (str):  file name for output </li>
+<li><b><code>path</code></b> (str):  path where to export files </li>
+<li><b><code>label_map</code></b> (bool):  export cluster_label map </li>
+<li><b><code>da_label</code></b> (dataarray): (optional) dataarray containing label value for each pixel of the DEM </li>
+</ul>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_fsm#L187"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_fsm"><kbd>function</kbd> <code>to_fsm</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">to_fsm</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span> <span class="n">fname_format</span><span class="o">=</span><span class="s1">&#39;FSM_pt_*.tx&#39;</span><span class="p">,</span> <span class="n">snow_partition_method</span><span class="o">=</span><span class="s1">&#39;continuous&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Function to export data for FSM. </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>ds</code></b> (dataset):  downscaled_pts, </li>
+<li><b><code>df_pts</code></b> (dataframe):  toposub.df_centroids, </li>
+<li><b><code>fname_format</code></b> (str pattern):  output format of filename </li>
+<li><b><code>snow_partition_method</code></b> (str):  snow/rain partitioning method: default 'jennings2018_trivariate' </li>
+</ul>
+<p>format is a text file with the following columns year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) </p>
+<p>See README.md file from FSM source code for further details </p>
+<p><strong>TODO:</strong></p>
+<ul>
+<li>Check unit DONE jf </li>
+<li>Check format is compatible with compiled model DONE jf </li>
+<li>ensure ds.point_id.values always </li>
+</ul>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_micromet_single_station#L236"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_micromet_single_station"><kbd>function</kbd> <code>to_micromet_single_station</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">to_micromet_single_station</span><span class="p">(</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">ds</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">df_pts</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">fname_format</span><span class="o">=</span><span class="s1">&#39;Snowmodel_pt_*.csv&#39;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">na_values</span><span class="o">=-</span><span class="mi">9999</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">headers</span><span class="o">=</span><span class="kc">False</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">)</span>
+</code></pre></div>
+<p>Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_id </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>ds</code></b> (dataset):  TopoPyScale xarray dataset, downscaled product </li>
+<li><b><code>df_pts</code></b> (dataframe):  with point list info (x,y,elevation,slope,aspect,svf,...) </li>
+<li><b><code>fname_format</code></b> (str):  filename format. point_id is inserted where * is </li>
+<li><b><code>na_values</code></b> (int):  na_value default </li>
+<li><b><code>headers</code></b> (bool):  add headers to file </li>
+</ul>
+<p>Example of the compatible format for micromet (headers should be removed to run the model: </p>
+<p>year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip (yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt) </p>
+<p>2002   10    1   12.00    101   426340.0  4411238.0  3598.0     0.92    57.77     4.80   238.29 -9999.00 2002   10    2   12.00    101   426340.0  4411238.0  3598.0    -3.02    78.77 -9999.00 -9999.00 -9999.00 2002   10    8   12.00    101   426340.0  4411238.0  3598.0    -5.02    88.77 -9999.00 -9999.00 -9999.00 </p>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_crocus#L291"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_crocus"><kbd>function</kbd> <code>to_crocus</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">to_crocus</span><span class="p">(</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">ds</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">df_pts</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">fname_format</span><span class="o">=</span><span class="s1">&#39;CROCUS_pt_*.nc&#39;</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">scale_precip</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">climate_dataset_name</span><span class="o">=</span><span class="s1">&#39;ERA5&#39;</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">project_author</span><span class="o">=</span><span class="s1">&#39;S. Filhol&#39;</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">snow_partition_method</span><span class="o">=</span><span class="s1">&#39;continuous&#39;</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">)</span>
+</code></pre></div>
+<p>Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_id </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>ds</code></b> (dataset):  Toposcale downscaled dataset. </li>
+<li><b><code>df_pts</code></b> (dataframe):  with point list info (x,y,elevation,slope,aspect,svf,...) </li>
+<li><b><code>fname_format</code></b> (str):  filename format. point_id is inserted where * is </li>
+<li><b><code>scale_precip</code></b> (float):  scaling factor to apply on precipitation. Default is 1 </li>
+<li><b><code>climate_dataset_name</code></b> (str):  name of original climate dataset. Default 'ERA5', </li>
+<li><b><code>project_author</code></b> (str):  name of project author(s) </li>
+<li><b><code>snow_partition_method</code></b> (str):  snow/rain partitioning method: default 'jennings2018_trivariate' </li>
+</ul>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_snowpack#L412"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_snowpack"><kbd>function</kbd> <code>to_snowpack</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">to_snowpack</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span> <span class="n">fname_format</span><span class="o">=</span><span class="s1">&#39;smet_pt_*.tx&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Function to export data for snowpack model as smet. https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>ds</code></b> (dataset):  downscaled_pts, </li>
+<li><b><code>df_pts</code></b> (dataframe):  toposub.df_centroids, </li>
+<li><b><code>fname_format</code></b> (str pattern):  output format of filename </li>
+</ul>
+<p>format is a text file with the following columns (coulumns can vary) </p>
+<p>SMET 1.1 ASCII [HEADER] station_id       = meteoc1 station_name     = WFJ2 latitude         = 46.829650 longitude        = 9.809328 altitude         = 2539.0 easting          = 780851.861845 northing         = 189232.420554 epsg             = 21781 nodata           = -999 tz               = 0 plot_unit        = time K - m/s ° W/m2 W/m2 kg/m2 - plot_description = time air_temperature relative_humidity wind_velocity wind_direction incoming_short_wave_radiation incoming_long_wave_radiation water_equivalent_precipitation_sum - plot_color       = 0x000000 0x8324A4 0x50CBDB 0x297E24 0x64DD78 0xF9CA25 0xD99521 0x2431A4 0xA0A0A0 plot_min         = -999 253.15 0 0 0 0 150 0 -999 plot_max         = -999 283.15 1 30 360 1400 400 20 -999 fields           = timestamp TA RH VW DW ISWR ILWR PSUM PINT [DATA] 2014-09-01T00:00:00   271.44   1.000    5.9   342     67    304  0.000    0.495 2014-09-01T01:00:00   271.50   0.973    6.7   343    128    300  0.166    0.663 2014-09-01T02:00:00   271.46   0.968    7.4   343    244    286  0.197    0.788 2014-09-01T03:00:00   271.41   0.975    7.6   345    432    273  0.156    0.626 2014-09-01T04:00:00   271.57   0.959    7.8   347    639    249  0.115    0.462 2014-09-01T05:00:00   271.52   0.965    8.2   350    632    261  0.081    0.323 </p>
+<hr />
+<p><a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export/to_geotop#L480"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a></p>
+<h2 id="function-to_geotop"><kbd>function</kbd> <code>to_geotop</code></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">to_geotop</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span> <span class="n">fname_format</span><span class="o">=</span><span class="s1">&#39;geotop_pt_*.txt&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Function to export data for snowpack model as smet. https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf </p>
+<p><strong>Args:</strong></p>
+<ul>
+<li><b><code>ds</code></b> (dataset):  downscaled_pts, </li>
+<li><b><code>df_pts</code></b> (dataframe):  toposub.df_centroids, </li>
+<li><b><code>fname_format</code></b> (str pattern):  output format of filename </li>
+</ul>
+<p>Date format = DD/MM/YYYY hh:mm Air temperature = Degree Celsius Relative Humidity = % Radiations components such SWin, SWout, LWin = W/m2 Precipitation = mm/hr Wind speed = m/s Wind direction = degree Air pressure = mbar </p>
+<p>The format of the file is in *.txt format. </p>
+<p>format is a text file with the following columns (coulumns can vary) </p>
+<p>Date,AirT,WindS,WindDr,RelHum,Swglob,Swout,Lwin,Lwout,Iprec,AirPressure 01/09/2015 00:00,1.5,0.7,165,59,0,0,223.9,315.5,0,581.02897 01/09/2015 01:00,1.2,0.6,270,59,0,0,261.8,319,0,581.02897 01/09/2015 02:00,0.8,0.5,152,61,0,0,229.9,312.2,0,581.02897 01/09/2015 03:00,0.8,0.5,270,60,0,0,226.1,310.8,0,581.02897 01/09/2015 04:00,0.3,0.8,68,60,0,0,215.3,309.6,0,581.02897 01/09/2015 05:00,0.2,0.6,270,62,0,0,230.2,309.1,0,581.02897 01/09/2015 06:00,0.3,0.6,35,62,0,0,222.8,306.7,0,581.02897 01/09/2015 07:00,-0.2,0.3,270,65,0,0,210,305.5,0,581.02897 01/09/2015 08:00,0,0.6,52,59,114,23,218.3,312.3,0,581.02897 01/09/2015 09:00,1.9,1.5,176,57,173,35,220.2,322.8,0,581.02897 01/09/2015 10:00,3.4,1.9,183,47,331,67,245.8,372.6,0,581.02897 </p>
+<hr />
+<p><em>This file was automatically generated via <a href="https://github.com/ml-tooling/lazydocs">lazydocs</a>.</em></p>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
+      
+        
+        <a href="../TopoPyScale.topo_sim/" class="md-footer__link md-footer__link--prev" aria-label="Previous: topo_sim" rel="prev">
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+          </div>
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              topo_sim
+            </div>
+          </div>
+        </a>
+      
+      
+        
+        <a href="../TopoPyScale.topo_obs/" class="md-footer__link md-footer__link--next" aria-label="Next: topo_obs" rel="next">
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              topo_obs
+            </div>
+          </div>
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
+          </div>
+        </a>
+      
+    </nav>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      GNU GPL3
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.16e2a7d4.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d6c3db9e.min.js"></script>
+      
+    
+  </body>
+</html>

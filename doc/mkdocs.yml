@@ -1,0 +1,48 @@
+site_name: TopoPyScale
+site_url: https://topopyscale.readthedocs.io/en/latest/
+site_author: Simon Filhol, Joel Fiddes
+copyright: GNU GPL3
+nav:
+    - Home: index.md
+    - Installation: 01_install.md
+    - Quick Start: 02_quickstart.md
+    - Project Configuration: 03_configurationFile.md
+    - Datasets: 04_datasetSources.md
+    - Outputs: 05_outputs.md
+    - Examples: 06_examples.md
+    - Clustering Methods: 07_topo_sub_methods.md
+    - Development: 08_development.md
+    - FAQ: 20_FAQ.md
+    - API:
+        - topoclass: TopoPyScale.topoclass.md
+        - topo_sub: TopoPyScale.topo_sub.md
+        - topo_scale: TopoPyScale.topo_scale.md
+        - solar_geom: TopoPyScale.solar_geom.md
+        - topo_param: TopoPyScale.topo_param.md
+        - fetch_era5: TopoPyScale.fetch_era5.md
+        - fetch_dem: TopoPyScale.fetch_dem.md
+        - meteo_util: TopoPyScale.meteo_util.md
+        - sim_fsm: TopoPyScale.sim_fsm.md
+        - sim_fsm2oshd: TopoPyScale.sim_fsm2oshd.md
+        - topo_export: TopoPyScale.topo_export.md
+        - topo_da: TopoPyScale.topo_da.md
+        - topo_obs: TopoPyScale.topo_obs.md
+        - topo_utils: TopoPyScale.topo_utils.md
+        - topo_compare: TopoPyScale.topo_compare.md
+        - topo_plot: TopoPyScale.topo_plot.md
+
+
+theme:
+  name: material
+  palette:
+    primary: teal
+  logo: logo.png
+markdown_extensions:
+  - md_in_html
+  - attr_list
+  - pymdownx.highlight:
+      use_pygments: true
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
