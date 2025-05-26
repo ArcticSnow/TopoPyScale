@@ -146,9 +146,9 @@ def compute_dem_complexity(elev, slope, weights={'slope': 0.5, 'elev_norm':0.3, 
 
     if sum(weights.values()) != 1:
         raise ValueError('Sum of weights mus be equal to 1')
-        
+
     curvature = np.abs(laplace(elev_smooth))
-        complexity = (
+    complexity = (
             weights.get('slope') * (slope / np.max(slope)) +
             weights.get('elev_norm') * elev_norm +
             weights.get('curvature') * (curvature / np.max(curvature))

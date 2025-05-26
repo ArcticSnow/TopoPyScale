@@ -313,7 +313,7 @@ class Topoclass(object):
             if not os.path.isabs(mask_file):
                 mask_file = Path(self.config.project.directory, mask_file)
             # read mask TIFF
-            ds_mask = xr.open_dataset(mask_file, engine='rasterio').rename({'band_data': 'mask'}).isel(band=0)
+            ds_mask = rio.open_rasterio(mask_file).to_dataset('band').rename({1: 'mask'})
 
             # check if bounds and resolution match
             if not ds_mask.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_mask.rio.resolution() == self.toposub.ds_param.rio.resolution():
@@ -339,7 +339,7 @@ class Topoclass(object):
                 groups_file = Path(self.config.project.directory, groups_file)
 
             # read cluster TIFF
-            ds_group = xr.open_dataset(groups_file, engine='rasterio').rename({'band_data': 'mask'}).isel(band=0)
+            ds_group = rio.open_rasterio(groups_file).to_dataset('band').rename({1: 'group'})
 
             # check if bounds and resolution match
             if not ds_group.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_group.rio.resolution() == self.toposub.ds_param.rio.resolution():
@@ -350,17 +350,17 @@ class Topoclass(object):
             df_param['cluster_group'] = ts.ds_to_indexed_dataframe(ds_group)['group'].astype(int)
 
             # create group dataframe
-            df_group = df_param[mask].groupby('cluster_group').slope.count()
-            df_group = df_groups.rename({'cluster_group':'nPix'})
-            df_group['relative_cover'] = df_group.nPix / df_group.nPix.sum()
+            gr = df_param[mask].groupby('cluster_group').slope.count()
+            df_group = pd.DataFrame(gr).rename(columns={'slope':'nPix'})
 
             if os.path.isfile(self.config.sampling.toposub.clustering_group_weights):
                 gw = pd.read_csv(self.config.sampling.toposub.clustering_group_weights)
-                if gw.weight.sum() != gw.shape[0]:
+                if gw.weight.sum() != 1:
                     raise ValueError(f'The sum of group weights within the mask must be equal to number of groups, n_group={gw.shape[0]}')
                 df_group['weights'] = gw.set_index('group').loc[df_group.index]
             else:
-                df_group['weights'] = 1
+                df_group['weights'] = df_group.nPix / df_group.nPix.sum()
+            df_group['n_clusters'] = np.ceil(self.config.sampling.toposub.n_clusters * df_group.weights).astype(int)
             groups = list(df_group.index)
 
             print(f'---> Split clustering into {len(groups)} groups.')
@@ -378,23 +378,17 @@ class Topoclass(object):
             if subset_mask.sum() > 0:
                 df_subset = df_param[subset_mask]
 
-                # derive number of clusters
-                #relative_cover = np.count_nonzero(subset_mask) / np.count_nonzero(mask)  # relative area of the group
-
-                # add option to prescribe a table of n_cluster_weights per group
-                n_clusters = int(np.ceil(self.config.sampling.toposub.n_clusters * df_group[group].relative_cover))
-
                 df_scaled, scaler = ts.scale_df(df_subset, features=self.config.sampling.toposub.clustering_features)
                 if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
                     df_centroids, _, cluster_labels = ts.kmeans_clustering(
                         df_scaled,
                         features=self.config.sampling.toposub.clustering_features,
-                        n_clusters=n_clusters,
+                        n_clusters=int(df_group.loc[group].n_clusters),
                         seed=self.config.sampling.toposub.random_seed)
                 elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
                     df_centroids, _, cluster_labels = ts.minibatch_kmeans_clustering(
                         df_scaled,
-                        n_clusters=n_clusters,
+                        n_clusters=int(df_group.loc[group].n_clusters),
                         features=self.config.sampling.toposub.clustering_features,
                         n_cores=self.config.project.CPU_cores,
                         seed=self.config.sampling.toposub.random_seed)
@@ -413,9 +407,9 @@ class Topoclass(object):
                 self.toposub.df_centroids = pd.concat([self.toposub.df_centroids, df_centroids])
 
                 # update total clusters
-                i_clusters += n_clusters
+                i_clusters += int(df_group.loc[group].n_clusters)
             else:
-                print(f"---> Group {group} is within masked area")
+                print(f"---> Group {group} is not fully within masked area")
 
         if not split_clustering:
             # drop cluster_group
