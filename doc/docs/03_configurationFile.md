@@ -63,14 +63,17 @@ climate:
   # For now TopoPyScale only supports ERA5-reanalysis input climate data
   era5:
     path: inputs/climate/   # Can either be a absolute path or relative to the project directory
-    product: reanalysis
-    timestep: 1H
+    product: reanalysis     # ensemble not available yet
+    timestep: 1H            # 1H, 3H 6H or else.
 
     # Choose pressure levels relevant to your project and evailable in ERA5 Pressure Levels
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
-    download_threads: 1    # Number of threads to request downloads with cdsapi
-    realtime: False    # (Optional) Forces redownload of latest month of ERA5 data upon each run of code (allows daily updates for realtime applications)
-    data_repository: cds  # repository from where to download data: cds (copernicus official ERA5), google_cloud_storage (Google archive of ERA5)
+    download_threads: 1               # Number of threads to request downloads with cdsapi
+    realtime: False                   # (Optional) Forces redownload of latest month of ERA5 data upon each run of code (allows daily updates for realtime applications)
+    data_repository: cds              # repository from where to download data: cds (copernicus official ERA5), google_cloud_storage (Google archive of ERA5)
+    cds_output_format: netcdf         # netcdt or grib. Grib is not supported by topoclass
+    cds_download_format: unarchived   # unarchived or zip
+    rm_daily: False                   # remove 
 
   precip_lapse_rate: False     # Apply precipitation lapse-rate correction (currently valid for Northern Hemisphere only)
 
@@ -113,8 +116,8 @@ outputs:
   directory: outputs                    # (optional) absolute path where to store the final downscaled products.
   variables: all                        # list of variables to export in netcdf. ['t','p','SW']. Default None or all
   file:
-    clean_outputs: False                # (bool)    delete the entire outputs/ directory prior to downscaling
-    clean_FSM: True                     # (bool)    delete the entire sim/ directory
+    clean_outputs: False                # (bool)    remove the entire outputs/ directory prior to downscaling
+    clean_FSM: True                     # (bool)    remove the entire sim/ directory
     df_centroids: df_centroids.pck      # (pickle)  dataframe containing the points of interest with their topographic features
     ds_param: ds_param.nc               # (netcdf)  topographic parameters (slope, aspect, etc.)
     ds_solar: ds_solar.nc               # (netcdf)  solar geometry
@@ -123,7 +126,7 @@ outputs:
     downscaled_pt: down_pt_*.nc         # (netcdf)  Downscales
 
 clean_up:
-  delete_tmp_dirs: True                   # (optional: bool) delete the created tmp directories after downscaling?
+  rm_tmp_dirs: True                   # (optional: bool) remove the created tmp directories after downscaling?
 ```
 
 The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass('config.yml')` is created.
@@ -160,6 +163,9 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | plevels           | [700,800,900,1000] | y        | array           | Indicate ERA5 pressure level to use. The lower pressure level must be higher than the highest elevation of the DEM |
 | download_threads  | 12                 | y        | integer         | Number of downloading threads to use                                                                    |
 | data_repository  | google_cloud_storage | y        | string         | Indicate which data repositoryt to download data from: 'cds or google_cloud_storage                  |
+| cds_output_format  | netcdf | n       | string         | indicate file format CDS will deliver. netcdf or grib|
+| cds_download_format  | unarchived | n       | string         | indicate download format CDS will deliver. unarchived or zip|  
+| rm_daily  | False | n       | string         | remove or not daily downloads. To save storage after download|
 | realtime          | False              | n        | True, False     | Upon each new run of code redownloads latest month (ERA5T) to obtain daily updates of partial months.              |
 | precip_lapse_rate | True               | y        | True, False     | Apply precipitation lapse rate                                                                                     |
 

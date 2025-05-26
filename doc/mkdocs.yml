@@ -4,6 +4,7 @@ site_author: Simon Filhol, Joel Fiddes
 copyright: GNU GPL3
 nav:
     - Home: index.md
+    - Use Cases: 00_use_cases.md
     - Installation: 01_install.md
     - Quick Start: 02_quickstart.md
     - Project Configuration: 03_configurationFile.md
