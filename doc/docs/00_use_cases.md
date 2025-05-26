@@ -1,8 +1,8 @@
-00_use_cases.md
-
 ## Use Cases
+This is a non-exhaustive list of use cases of TopoPyScale.
 
 **Please drop us a line about your usage of TopoPyScale to be featured.** 
+
 
 ### SnowMapper.ch Online Dashboard
 
