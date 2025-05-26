@@ -11,6 +11,7 @@ import rasterio
 from pyproj import Transformer
 import pandas as pd
 import numpy as np
+from scipy.ndimage import gaussian_filter, laplace
 import xarray as xr
 from topocalc import gradient
 from topocalc import viewf
@@ -126,6 +127,37 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     else:
         raise ValueError('ERROR: Method not implemented. Only nearest, linear or idw available')
     return df_pts
+
+
+def compute_dem_complexity(elev, slope, weights={'slope': 0.5, 'elev_norm':0.3, 'curvature':0.2}):
+    """
+    Function to compute topographic complexity index. This index is an arbitray index considering 
+
+    Args:
+        elev (array): ndarray of elevations 
+        slope (array): ndarray of slopes 
+        weights (dict): dictionnary of the relative weights of slope vs normalized elevation vs curvature. Sum must be equal to 1
+
+    Returns:
+        array: complexity index 
+    """
+    elev_norm = (elev - np.min(elev)) / (np.max(elev) - np.min(elev))
+    elev_smooth = gaussian_filter(elev, sigma=1)
+
+    if sum(weights.values()) != 1:
+        raise ValueError('Sum of weights mus be equal to 1')
+        
+    curvature = np.abs(laplace(elev_smooth))
+        complexity = (
+            weights.get('slope') * (slope / np.max(slope)) +
+            weights.get('elev_norm') * elev_norm +
+            weights.get('curvature') * (curvature / np.max(curvature))
+        )**1.5
+
+    return complexity
+
+
+
 
 def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'), output_folder='outputs'):
     """
