@@ -13,6 +13,9 @@ It is possible to export netcdf files for a list of given variables. Otherwise, 
 ### Cryogrid Format
 [Cryogrid](https://github.com/CryoGrid/CryoGrid) is a model used for simulating the thermal regime of the ground, particularly applied to permafrost and hydrological application.
 
+### MuSa Format
+[MuSa](https://github.com/ealonsogzl/MuSA) is an assimilation toolbox for snow modeling. 
+
 ### Snowmodel Format
 Snowmodel is a snow model focused on wind redistribution. 
 

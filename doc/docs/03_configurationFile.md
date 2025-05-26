@@ -1,5 +1,3 @@
-# Project Configuration
-
 ## Project Organisation
 
 To run a TopoPyScale project, you need to have the following file structure:
