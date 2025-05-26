@@ -388,7 +388,7 @@ def era5_request_plev(dataset, year, month, day, bbox, target, product, time, pl
             "area": bbox,
             'variable': [
                 'geopotential', 'temperature', 'u_component_of_wind',
-                'v_component_of_wind', 'specific_humidity'
+                'v_component_of_wind', 'specific_humidity', 'relative_humidity'
             ],
             'pressure_level': plevels,
             'year': year,
