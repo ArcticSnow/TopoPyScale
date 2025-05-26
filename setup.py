@@ -71,7 +71,9 @@ setup(
                         'dask',
                         'configobj',
                         'munch',
+                        'cdo',
                         'gitpython',
-                        'zipfile'],
+                        'zipfile',
+                        'era5_downloader'],
     include_package_data=True
 )

@@ -14,12 +14,14 @@ import glob
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
+from TopoPyScale import topo_export as te
 import xarray as xr
 import cfgrib
 import os
 import zipfile
 import shutil
 import glob
+from cdo import *
 
 import era5_downloader as era5down
 
@@ -147,7 +149,8 @@ def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevel
 
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
-                    num_threads=10, surf_plev='surf', plevels=None, realtime=False, output_format='netcdf', download_format="unarchived", new_CDS_API=True):
+                    num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
+                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -169,6 +172,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         output_format (str): default is "netcdf", can be "grib".
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
+        rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
 
     Returns:
         Monthly era surface files stored in disk.
@@ -195,23 +199,29 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     df['month'] = df.dates.dt.month
     df['day'] = df.dates.dt.day
     df['year'] = df.dates.dt.year
-    if surf_plev == 'surf':
+
+    os.makedirs(eraDir / "daily", exist_ok=True)
+
+    if surf_plev.lower() == 'surf':
         df['dataset'] = 'reanalysis-era5-single-levels'
         if output_format == "netcdf":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / ("SURF_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dSURF_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
         if output_format == "grib":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / ("SURF_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
-    elif surf_plev == 'plev':
+            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dSURF_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
+    
+    elif surf_plev.lower() == 'plev':
         df['dataset'] = 'reanalysis-era5-pressure-levels'
         if output_format == "netcdf":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / ("PLEV_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dPLEV_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
         if output_format == "grib":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / ("PLEV_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
+            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dPLEV_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
         loc_list = []
         loc_list.extend([plevels]*df.shape[0])
         df['plevels'] = loc_list
+    
     else:
         sys.exit('ERROR: surf_plev can only be surf or plev')
+    
     df['file_exist'] = 0
     df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
     df['step'] = step
@@ -225,11 +235,11 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%m-%d'))
 
     if df.file_exist.sum() > 0:
-        print("ECWMF {} data found:".format(surf_plev.upper()))
+        print("ECWMF daily {} data found:".format(surf_plev.upper()))
         print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.name))
 
     if (df.file_exist == 0).sum() > 0:
-        print("Downloading {} from ECWMF:".format(surf_plev.upper()))
+        print("Downloading daily {} from ECWMF:".format(surf_plev.upper()))
         print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.name))
 
     download = df.loc[df.file_exist == 0]
@@ -271,18 +281,41 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     if realtime:
         if surf_plev == 'surf':
             # redownload current month to catch missing days in realtime mode.
-            era5_realtime_surf(eraDir, df.dataset[0], df.bbox[0], df.product_type[0])
+            era5_realtime_surf(eraDir / "daily", df.dataset[0], df.bbox[0], df.product_type[0])
 
         if surf_plev == 'plev':
             # redownload current month to catch missing days in realtime mode.
-            era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
+            era5_realtime_plev(eraDir / "daily", df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
 
     if new_CDS_API:
         # Since mid-2024, CDS API has changed variable name and the way it packages SURF variables. 
         # These two functions apply a small post process to get things in order.
-        process_SURF_file(str(eraDir))
-        remap_CDSbeta(str(eraDir))
+        if surf_plev == 'surf':
+            remap_CDSbeta(str(eraDir / "daily" / "dSURF*.nc"), file_type='surf')
+        if surf_plev == 'plev':
+            remap_CDSbeta(str(eraDir / "daily" / "dPLEV*.nc"), file_type='plev')
 
+    # code to merge daily files to monthly
+    # - [ ] write option earlier that checks also if monthly files already exist. improve logic that does not require to have both monthly and daily files
+    cdo = Cdo()
+    for year in df.year.unique():
+        print(f"---> Merging daily {surf_plev.upper()} files from {year}")
+        
+        if surf_plev == 'surf':
+            fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
+            fout = str(eraDir / ("SURF_%04d.nc" % (year)))
+            cdo.mergetime(input=fpat, output=fout)
+
+        if surf_plev == 'plev':
+            fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
+            fout = str(eraDir / ("PLEV_%04d.nc" % (year)))
+            cdo.mergetime(input=fpat, output=fout)
+
+    if rm_daily:
+        shutil.rmtree(eraDir / "daily")
+
+
+    print("===> ERA5 files ready")
 
 
 def era5_request_surf(dataset, year, month, day, bbox, target, product, time, output_format= "netcdf", download_format="unarchived"):
@@ -307,8 +340,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
     varnames = ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
                       'surface_solar_radiation_downwards','surface_pressure',
                       'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
-                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
-                      ]
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux']
 
     c = cdsapi.Client()
     c.retrieve(
@@ -326,6 +358,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
          },
         target)
     print(str(target) + " complete")
+    unzip_file(str(target))
 
 
 def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, output_format= "netcdf", download_format="unarchived"):
@@ -368,6 +401,8 @@ def era5_request_plev(dataset, year, month, day, bbox, target, product, time, pl
         },
         target)
     print(str(target) + " complete")
+    unzip_file(str(target))
+
 
 
 def era5_realtime_surf(eraDir, dataset, bbox, product ):
@@ -417,47 +452,6 @@ def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
     era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
 
 
-# def return_latest_date():
-# 	# method to return latest full date available in CDS
-#
-# 	print("WARNING: Ignore the following warning - this is due to requesting todays date with the intention to harvest the date returned in error message. There must be a cleaner way to get latest date....")
-# 	c = cdsapi.Client()
-#
-# 	# how to retrieve latest date that era5 data is available
-# 	try:
-# 	    # this will always fail but return the latest date in error message
-# 	    # should be a cleaner way of doing this with api?
-#
-# 		c = cdsapi.Client()
-#
-# 		# Retrieve the list of available files for the ERA5 dataset
-# 		res = c.retrieve("reanalysis-era5-single-levels", {
-# 		    "variable": "2m_temperature",
-# 		    "product_type": "reanalysis",
-# 		    "format": "json"
-# 		})
-#
-# 	except Exception as e:
-# 	    # Extract the latest date from the exception object
-# 	    exc_type = type(e).__name__
-# 	    exc_msg = str(e)
-# 	    print(f"Caught {exc_type} with message '{exc_msg}'")
-#
-# 	# Example string representing a date and time within a string
-# 	date_string = exc_msg
-# 	# Define the format string to match the input string
-# 	format_string = 'the request you have submitted is not valid. None of the data you have requested is available yet, please revise the period requested. The latest date available for this dataset is: %Y-%m-%d %H:%M:%S.%f.'
-# 	# Parse the date string and create a datetime object
-# 	latest_date = datetime.strptime(date_string, format_string)
-#
-# 	if latest_date.hour < 23:
-# 		# Subtract one day from the datetime object
-# 		latest_date = latest_date - timedelta(days=1)
-# 		# Print the updated datetime object
-#
-# 	return(latest_date)
-
-
 
 def return_last_fullday():
     """
@@ -490,10 +484,7 @@ def return_last_fullday():
     print("Current time (rounded down) in UTC:", current_time_utc_str)
     print("Last full day ERA5T data in UTC:", last_fullday_data_str)
 
-
     return (last_fullday_data_str)
-
-
 
 
 def grib2netcdf(gribname, outname=None):
@@ -503,143 +494,137 @@ def grib2netcdf(gribname, outname=None):
     Args:
         gribname: filename fo grib file to convert
     """
-
-    ds = xr.open_dataset(gribname, engine="cfgrib")
     if outname is None:
         outname = gribname[:-5] + ".nc"
 
-    ds.to_netcdf(outname)
+    cdo = Cdo()
+    cdo.copy(option='-f nc4', input=gribname, output=outname)
 
 
-
-def process_SURF_file( wdir):
+def unzip_file(file_path):
     """
-    Function to unpack and repack as NETCDF data sent by the new CDS API, which sends a ZIP file as NETCDF file.
+    Function to unpack and repack as NETCDF data sent by the new CDS API. CDS can send either weird zip file shipped as netcdf file for Surface data. 
+    The option of zip format can be used to download the data. 
     
     Args:
-        wdir: path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate
+        file_path: path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate/daily
     """
-
-    surf_files = glob.glob(wdir+"/SURF*.nc")
-
-    for file_path in surf_files:
-        original_file_path = file_path  # Keep track of the original file name
         
-        # Step 1: Try to open as a NetCDF file
-        try:
-            with xr.open_dataset(file_path) as ds:
-                print(f"{file_path} is a valid NetCDF file. No processing needed.")
-                return
-        except Exception:
-            print(f"{file_path} is not a valid NetCDF file. Checking if it's a ZIP file.")
-        
+    # Step 1: Try to open as a NetCDF file
+    try:
+        with xr.open_dataset(file_path) as ds:
+            print(f"{file_path} is a valid NetCDF file. No processing needed.")
+
+    except Exception:
+        print(f"{file_path} is not a valid NetCDF file. Checking if it's a ZIP file.")
+    
         # Step 2: Check if it's a ZIP file
-        if not zipfile.is_zipfile(file_path):
-            print(f"{file_path} is neither a valid NetCDF nor a ZIP file.")
-            return
+        if zipfile.is_zipfile(file_path):
+            if file_path[-3:]=='.nc':
+                print(f"{file_path} is neither a valid NetCDF nor a ZIP file.")
+            
+                # Step 3: Rename the file if it's actually a ZIP
+                zip_file_path = file_path.replace('.nc', '.zip')
+                os.rename(file_path, zip_file_path)
+                print(f"Renamed {file_path} to {zip_file_path} for processing.")
         
-        # Step 3: Rename the file if it's actually a ZIP
-        zip_file_path = file_path.replace('.nc', '.zip')
-        os.rename(file_path, zip_file_path)
-        print(f"Renamed {file_path} to {zip_file_path} for processing.")
-        
-        # Step 4: Unzip the file
-        unzip_dir = zip_file_path.replace('.zip', '')
-        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-            zip_ref.extractall(unzip_dir)
-        print(f"Unzipped {zip_file_path} to {unzip_dir}.")
-        
-        # Step 5: Merge `.nc` files inside the unzipped directory
-        nc_files = [os.path.join(unzip_dir, f) for f in os.listdir(unzip_dir) if f.endswith('.nc')]
-        if not nc_files:
-            print(f"No .nc files found in {unzip_dir}.")
-            return
-        
-        merged_file_path = os.path.join(wdir, os.path.basename(zip_file_path).replace('.zip', '.nc'))
-        try:
-            # Combine all `.nc` files
-            datasets = [xr.open_dataset(nc_file) for nc_file in nc_files]
-            merged_ds = xr.merge(datasets)  # Adjust dimension as needed
-            merged_ds.to_netcdf(merged_file_path)
-            print(f"Merged .nc files into {merged_file_path}.")
-        finally:
-            # Close datasets
-            for ds in datasets:
-                ds.close()
-        
-        # Step 6: Clean up
-        os.remove(zip_file_path)
-        shutil.rmtree(unzip_dir)
-        print(f"Deleted {zip_file_path} and {unzip_dir}.")
+            # Step 4: Unzip the file
+            unzip_dir = zip_file_path.replace('.zip', '')
+            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                zip_ref.extractall(unzip_dir)
+            print(f"Unzipped {zip_file_path} to {unzip_dir}.")
+            
+            # Step 5: Merge `.nc` files inside the unzipped directory
+            nc_files = [os.path.join(unzip_dir, f) for f in os.listdir(unzip_dir) if f.endswith('.nc')]
+            if not nc_files:
+                print(f"No .nc files found in {unzip_dir}.")
+                return
+            
+            merged_file_path = os.path.join(os.path.dirname(zip_file_path), os.path.basename(zip_file_path).replace('.zip', '.nc'))
+            try:
+                # Combine all `.nc` files
+                datasets = [xr.open_dataset(nc_file) for nc_file in nc_files]
+                merged_ds = xr.merge(datasets)  # Adjust dimension as needed
+                merged_ds.to_netcdf(merged_file_path)
+                print(f"Merged .nc files into {merged_file_path}.")
+
+            finally:
+                # Close datasets
+                for ds in datasets:
+                    ds.close()
+
+            # Step 6: Clean up
+            os.remove(zip_file_path)
+            shutil.rmtree(unzip_dir)
+            print(f"Deleted {zip_file_path} and {unzip_dir}.")
 
 
-def remap_CDSbeta(wdir):
+def remap_CDSbeta(file_pattern, file_type='SURF'):
     """
     Remapping of variable names from CDS beta to CDS legacy standard.
     
     Args:
-        wdir: path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate
+        file_pattern (str): path and pattern of the file to be remapped. example: 'inputs/climate/daily/dSURF_*.nc'
+        file_type (str): type of file: SURF or PLEV.  
     """
 
-    plev_files = glob.glob(wdir+"/PLEV*.nc")  # List of NetCDF files
-    surf_files = glob.glob(wdir+"/SURF*.nc")  # List of NetCDF files
+    flist = glob.glob(file_pattern)
 
-    for nc_file in plev_files:
-        try:
-            ds = xr.open_dataset(nc_file)
-            ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
-            ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
-
+    if file_type.lower() == 'plev':
+        for nc_file in flist:
             try:
-                ds = ds.drop_vars('number')
-            except:
-                print("variables not found")
+                ds = xr.open_dataset(nc_file)
+                ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
+                ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
 
+                try:
+                    ds = ds.drop_vars('number')
+                except:
+                    print("variables not found")
+
+                try:
+                    ds = ds.drop_vars('expver')
+                except:
+                    print("variables not found")
+
+                ds.to_netcdf(nc_file+ "_remap", mode='w')
+                # move remap back to orig name
+                os.rename(nc_file + "_remap", nc_file)
+            except:
+                print(nc_file+" already remapped or fc file.")
+
+    if file_type.lower() == 'surf':
+        for nc_file in flist:
             try:
-                ds = ds.drop_vars('expver')
+                ds = xr.open_dataset(nc_file)
+                ds = ds.rename({ 'valid_time' : 'time'})
+
+                try:
+                    #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
+                    #ds2 = ds.swap_dims({'valid_time': 'time'})
+                    ds = ds.drop_vars('ishf')
+                    ds = ds.drop_vars('ie')
+                    ds = ds.drop_vars('zust')
+                    ds = ds.drop_vars('tisr')
+                except:
+                    print("variables not found")
+
+                try:
+                    ds = ds.drop_vars('number')
+                except:
+                    print("variables not found")
+
+                try:
+                    ds = ds.drop_vars('expver')
+                except:
+                    print("variables not found")
+
+                ds.to_netcdf(nc_file + "_remap", mode='w')
+                # move remap back to orig name
+                os.rename(nc_file + "_remap", nc_file)
+
             except:
-                print("variables not found")
-
-
-            ds.to_netcdf(nc_file+ "_remap", mode='w')
-            # move remap back to orig name
-            os.rename(nc_file + "_remap", nc_file)
-        except:
-            print(nc_file+" already remapped or fc file.")
-
-
-    for nc_file in surf_files:
-        try:
-            ds = xr.open_dataset(nc_file)
-            ds = ds.rename({ 'valid_time' : 'time'})
-
-            try:
-                #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
-                #ds2 = ds.swap_dims({'valid_time': 'time'})
-                ds = ds.drop_vars('ishf')
-                ds = ds.drop_vars('ie')
-                ds = ds.drop_vars('zust')
-                ds = ds.drop_vars('tisr')
-            except:
-                print("variables not found")
-
-            try:
-                ds = ds.drop_vars('number')
-            except:
-                print("variables not found")
-
-            try:
-                ds = ds.drop_vars('expver')
-            except:
-                print("variables not found")
-
-
-            ds.to_netcdf(nc_file + "_remap", mode='w')
-            # move remap back to orig name
-            os.rename(nc_file + "_remap", nc_file)
-
-        except:
-            print(nc_file+" already remapped or fc file.")
+                print(nc_file+" already remapped or fc file.")
 
 
 

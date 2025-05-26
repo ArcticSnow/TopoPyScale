@@ -565,6 +565,10 @@ class Topoclass(object):
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
+        """
+        Function to execute downscaling
+        """
+
         downscaled_dir = self.config.outputs.downscaled
         f_pattern = self.config.outputs.file.downscaled_pt
         output_folder = self.config.outputs.path.name
@@ -656,16 +660,15 @@ class Topoclass(object):
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 
-        # delete tmp directories
-        if self.config.clean_up.delete_tmp_dirs:
+        # remove tmp directories
+        if self.config.clean_up.rm_tmp_dirs:
             shutil.rmtree(self.config.outputs.tmp_path, ignore_errors=True)
             shutil.rmtree(self.config.climate.tmp_path, ignore_errors=True)
 
     def get_era5(self):
         """
         Funtion to call fetching of ERA5 data
-        TODO:
-        - merge monthly data into one file (cdo?)- this creates massive slow down!
+
         """
         lonW = self.config.project.extent.get('lonW') - 0.4
         lonE = self.config.project.extent.get('lonE') + 0.4
@@ -699,9 +702,9 @@ class Topoclass(object):
         # if keyword exists in config set out_format to value or default to netcdf
         if self.config.climate[self.config.project.climate].cds_output_format:
             output_format = self.config.climate[self.config.project.climate].cds_output_format
-        # else set realtime to False
         else:
             output_format = 'netcdf'
+
         if self.config.climate[self.config.project.climate].cds_download_format:
             download_format = self.config.climate[self.config.project.climate].cds_download_format
         else: 
@@ -721,7 +724,9 @@ class Topoclass(object):
                 surf_plev='surf',
                 realtime=realtime,
                 output_format=output_format,
-                download_format=download_format
+                download_format=download_format,
+                new_CDS_API=True,
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily
             )
             # retrieve era5 plevels
             fe.retrieve_era5(
@@ -736,10 +741,12 @@ class Topoclass(object):
                 plevels=self.config.climate[self.config.project.climate].plevels,
                 realtime=realtime,
                 output_format=output_format,
-                download_format=download_format
+                download_format=download_format,
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily
             )
 
         elif data_repository == 'google_cloud_storage':
+            raise ValueError("WARNING: fetching ERA5 from Google Storage Cloud is not fully implemented yet")
 
             fe.fetch_era5_google(self.config.climate.path, self.config.project.start, 
                 self.config.project.end,
