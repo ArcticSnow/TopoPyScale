@@ -313,14 +313,13 @@ class Topoclass(object):
             if not os.path.isabs(mask_file):
                 mask_file = Path(self.config.project.directory, mask_file)
             # read mask TIFF
-            ds_mask = rio.open_rasterio(mask_file).to_dataset('band').rename({1: 'mask'})
+            ds_mask = xr.open_dataset(mask_file, engine='rasterio').rename({'band_data': 'mask'}).isel(band=0)
 
             # check if bounds and resolution match
-            dem = self.toposub.ds_param
-            if not ds_mask.rio.bounds() == dem.rio.bounds() or not ds_mask.rio.resolution() == dem.rio.resolution():
+            if not ds_mask.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_mask.rio.resolution() == self.toposub.ds_param.rio.resolution():
 
-                str_bounds = f"mask bounds: {ds_mask.rio.bounds()} \t|\t dem bounds: {dem.rio.bounds()}"
-                str_res = f"mask resoltuion: {ds_mask.rio.resoltuion()} \t|\t dem resoltuion: {dem.rio.resoltuion()}"
+                str_bounds = f"mask bounds: {ds_mask.rio.bounds()} \t|\t dem bounds: {self.toposub.ds_param.rio.bounds()}"
+                str_res = f"mask resoltuion: {ds_mask.rio.resoltuion()} \t|\t dem resoltuion: {self.toposub.ds_param.rio.resoltuion()}"
 
                 raise ValueError(
                     f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
@@ -340,23 +339,36 @@ class Topoclass(object):
                 groups_file = Path(self.config.project.directory, groups_file)
 
             # read cluster TIFF
-            ds_group = rio.open_rasterio(groups_file).to_dataset('band').rename({1: 'group'})
+            ds_group = xr.open_dataset(groups_file, engine='rasterio').rename({'band_data': 'mask'}).isel(band=0)
 
             # check if bounds and resolution match
-            dem = self.toposub.ds_param
-            if not ds_group.rio.bounds() == dem.rio.bounds() or not ds_group.rio.resolution() == dem.rio.resolution():
+            if not ds_group.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_group.rio.resolution() == self.toposub.ds_param.rio.resolution():
                 raise ValueError(
                     'The GeoTIFFS of the DEM and the MASK must have the same bounds/resolution. Please check.')
 
             # add cluster group
             df_param['cluster_group'] = ts.ds_to_indexed_dataframe(ds_group)['group'].astype(int)
 
-            groups = sorted(df_param.cluster_group.unique())
+            # create group dataframe
+            df_group = df_param[mask].groupby('cluster_group').slope.count()
+            df_group = df_groups.rename({'cluster_group':'nPix'})
+            df_group['relative_cover'] = df_group.nPix / df_group.nPix.sum()
+
+            if os.path.isfile(self.config.sampling.toposub.clustering_group_weights):
+                gw = pd.read_csv(self.config.sampling.toposub.clustering_group_weights)
+                if gw.weight.sum() != gw.shape[0]:
+                    raise ValueError(f'The sum of group weights within the mask must be equal to number of groups, n_group={gw.shape[0]}')
+                df_group['weights'] = gw.set_index('group').loc[df_group.index]
+            else:
+                df_group['weights'] = 1
+            groups = list(df_group.index)
+
             print(f'---> Split clustering into {len(groups)} groups.')
 
         # ----------cluster per group----------
         self.toposub.df_centroids = pd.DataFrame()
         i_clusters = 0
+
         for group in groups:
             if split_clustering:
                 print(f'cluster group: {group}')
@@ -367,8 +379,10 @@ class Topoclass(object):
                 df_subset = df_param[subset_mask]
 
                 # derive number of clusters
-                relative_cover = np.count_nonzero(subset_mask) / np.count_nonzero(mask)  # relative area of the group
-                n_clusters = int(np.ceil(self.config.sampling.toposub.n_clusters * relative_cover))
+                #relative_cover = np.count_nonzero(subset_mask) / np.count_nonzero(mask)  # relative area of the group
+
+                # add option to prescribe a table of n_cluster_weights per group
+                n_clusters = int(np.ceil(self.config.sampling.toposub.n_clusters * df_group[group].relative_cover))
 
                 df_scaled, scaler = ts.scale_df(df_subset, features=self.config.sampling.toposub.clustering_features)
                 if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
