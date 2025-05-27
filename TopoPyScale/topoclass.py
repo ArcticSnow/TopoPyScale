@@ -372,6 +372,9 @@ class Topoclass(object):
         for group in groups:
             if split_clustering:
                 print(f'cluster group: {group}')
+                n_clusters = int(df_group.loc[group].n_clusters)
+            else:
+                n_clusters = self.config.sampling.toposub.n_clusters
             subset_mask = mask & (df_param.cluster_group == group)
 
             # add here check in case a group bleed over the mask. 
@@ -383,12 +386,12 @@ class Topoclass(object):
                     df_centroids, _, cluster_labels = ts.kmeans_clustering(
                         df_scaled,
                         features=self.config.sampling.toposub.clustering_features,
-                        n_clusters=int(df_group.loc[group].n_clusters),
+                        n_clusters=n_clusters,
                         seed=self.config.sampling.toposub.random_seed)
                 elif self.config.sampling.toposub.clustering_method.lower() == 'minibatchkmean':
                     df_centroids, _, cluster_labels = ts.minibatch_kmeans_clustering(
                         df_scaled,
-                        n_clusters=int(df_group.loc[group].n_clusters),
+                        n_clusters=n_clusters,
                         features=self.config.sampling.toposub.clustering_features,
                         n_cores=self.config.project.CPU_cores,
                         seed=self.config.sampling.toposub.random_seed)
@@ -407,7 +410,7 @@ class Topoclass(object):
                 self.toposub.df_centroids = pd.concat([self.toposub.df_centroids, df_centroids])
 
                 # update total clusters
-                i_clusters += int(df_group.loc[group].n_clusters)
+                i_clusters += n_clusters
             else:
                 print(f"---> Group {group} is not fully within masked area")
 
