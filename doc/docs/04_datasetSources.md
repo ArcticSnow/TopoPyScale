@@ -22,7 +22,7 @@ Google Cloud Storage maintains a publicly accessible repository of the ERA5 data
 
 ## Digital Elevation models
 
-**WARNING: A the moment TopoPyScale only accepts projections that are cartesian in the metric system (e.g. UTM)**
+**WARNING: At the moment TopoPyScale only accepts projections that are cartesian in the metric system (e.g. UTM)**
 
 ### SRTM (global)
 [SRTM](https://en.wikipedia.org/wiki/Shuttle_Radar_Topography_Mission) is a global product produced by [NASA](https://www.earthdata.nasa.gov/sensors/srtm). There are 2 basic products available, the 30m and 90m resolution. Useful links to download tiles:

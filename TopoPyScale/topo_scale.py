@@ -45,7 +45,7 @@ import sys, time
 import datetime as dt
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
-
+from cdo import *
 import os, glob
 from pathlib import Path
 from typing import Union
@@ -395,94 +395,122 @@ def downscale_climate(project_directory,
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
-    flist_PLEV = glob.glob(f'{climate_directory}/PLEV*.nc')
-    flist_SURF = glob.glob(f'{climate_directory}/SURF*.nc')
+    with_cdo = True 
+    with_xarray = False
+    if with_cdo:
+        def _subset_climate_dataset_cdo(fpattern, row, type='plev'):
 
-    if 'object' in list(df_centroids.dtypes):
-        pass
-    else:
-        df_centroids['dummy'] = 'nn'
+            cdo = Cdo()
+            fout = str(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_name}.nc')
+            cdo.sellonlatbox(f'{row.lon-0.35},{row.lon+0.35},{row.lat-0.35},{row.lat+0.35}', input=cdo.mergetime(input=fpattern), output=fout)
 
-    def _open_dataset_climate(flist):
 
-        ds_ = xr.open_mfdataset(flist, parallel=False, concat_dim="time", combine='nested', coords='minimal')
+        row_list = []
+        for _, row in df_centroids.iterrows():
+            print(f"---> {str(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_name}.nc')}")
+            _subset_climate_dataset_cdo(f'{climate_directory}/PLEV*.nc', row, type='plev')
+            _subset_climate_dataset_cdo(f'{climate_directory}/SURF*.nc', row, type='surf')
 
-        # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
-        # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
-        # https://code.mpimet.mpg.de/boards/1/topics/8961
-        # https://confluence.ecmwf.int/display/CUSF/ERA5+CDS+requests+which+return+a+mixture+of+ERA5+and+ERA5T+data
-        try:
-            # in case of there being an expver dimension and it has two or more values, select first value
-            expverN = ds_["expver"].values[0]
-            # create new datset when this dimoension only has a single value
-            ds_ = ds_.sel(expver=expverN)
-            # finally this drops the coordinate
-            ds_ = ds_.drop("expver")
-        except:
-            print("No ERA5T  PRESSURE data present with additional dimension <expver>")
+        #fun_param = zip([f'{climate_directory}/PLEV*.nc']* len(row_list),row_list, ['plev'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
+        #tu.multithread_pooling(_subset_climate_dataset_cdo, fun_param, n_threads=n_core)
 
-        return ds_
+        #fun_param = zip([f'{climate_directory}/SURF*.nc']* len(row_list),row_list, ['surf'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
+        #tu.multithread_pooling(_subset_climate_dataset_cdo, fun_param, n_threads=n_core)
 
-    def _subset_climate_dataset(ds_, row, type='plev'):
-        print('Preparing {} for point {}'.format(type, row.point_name))
-        # =========== Extract the 3*3 cells centered on a given point ============
-        ind_lat = np.abs(ds_.latitude.values - row.lat).argmin()
-        ind_lon = np.abs(ds_.longitude.values - row.lon).argmin()
 
-        #print(f'Cluster number: {row.point_ind}')
-        #print(f'ind_lat: {[ind_lat.values - 1, ind_lat.values, ind_lat.values + 1]}')
-        #print(f'ind_lon: {ind_lon}')
+    elif with_xarray:
 
-        ds_tmp = ds_.isel(latitude=[ind_lat - 1, ind_lat, ind_lat + 1],
-                              longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
+        flist_PLEV = glob.glob(f'{climate_directory}/PLEV*.nc')
+        flist_SURF = glob.glob(f'{climate_directory}/SURF*.nc')
 
-        # convert geopotential height to elevation (in m), normalizing by g
-        ds_tmp['z'] = ds_tmp.z / g
+        if 'object' in list(df_centroids.dtypes):
+            pass
+        else:
+            df_centroids['dummy'] = 'nn'
 
-        comp = dict(zlib=True, complevel=5)
-        encoding = {var: comp for var in ds_tmp.data_vars}
-        ds_tmp.to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_name}.nc', engine='h5netcdf',
-                         encoding=encoding)
-        ds_ = None
-        ds_tmp = None
+        def _open_dataset_climate(flist):
+
+            ds_ = xr.open_mfdataset(flist, parallel=False, concat_dim="time", combine='nested', coords='minimal')
+
+            # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
+            # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
+            # https://code.mpimet.mpg.de/boards/1/topics/8961
+            # https://confluence.ecmwf.int/display/CUSF/ERA5+CDS+requests+which+return+a+mixture+of+ERA5+and+ERA5T+data
+            try:
+                # in case of there being an expver dimension and it has two or more values, select first value
+                expverN = ds_["expver"].values[0]
+                # create new datset when this dimoension only has a single value
+                ds_ = ds_.sel(expver=expverN)
+                # finally this drops the coordinate
+                ds_ = ds_.drop("expver")
+            except:
+                print("No ERA5T  PRESSURE data present with additional dimension <expver>")
+
+            return ds_
+
+
+        def _subset_climate_dataset(ds_, row, type='plev'):
+            print('Preparing {} for point {}'.format(type, row.point_name))
+            # =========== Extract the 3*3 cells centered on a given point ============
+            ind_lat = np.abs(ds_.latitude.values - row.lat).argmin()
+            ind_lon = np.abs(ds_.longitude.values - row.lon).argmin()
+
+            #print(f'Cluster number: {row.point_ind}')
+            #print(f'ind_lat: {[ind_lat.values - 1, ind_lat.values, ind_lat.values + 1]}')
+            #print(f'ind_lon: {ind_lon}')
+            print("reach 0")
+            ds_tmp = ds_.isel(latitude=[ind_lat - 1, ind_lat, ind_lat + 1],
+                                  longitude=[ind_lon - 1, ind_lon, ind_lon + 1]).copy()
+            print("reach 1")
+
+            # convert geopotential height to elevation (in m), normalizing by g
+            ds_tmp['z'] = ds_tmp.z / g
+
+            comp = dict(zlib=True, complevel=5)
+            encoding = {var: comp for var in ds_tmp.data_vars}
+            print('reach 2')
+            ds_tmp.load().to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_name}.nc', engine='h5netcdf',
+                             encoding=encoding)
+            ds_ = None
+            ds_tmp = None
+            
+        #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+        #    to avoid chunk warning   
         
-    #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
-    #    to avoid chunk warning   
-    
-    with dask.config.set(**{'array.slicing.split_large_chunks': True}):
-        ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+        with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+            ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
 
 
-    #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
-    # Check tvec is within time period of ds_plev.time or return error
-    if ds_plev.time.min() > tvec.min():
-        raise ValueError(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
-        return
-    elif ds_plev.time.max() < tvec.max():
-        raise ValueError(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
-        return
-    else:
-        ds_plev = ds_plev.sel(time=tvec.values)
+        #ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+        # Check tvec is within time period of ds_plev.time or return error
+        if ds_plev.time.min() > tvec.min():
+            raise ValueError(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
+            return
+        elif ds_plev.time.max() < tvec.max():
+            raise ValueError(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
+            return
+        else:
+            ds_plev = ds_plev.sel(time=tvec.values)
 
-    row_list = []
-    ds_list = []
-    for _, row in df_centroids.iterrows():
-        row_list.append(row)
-        ds_list.append(ds_plev)
+        row_list = []
+        ds_list = []
+        for _, row in df_centroids.iterrows():
+            row_list.append(row)
+            ds_list.append(ds_plev)
 
-    fun_param = zip(ds_list, row_list, ['plev'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
-    tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
-    fun_param = None
-    ds_plev = None
-    ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
-    ds_list = []
-    for _, _ in df_centroids.iterrows():
-        ds_list.append(ds_surf)
+        fun_param = zip(ds_list, row_list, ['plev'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
+        tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
+        fun_param = None
+        ds_plev = None
+        ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
+        ds_list = []
+        for _, _ in df_centroids.iterrows():
+            ds_list.append(ds_surf)
 
-    fun_param = zip(ds_list, row_list, ['surf'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
-    tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
-    fun_param = None
-    ds_surf = None
+        fun_param = zip(ds_list, row_list, ['surf'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
+        tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
+        fun_param = None
+        ds_surf = None
 
     # Preparing list to feed into Pooling
     surf_pt_list = []
