@@ -319,7 +319,7 @@ class Topoclass(object):
             if not ds_mask.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_mask.rio.resolution() == self.toposub.ds_param.rio.resolution():
 
                 str_bounds = f"mask bounds: {ds_mask.rio.bounds()} \t|\t dem bounds: {self.toposub.ds_param.rio.bounds()}"
-                str_res = f"mask resoltuion: {ds_mask.rio.resoltuion()} \t|\t dem resoltuion: {self.toposub.ds_param.rio.resoltuion()}"
+                str_res = f"mask resolution: {ds_mask.rio.resolution()} \t|\t dem resolution: {self.toposub.ds_param.rio.resolution()}"
 
                 raise ValueError(
                     f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
