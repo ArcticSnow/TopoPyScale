@@ -23,6 +23,7 @@ import shutil
 import glob
 from cdo import *
 
+import era5_downloader as era5down
 
 
 var_surf_name_google = {'geopotential_at_surface':'z',
@@ -44,6 +45,77 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
+
+
+def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
+
+    print('\n')
+    print(f'---> Downloading ERA5 climate forcing from Google Cloud Storage')
+
+    
+    bbox = (lonW, latS, lonE, latN)
+    time_step_dict = {'1H': (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23),
+                    '3H': (0,3,6,9,12,15,18,21),
+                    '6H': (0,6,12,18)}
+
+    # prepare download of PLEVEL variables
+    local_plev_path = eraDir + "PLEV_{time:%Y%m%d}.nc"
+    era5_plevel = era5down.ERA5Downloader(
+        bbox_WSEN=bbox,  # Bounding box: West, South, East, North
+        dest_path=local_plev_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
+        levels=plevels,  # Pressure levels (can also be None)
+        region_name='dummy',
+        variables=[
+                'geopotential', 'temperature', 'u_component_of_wind',
+                'v_component_of_wind', 'specific_humidity'
+            ],
+        time_steps = time_step_dict.get(step), 
+    )
+
+    # prepare download of SURFACE variables
+    local_surf_path = eraDir + "SURF_{time:%Y%m%d}.nc"
+    era5_surf = era5down.ERA5Downloader(
+        bbox_WSEN=bbox,  # Bounding box: West, South, East, North
+        dest_path=local_surf_path,  # can also be an S3 bucket with format "s3://bucket-name/era5-{region_name}/...
+        levels=plevels,  # Pressure levels (can also be None)
+        region_name='dummy',
+        variables=['geopotential_at_surface','2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+                      'surface_solar_radiation_downwards','surface_pressure',
+                      'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
+                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+                      ],
+        time_steps = time_step_dict.get(step), 
+    )
+
+
+    # date_range will make sure to include the month of the latest date (endDate) provided
+    date_vec = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='D', inclusive='both')
+    date_list = list(date_vec.strftime("%Y-%m-%d").values)
+  
+    if num_threads==1:
+        print("Downloading data sequentially")
+        for date in date_list:
+            era5_surf.download(date)
+            era5_plevel.download(date)
+
+    elif num_threads>1:
+        print(f"Downloading data in parallel with {num_threads} threads.")
+        # pool multithread for fetching surface data
+        pool = ThreadPool(num_threads)
+        pool.starmap(era5_surf.download, zip(date_list))
+        pool.close()
+        pool.join()
+
+        # pool multithread for fetching surface data
+        pool = ThreadPool(num_threads)
+        pool.starmap(era5_plev.download, zip(date_list))
+        pool.close()
+        pool.join()
+    else:
+        raise ValueError("download_type not available. Currently implemented: sequential, parallel")
+
+
+
 def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, 
     bucket='gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'):
     '''
@@ -63,8 +135,8 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
         time=slice(startDate, endDate), 
         latitude=slice(latN,latS), 
         longitude=slice(lonE, lonW),
-        levels=plevels)
-    ds_plev.to_zarr('PLEV.zarr')
+        level=plevels)
+    ds_plev.to_zarr('PLEV.zarr')    
     ds_plev = None
     ds_surf = ds.sel(
         time=slice(startDate, endDate), 
@@ -155,6 +227,11 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     
     df['file_exist'] = 0
     df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
+
+    # if file does not exist, check if data already combined into yearly netcdf
+    print("TBI: automatically check if daily data already in yearly concatenated netcdf files")
+    print("--- If data already dowloaded, do not fetch data ")
+
     df['step'] = step
     df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
     df['bbox'] = df.step.apply(lambda x: bbox)
