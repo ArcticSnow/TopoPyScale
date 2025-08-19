@@ -39,10 +39,6 @@ Downscaled variable includes:
 ### Release Installation
 To install the latest release, in a Python 3.9/3.10 virtual environment simply use `pip`. It is adviced to first install dependencies using conda. More detailed installation instructions [here](./01_install.md).
 
-```bash
-pip install topopyscale
-```
-
 As of now, `TopoPyScale` uses the Copernicus `cdsapi` to download data. For this to work, you will need to setup the Copernicus API key in your system. Follow [this tutorial](https://cds.climate.copernicus.eu/api-how-to#install-the-cds-api-key) after creating an account with Copernicus. 
 
 On Linux, create a file `nano ~/.cdsapirc` with inside:
