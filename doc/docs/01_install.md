@@ -3,7 +3,6 @@
 ## Python Environment Preparation
 `TopoPyScale` is tested for Python 3.9. You may create a new virtual environment using conda prior to installation.
 
-**WARNING:** TopoPyScale requires the library [topocalc](https://github.com/USDA-ARS-NWRC/topocalc/tree/main) that is no longer maintained and itself requires Numpy<2.0.
 
 **Option 1 (recommended):**
 ```bash
@@ -33,7 +32,7 @@ pip install topopyscale
 
 TopoPyScale has been tested on the OS:
 - [x] Linux Ubuntu
-- [ ] MacOS
+- [x] MacOS
 - [ ] Windows
 
 ## Setting up `cdsapi`
