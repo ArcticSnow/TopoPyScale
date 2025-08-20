@@ -51,4 +51,4 @@ markdown_extensions:
 plugins:
   - search
   - bibtex:
-      bib_file: doc/docs/refs.bib
+      bib_file: docs/refs.bib
