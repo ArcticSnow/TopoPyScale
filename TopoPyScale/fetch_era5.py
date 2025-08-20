@@ -47,24 +47,23 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
-def convert_to_zarr(fin, fout, chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, compressor=None):
+def convert_to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, compressor=None, mode='w'):
     """
     Function to convert stack of netcdf to a zarr archive.
 
     Args:
-        fin (str): filename pattern (with path) to netcdf files to be open using open_mfdataset
+        ds (dataset): dataset to convert to zarr
         fout (str): name of the zarr archive
         chuncks (dict): {'x':3, 'y':3, 'time':1000, 'level':7}
         compressor (obj): default is None, otherwise use an encoder compatible with zarr3. Blosc is default
     """
-    ds = xr.open_mfdataset(fin)
     vars = list(ds.keys())
 
     if compressor is None:
         compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
 
     encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
-    ds.chunk(chuncks).to_zarr(fout,  zarr_format=3, encoding=encoder, mode='w')
+    ds.chunk(chuncks).to_zarr(fout,  zarr_format=3, encoding=encoder, mode=mode)
 
 
 def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
@@ -173,7 +172,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
                     num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
-                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False):
+                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False, store_as_zarr=True):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -196,6 +195,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
         rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
+        store_as_zarr (bool): default True
 
     Returns:
         Monthly era surface files stored in disk.
@@ -340,8 +340,37 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
             cdo.mergetime(input=fpat, output=fout)
 
     if rm_daily:
-        shutil.rmtree(eraDir / "daily")
+        try:
+            shutil.rmtree(eraDir / "daily")
+            print('---> Daily files removed')
+        except:
+            raise IOError('deletion of daily files issue')
 
+    if store_as_zarr:
+
+        # create PLEV zarr
+        dplev = xr.open_mfdataset(str(eraDir/'PLEV*.nc'))
+        convert_to_zarr(dplev, str(eraDir / 'ERA5.zarr'), 
+                        chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, 
+                        compressor=None,
+                        mode='w')
+        dplev = None
+
+        # create SURF zarr
+        dsurf = xr.open_mfdataset(str(eraDir/'SURF*.nc'))
+        dsurf = dsurf.rename({'z':'z_surf'})
+        convert_to_zarr(dsurf, str(eraDir / 'ERA5.zarr'), 
+                        chuncks={'x':3, 'y':3, 'time':1000}, 
+                        compressor=None,
+                        mode='a')
+        print('---> ERA5 Zarr archive created')
+
+        # remove yearly netcdf
+        for file in eraDir.glob('SURF*.nc'):
+            file.unlink()
+        for file in eraDir.glob('PLEV*.nc'):
+            file.unlink()
+        print('---> Yearly netcdf deleted')
 
     print("===> ERA5 files ready")
 
