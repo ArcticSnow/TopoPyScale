@@ -22,7 +22,7 @@ import zipfile
 import shutil
 import glob
 from cdo import *
-from numcodecs.blosc import Blosc
+from zarr.codecs import BloscCodec
 
 # [ ] remove this dependencie era5_downloader bringing little value
 import era5_downloader as era5down
@@ -47,20 +47,24 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
-def convert_to_zarr(dir, fin, fout, chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, compressor=None):
+def convert_to_zarr(fin, fout, chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, compressor=None):
     """
     Function to convert stack of netcdf to a zarr archive.
-    """
-    p = Path(dir)
-    ds = xr.open_mfdataset(dir / fin)
 
+    Args:
+        fin (str): filename pattern (with path) to netcdf files to be open using open_mfdataset
+        fout (str): name of the zarr archive
+        chuncks (dict): {'x':3, 'y':3, 'time':1000, 'level':7}
+        compressor (obj): default is None, otherwise use an encoder compatible with zarr3. Blosc is default
+    """
+    ds = xr.open_mfdataset(fin)
     vars = list(ds.keys())
 
     if compressor is None:
-        compressor = Blosc(cname='lz4', clevel=5)
+        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
 
-    encoder = dict(zip(vars, [compressor]*len(vars)))
-    ds.chunk(chuncks).to_zarr(fout, encoding=encoder)
+    encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
+    ds.chunk(chuncks).to_zarr(fout,  zarr_format=3, encoding=encoder, mode='w')
 
 
 def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
