@@ -351,7 +351,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         # create PLEV zarr
         dplev = xr.open_mfdataset(str(eraDir/'PLEV*.nc'))
         convert_to_zarr(dplev, str(eraDir / 'ERA5.zarr'), 
-                        chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, 
+                        chuncks={'longitude':3, 'latitude':3, 'time':1000, 'level':7}, 
                         compressor=None,
                         mode='w')
         dplev = None
@@ -360,7 +360,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         dsurf = xr.open_mfdataset(str(eraDir/'SURF*.nc'))
         dsurf = dsurf.rename({'z':'z_surf'})
         convert_to_zarr(dsurf, str(eraDir / 'ERA5.zarr'), 
-                        chuncks={'x':3, 'y':3, 'time':1000}, 
+                        chuncks={'longitude':3, 'latitude':3, 'time':1000}, 
                         compressor=None,
                         mode='a')
         print('---> ERA5 Zarr archive created')
