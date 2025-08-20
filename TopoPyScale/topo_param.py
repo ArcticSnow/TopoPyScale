@@ -21,8 +21,9 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import os, shutil
 from TopoPyScale import topo_export as te
-import rioxarray
 from pathlib import Path
+
+
 
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
     """
@@ -145,7 +146,7 @@ def compute_dem_complexity(elev, slope, weights={'slope': 0.5, 'elev_norm':0.3, 
     elev_smooth = gaussian_filter(elev, sigma=1)
 
     if sum(weights.values()) != 1:
-        raise ValueError('Sum of weights mus be equal to 1')
+        raise ValueError('Sum of weights must be equal to 1')
 
     curvature = np.abs(laplace(elev_smooth))
     complexity = (
@@ -156,6 +157,21 @@ def compute_dem_complexity(elev, slope, weights={'slope': 0.5, 'elev_norm':0.3, 
 
     return complexity
 
+
+def open_dem(dem_file):
+    """
+    Function to quickly open a DEM raster using xarray and removing the band dimension, combersome when dealing with DEM
+
+    Args:
+        dem_file (str): path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
+
+    Returns:  
+        dataset: x, y, elevation
+    """
+    tmp = xr.open_dataset(dem_file, engine='rasterio')
+    ds = tmp.band_data.isel(band=0).to_dataset()
+    ds = ds.rename({"band_data": 'elevation'})
+    return ds
 
 
 
@@ -179,8 +195,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     else:
         if Path(dem_file).is_file():
             print(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
-            ds = rioxarray.open_rasterio(dem_file).to_dataset('band')
-            ds = ds.rename({1: 'elevation'})
+            ds = open_dem(dem_file)
 
         else:
             raise ValueError(f'ERROR: No DEM or dataset available')
@@ -190,6 +205,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
     dem_arr = ds.elevation.values
+
     if ('slope' not in var_in) or ('aspect' not in var_in):
         print('Computing slope and aspect ...')
         slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
@@ -241,8 +257,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
          
     """
     print('\n---> Computing horizons with {} degree increments'.format(azimuth_inc))
-    ds = rioxarray.open_rasterio(dem_file).to_dataset('band')
-    ds = ds.rename({1: 'elevation'})
+    ds = open_dem(dem_file)
     dx = ds.x.diff('x').median().values
 
     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc) # center the azimuth in middle of the bin
@@ -281,7 +296,8 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
                           'units':'degree'
                       }
                       )
-    te.to_netcdf(da.to_dataset(), fname=output_directory / fname)
+    #te.to_netcdf(da.to_dataset(), fname=output_directory / fname)
+    da.to_dataset().to_netcdf(output_directory / fname)
     return da
 
 
