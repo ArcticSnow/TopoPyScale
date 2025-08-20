@@ -22,7 +22,9 @@ import zipfile
 import shutil
 import glob
 from cdo import *
+from numcodecs.blosc import Blosc
 
+# [ ] remove this dependencie era5_downloader bringing little value
 import era5_downloader as era5down
 
 
@@ -45,6 +47,20 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
+def convert_to_zarr(dir, fin, fout, chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, compressor=None):
+    """
+    Function to convert stack of netcdf to a zarr archive.
+    """
+    p = Path(dir)
+    ds = xr.open_mfdataset(dir / fin)
+
+    vars = list(ds.keys())
+
+    if compressor is None:
+        compressor = Blosc(cname='lz4', clevel=5)
+
+    encoder = dict(zip(vars, [compressor]*len(vars)))
+    ds.chunk(chuncks).to_zarr(fout, encoding=encoder)
 
 
 def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
