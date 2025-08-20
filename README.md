@@ -31,7 +31,6 @@ And the original method it relies on:
 Kristoffer Aalstad has a Matlab implementation: https://github.com/krisaalstad/TopoLAB
 
 ## Contribution Workflow
-**Please follow these simple rules:**
 1. All contribution welcome!
 2. Found a bug -> Check the issue page. If you have a solution let us know. 
 2. No idea on moving furhter -> then create a new [issue](https://github.com/ArcticSnow/TopoPyScale/issues) 
