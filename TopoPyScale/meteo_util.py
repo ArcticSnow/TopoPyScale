@@ -155,7 +155,7 @@ def mixing_ratio(ds, var):
 
 def t_rh_2_dewT(ds, var):
     """
-    Function to compute dea temperature from air temperature and relative humidity
+    Function to compute dew temperature from air temperature and relative humidity
 
     Args:
         ds: dataset with temperature ('t') and relative humidity ('r') variables

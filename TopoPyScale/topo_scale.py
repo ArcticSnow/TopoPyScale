@@ -113,13 +113,6 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     surf_interp = dww.sum(['longitude', 'latitude'],
                               keep_attrs=True)  # compute horizontal inverse weighted horizontal interpolation
 
-    # ========= Converting z from [m**2 s**-2] to [m] asl =======
-    plev_interp.z.values = plev_interp.z.values / g
-    plev_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}
-
-    surf_interp.z.values = surf_interp.z.values / g  # convert geopotential height to elevation (in m), normalizing by g
-    surf_interp.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
-
     # ============ Extract specific humidity (q) for both dataset ============
     surf_interp = mu.dewT_2_q_magnus(surf_interp, mu.var_era_surf)
     plev_interp = mu.t_rh_2_dewT(plev_interp, mu.var_era_plevel)
@@ -408,12 +401,6 @@ def downscale_climate(project_directory,
         df_centroids['dummy'] = 'nn'
 
 
-
-
-
-
-
-
     def _open_dataset_climate(flist):
 
         ds_ = xr.open_mfdataset(flist, parallel=False, concat_dim="time", combine='nested', coords='minimal')
@@ -433,7 +420,6 @@ def downscale_climate(project_directory,
             print("No ERA5T  PRESSURE data present with additional dimension <expver>")
 
         return ds_
-
 
     def _subset_climate_dataset(ds_, row, type='plev'):
         print('Preparing {} for point {}'.format(type, row.point_name))

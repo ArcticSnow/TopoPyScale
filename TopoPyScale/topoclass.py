@@ -575,7 +575,7 @@ class Topoclass(object):
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
-    def downscale_climate(self):
+    def downscale_climate(self, use_zarr=False):
         """
         Function to execute downscaling
         """
@@ -651,21 +651,27 @@ class Topoclass(object):
             del ds
 
         else:
-            ta.downscale_climate(self.config.project.directory,
-                                 self.config.climate.path,
-                                 self.config.outputs.path,
-                                 self.toposub.df_centroids,
-                                 self.da_horizon,
-                                 self.ds_solar,
-                                 self.config.dem.epsg,
-                                 self.config.project.start,
-                                 self.config.project.end,
-                                 self.config.climate[self.config.project.climate].timestep,
-                                 self.config.toposcale.interpolation_method,
-                                 self.config.toposcale.LW_terrain_contribution,
-                                 self.config.climate.precip_lapse_rate,
-                                 self.config.outputs.file.downscaled_pt,
-                                 self.config.project.CPU_cores)
+            if not use_zarr:
+                ta.downscale_climate(self.config.project.directory,
+                                     self.config.climate.path,
+                                     self.config.outputs.path,
+                                     self.toposub.df_centroids,
+                                     self.da_horizon,
+                                     self.ds_solar,
+                                     self.config.dem.epsg,
+                                     self.config.project.start,
+                                     self.config.project.end,
+                                     self.config.climate[self.config.project.climate].timestep,
+                                     self.config.toposcale.interpolation_method,
+                                     self.config.toposcale.LW_terrain_contribution,
+                                     self.config.climate.precip_lapse_rate,
+                                     self.config.outputs.file.downscaled_pt,
+                                     self.config.project.CPU_cores)
+            elif use_zarr:
+
+                cds = ta.ClimateDownscaler()
+            else:
+                print('deadend')
 
         self.downscaled_pts = ta.read_downscaled(f'{downscaled_dir}/{f_pattern}')
         # update plotting class variables
