@@ -6,7 +6,7 @@ Methods to execute downscaling using TopoScale method.
 WARNING: Dask worker parameters must be fine tune to your machine (local, cluster or whaterver). If workers go to "pause" because of memory limit, the processing stops.
 
 TODO:
-- [ ] implement another method using multiprocessing
+- [x] implement another method using multiprocessing
 - [ ] make Dask worker parameters flexible. 
 - [ ] try pushing data to a Zarr store for outputs. Currently going to individual netcdf files
 - [ ] See how to potentially automate setting Dask worker config based on the number of core, and the memory size of one job.
@@ -14,7 +14,7 @@ TODO:
 """
 
 
-import zarr
+from zarr.codecs import BloscCodec
 from dask.distributed import LocalCluster, Client
 import numpy as np
 from datetime import datetime
@@ -72,6 +72,9 @@ class ClimateDownscaler:
         self.start_date = start_date
         self.end_date = end_date
 
+        self.output_format = 'zarr'
+        self.store_name = 'down.zarr'
+
         tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
         n_digits = len(str(self.df_centroids.cluster_labels.max()))
         self.meta = {'interp_method': interp_method,
@@ -87,20 +90,21 @@ class ClimateDownscaler:
 
         
         # Create output zarr store
-        #self.setup_output_store()
+        #if self.output_format.lower() == 'zarr':
+        	#self.setup_output_store()
 
-    def setup_output_store(self):
+    #def setup_output_store(self):
         """Setup the output Zarr store with proper structure"""
         # Create output directory if it doesn't exist
-        Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
+        #Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
         
         # Create the output zarr store
-        self.output_store = zarr.open(self.output_path, mode='w')
+        #with zarr.open(self.output_path / self.store_name, mode='w') as output_store:
         
-        # Add metadata
-        self.output_store.attrs['created_at'] = datetime.utcnow().isoformat()
-        self.output_store.attrs['created_by'] = 'Author Name'
-        self.output_store.attrs['source_dataset'] = self.input_zarr_path
+	        # Add metadata
+	        #output_store.attrs['created_at'] = datetime.utcnow().isoformat()
+	        #output_store.attrs['created_by'] = 'Author Name'
+	        #output_store.attrs['source_dataset'] = self.era5_zarr_path
 
     def create_subset_indices(self, row, start_date, end_date, tstep):
         """Create slice objects for subsetting."""
@@ -122,8 +126,11 @@ class ClimateDownscaler:
              'tvec':tvec})
 
 
-
     def downscale_atmo(self, row, subset, meta, ds_solar, da_horizon):
+    	"""
+    	Downscaling method following the toposcale method introduced by J. Fiddes et al (2012)
+    	"""
+
     	# Physical constants
     	g = 9.81  # Acceleration of gravity [ms^-1]
     	R = 287.05  # Gas constant for dry air [JK^-1kg^-1]
@@ -349,14 +356,6 @@ class ClimateDownscaler:
     	                    'standard_name': 'shortwave_radiation_downward'}
     	down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
     	                            'standard_name': 'shortwave_diffuse_radiation_downward'}
-    	ver_dict = tu.get_versionning()
-    	down_pt.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
-    	                 'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
-    	                  'package_version':ver_dict.get('package_version'),
-    	                  'git_commit': ver_dict.get('git_commit'),
-    	                 'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
-    	                 'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
     	return down_pt
 
 
@@ -371,14 +370,30 @@ class ClimateDownscaler:
             							meta=self.meta, 
             							ds_solar=self.ds_solar.sel(point_name=subset_indices.get('point_name')), 
             							da_horizon=self.da_horizon)
-            
+            ver_dict = tu.get_versionning()
+            result.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
+	    	                 'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+	    	                  'package_version':ver_dict.get('package_version'),
+	    	                  'git_commit': ver_dict.get('git_commit'),
+	    	                 'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+	    	                 'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             # Create a group for this subset
             #subset_group = self.output_store.create_group(f'subset_{pt_id}')
+
+            if self.output_format.lower() == 'netcdf':
             
-            comp = dict(zlib=True, complevel=5)
-            encoding = {var: comp for var in result.data_vars}
-            result.to_netcdf(self.output_path / 'downscaled' / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_id'))),
-                      engine='h5netcdf', encoding=encoding, mode='a')
+	            comp = dict(zlib=True, complevel=5)
+	            encoding = {var: comp for var in result.data_vars}
+	            result.to_netcdf(self.output_path / 'downscaled' / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_id'))),
+	                      engine='h5netcdf', encoding=encoding, mode='a')
+            elif self.output_format.lower() == 'zarr':
+	            vars = list(result.keys())
+	            comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+	            encoder = dict(zip(vars, [{'compressors': comp}]*len(vars)))
+	            result = result.expand_dims(dim='point_name', axis=0)
+	            result.to_zarr(self.output_path / self.store_name, mode='a-', encoding=encoder, zarr_format=3, append_dim='point_name')
+            else:
+	            raise ValueError('Only netcdf or zarr available')
             
         except Exception as e:
             raise ValueError(f"Error processing subset")
@@ -420,10 +435,11 @@ class ClimateDownscaler:
             
             return client.gather(futures)
 
+
     def downscale_parallel(self, method='multicore'):
-    	if method is 'multicore':
+    	if method == 'multicore':
     		self.multicore_parallel_process_multiple_subsets(self.n_workers)
-    	elif method is 'dask':
+    	elif method == 'dask':
     		self.dask_parallel_process_multiple_subsets()
     	else:
     		raise ValueError('Method not available')
