@@ -2,6 +2,15 @@
 S. Filhol, 2025
 
 Methods to execute downscaling using TopoScale method.
+
+WARNING: Dask worker parameters must be fine tune to your machine (local, cluster or whaterver). If workers go to "pause" because of memory limit, the processing stops.
+
+TODO:
+- [ ] implement another method using multiprocessing
+- [ ] make Dask worker parameters flexible. 
+- [ ] try pushing data to a Zarr store for outputs. Currently going to individual netcdf files
+- [ ] See how to potentially automate setting Dask worker config based on the number of core, and the memory size of one job.
+- [ ] incorporate method into TopoClass
 """
 
 
@@ -351,7 +360,6 @@ class ClimateDownscaler:
     	return down_pt
 
 
-    
     def process_and_store_subset(self, subset_indices):
 
         try:
@@ -375,8 +383,19 @@ class ClimateDownscaler:
         except Exception as e:
             raise ValueError(f"Error processing subset")
 
+    def multicore_parallel_process_multiple_subsets(self, n_core=4):
 
-    def dask_parallel_process_multiple_subsets(self, n_workers: int = None) -> list:
+    	indices_list = []
+    	n = self.df_centroids.shape[0]
+    	for _, row in self.df_centroids.iterrows():
+    		indices_list.append(self.create_subset_indices(row, self.start_date, self.end_date, f"{self.meta.get('tstep')}h"))
+
+    	fun_param = zip(indices_list)  # construct here the tuple that goes into the pooling for arguments
+    	tu.multicore_pooling(self.process_and_store_subset, fun_param, n_core)
+    	#fun_param = None
+
+
+    def dask_parallel_process_multiple_subsets(self):
         """Process multiple subsets in parallel and store results to disk."""
         client_kwargs = {}
         #if n_workers is not None:
@@ -391,7 +410,7 @@ class ClimateDownscaler:
             print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
             
             futures = []
-            for i, row in self.df_centroids.iterrows():
+            for _, row in self.df_centroids.iterrows():
                 indices = self.create_subset_indices(row, self.start_date, self.end_date, f"{self.meta.get('tstep')}h")
                 future = client.submit(
                     self.process_and_store_subset,
@@ -400,3 +419,11 @@ class ClimateDownscaler:
                 futures.append(future)
             
             return client.gather(futures)
+
+    def downscale_parallel(self, method='multicore'):
+    	if method is 'multicore':
+    		self.multicore_parallel_process_multiple_subsets(self.n_workers)
+    	elif method is 'dask':
+    		self.dask_parallel_process_multiple_subsets()
+    	else:
+    		raise ValueError('Method not available')
