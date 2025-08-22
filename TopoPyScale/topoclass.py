@@ -585,15 +585,15 @@ class Topoclass(object):
         f_pattern = self.config.outputs.file.downscaled_pt
         output_folder = self.config.outputs.path.name
 
-        if '*' not in f_pattern:
+        if (f_pattern is not None) and ('*' not in f_pattern):
             raise ValueError(
                 f'ERROR: The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
 
-        # clean directory from files with the same downscaled output file pattern (so they get replaced)
-        existing_files = sorted(downscaled_dir.glob(f_pattern))
-        for file in existing_files:
-            file.unlink()
-            print(f'existing file {file.name} removed.')
+            # clean directory from files with the same downscaled output file pattern (so they get replaced)
+            existing_files = sorted(downscaled_dir.glob(f_pattern))
+            for file in existing_files:
+                file.unlink()
+                print(f'existing file {file.name} removed.')
 
         if self.config.project.split.IO:
             raise Warning("This section of the code has been tested for a while. It may be prone to bugs. Not compatible with Zarr system.")
