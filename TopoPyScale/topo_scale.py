@@ -435,7 +435,6 @@ def downscale_climate(project_directory,
 
         comp = dict(zlib=True, complevel=5)
         encoding = {var: comp for var in ds_tmp.data_vars}
-        print('reach 2')
         #ds_tmp.load().to_netcdf(output_directory / 'tmp' / f'ds_{type}_pt_{row.point_name}.nc', engine='h5netcdf',
         #                 encoding=encoding)
         

@@ -65,9 +65,7 @@ class ClimateDownscaler:
                  lw_terrain_flag=True,
                  precip_lapse_rate_flag=False,
                  file_pattern='down_pt*.nc',
-                 store_name='downscaled.zarr',
-                 n_core=4,
-                 dask_worker=None):
+                 store_name=None):
         """
         Initialize the parallel processor for zarr datasets.
         
@@ -76,11 +74,10 @@ class ClimateDownscaler:
             output_path (str): Path to store the computed results
             array_path (str): Path to the specific array within the zarr group (if dataset is a group)
         """
-        self.era5_zarr_path = era5_zarr_path
         self.output_path = Path(output_path)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.ERA = xr.open_zarr(era5_zarr_path)
+        self.ERA = xr.open_zarr(str(era5_zarr_path))
         self.df_centroids = df_centroids
         self.ds_solar = ds_solar
         self.da_horizon = da_horizon
@@ -93,8 +90,6 @@ class ClimateDownscaler:
         self.start_date = start_date
         self.end_date = end_date
         self.tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
-
-        
 
         tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
         n_digits = len(str(self.df_centroids.cluster_labels.max()))
@@ -109,13 +104,27 @@ class ClimateDownscaler:
                                   'lw_terrain_flag':lw_terrain_flag}
 
         
-        # Create output zarr store if specified output to zarr
-        if str(self.output_path)[-5:] == '.zarr':
-            self.output_format = 'zarr'
-            self.store_name = store_name
-            self.setup_output_store()
-        else:
-            self.output_format = 'netcdf'
+        # Logic to setup output name
+        # Create output zarr store if specified output to be zarr store
+        if (store_name is not None):
+            if store_name[-5:] == '.zarr':
+                self.output_format = 'zarr'
+                self.store_name = store_name
+                self.setup_output_store()
+            else:
+                raise ValueError("Store_name must be xxx.zarr")
+
+            if file_pattern is not None:
+                raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
+
+        elif file_pattern is not None:
+            if file_pattern[-4:] == '*.nc':
+                self.output_format = 'netcdf'
+            else:
+                raise ValueError("file_pattern must finish with *.nc")
+
+            if store_name is not None:
+                raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
 
 
     def setup_output_store(self):
@@ -443,7 +452,7 @@ class ClimateDownscaler:
             raise ValueError(f"Error processing subset")
 
     def multicore_parallel_process_multiple_subsets(self, n_core=4):
-
+        start_time = time.time()
         indices_list = []
         n = self.df_centroids.shape[0]
         for _, row in self.df_centroids.iterrows():
@@ -451,18 +460,16 @@ class ClimateDownscaler:
 
         fun_param = zip(indices_list)  # construct here the tuple that goes into the pooling for arguments
         tu.multicore_pooling(self.process_and_store_subset, fun_param, n_core)
-        #fun_param = None
+        print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
 
 
     def dask_parallel_process_multiple_subsets(self, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
         """Process multiple subsets in parallel and store results to disk."""
-        client_kwargs = {}
-        #if n_workers is not None:
-        #    client_kwargs['n_workers'] = n_workers
         
+        start_time = time.time()
         cluster = LocalCluster(**dask_worker)
 
-        with Client(cluster, **client_kwargs) as client:
+        with Client(cluster) as client:
             print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
             
             futures = []
@@ -475,11 +482,12 @@ class ClimateDownscaler:
                 futures.append(future)
             
             return client.gather(futures)
+        print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
 
-
-    def downscale_parallel(self, parallel_method='multicore', dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
+    def downscale_parallel(self, parallel_method='multicore', n_core=4, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
+        
         if parallel_method == 'multicore':
-            self.multicore_parallel_process_multiple_subsets(self.n_workers)
+            self.multicore_parallel_process_multiple_subsets(n_core)
         elif parallel_method == 'dask':
             self.dask_parallel_process_multiple_subsets(dask_worker)
         else:

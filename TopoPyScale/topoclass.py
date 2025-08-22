@@ -394,7 +394,7 @@ class Topoclass(object):
                         df_scaled,
                         n_clusters=n_clusters,
                         features=self.config.sampling.toposub.clustering_features,
-                        n_cores=self.config.project.CPU_cores,
+                        n_cores=self.config.project.parallelization.setting.multicore.CPU_cores,
                         seed=self.config.sampling.toposub.random_seed)
                 else:
                     raise ValueError(
@@ -527,7 +527,7 @@ class Topoclass(object):
                                                       end,
                                                       self.config.climate[self.config.project.climate].timestep,
                                                       str(self.config.dem.epsg),
-                                                      self.config.project.CPU_cores,
+                                                      self.config.project.parallelization.setting.multicore.CPU_cores,
                                                       self.time_splitter.ds_solar_flist[i],
                                                       self.config.outputs.path,
                                                       method_solar=self.config.solar_position_method)
@@ -543,7 +543,7 @@ class Topoclass(object):
                                                   self.config.project.end,
                                                   self.config.climate[self.config.project.climate].timestep,
                                                   str(self.config.dem.epsg),
-                                                  self.config.project.CPU_cores,
+                                                  self.config.project.parallelization.setting.multicore.CPU_cores,
                                                   self.config.outputs.file.ds_solar,
                                                   self.config.outputs.path)
 
@@ -558,7 +558,7 @@ class Topoclass(object):
         else:
             self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
                                                  self.config.dem.horizon_increments,
-                                                 self.config.project.CPU_cores,
+                                                 self.config.project.parallelization.setting.multicore.CPU_cores,
                                                  self.config.outputs.file.da_horizon,
                                                  self.config.outputs.path)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
@@ -576,7 +576,7 @@ class Topoclass(object):
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
-    def downscale_climate(self, use_zarr=False):
+    def downscale_climate(self):
         """
         Function to execute downscaling
         """
@@ -596,6 +596,7 @@ class Topoclass(object):
             print(f'existing file {file.name} removed.')
 
         if self.config.project.split.IO:
+            raise Warning("This section of the code has been tested for a while. It may be prone to bugs. Not compatible with Zarr system.")
             for i, start in enumerate(self.time_splitter.start_list):
                 print()
                 end = self.time_splitter.end_list[i]
@@ -619,7 +620,7 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate.precip_lapse_rate,
                                      fname,
-                                     self.config.project.CPU_cores)
+                                     self.config.project.parallelization.setting.multicore.CPU_cores)
 
             for pt_id in self.toposub.df_centroids.point_name.values:
                 print(f'Concatenating point {pt_id}')
@@ -652,7 +653,7 @@ class Topoclass(object):
             del ds
 
         else:
-            if not use_zarr:
+            if self.config.climate.era5.zarr_store is None:
                 ta.downscale_climate(self.config.project.directory,
                                      self.config.climate.path,
                                      self.config.outputs.path,
@@ -667,20 +668,22 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate.precip_lapse_rate,
                                      self.config.outputs.file.downscaled_pt,
-                                     self.config.project.CPU_cores)
-            elif use_zarr:
+                                     self.config.project.parallelization.setting.multicore.CPU_cores)
+            
+            elif self.config.climate.era5.zarr_store is not None:
 
                 if (self.config.outputs.variables is None) or (self.config.outputs.variables=='all'):
                     self.config.outputs.variables = tz.varout_default
-                if 
 
+
+                era5_zarr_path = self.config.climate.path / Path(self.config.climate.era5.zarr_store)
                 cda = tz.ClimateDownscaler(
-                            era5_zarr_path=self.config.era5_zarr_path,
-                            output_path=self.config.outputs.path,
+                            era5_zarr_path=era5_zarr_path,
+                            output_path=downscaled_dir,
                             df_centroids=self.toposub.df_centroids,
                             da_horizon=self.da_horizon,
                             ds_solar=self.ds_solar,
-                            target_EPSG=self.dem.epsg,
+                            target_EPSG=self.config.dem.epsg,
                             start_date=self.config.project.start,
                             end_date=self.config.project.end,
                             tstep=self.config.climate[self.config.project.climate].timestep,
@@ -688,15 +691,22 @@ class Topoclass(object):
                             interp_method=self.config.toposcale.interpolation_method,
                             lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
                             precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
-                            file_pattern='down_pt*.nc',
-                            store_name='downscaled.zarr',
-                            n_core=self.config.project.CPU_cores,
-                            
+                            file_pattern=self.config.outputs.file.downscaled_pt,
+                            store_name=self.config.outputs.file.zarr_store                            
                     )
-                if parallel_method.lower() == 'multicore':
-                    cda.downscale_parallel(parallel_method='multicore')
-                elif parallel_method.lower() == 'dask':
-                    cda.downscale_parallel(parallel_method='dask', dask_worker=self.config.project.dask_worker)
+
+                if self.config.project.parallelization.downscaling_method.lower() == 'multicore':
+                    cda.multicore_parallel_process_multiple_subsets(n_core=self.config.project.parallelization.setting.multicore.CPU_cores)
+                
+                elif self.config.project.parallelization.downscaling_method.lower() == 'dask':
+                    dask_worker={
+                        'n_workers': self.config.project.parallelization.setting.dask.n_workers,
+                        'threads_per_worker': self.config.project.parallelization.setting.dask.threads_per_worker,
+                        'memory_target_fraction': self.config.project.parallelization.setting.dask.memory_target_fraction,
+                        'memory_limit': self.config.project.parallelization.setting.dask.memory_limit
+                    }
+                    cda.dask_parallel_process_multiple_subsets(dask_worker=self.config.project.dask_worker)
+                
                 else:
                     raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
             else:
@@ -772,7 +782,8 @@ class Topoclass(object):
                 output_format=output_format,
                 download_format=download_format,
                 new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
+                store_as_zarr=self.config.climate.era5.zarr_store
             )
             # retrieve era5 plevels
             fe.retrieve_era5(
@@ -788,7 +799,9 @@ class Topoclass(object):
                 realtime=realtime,
                 output_format=output_format,
                 download_format=download_format,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily
+                new_CDS_API=True,
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
+                store_as_zarr=self.config.climate.era5.zarr_store
             )
 
         elif data_repository == 'google_cloud_storage':
