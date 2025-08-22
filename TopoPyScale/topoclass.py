@@ -35,6 +35,7 @@ from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_sub as ts
+from TopoPyScale import topo_scale_zarr as tz 
 
 
 class Topoclass(object):
@@ -669,7 +670,35 @@ class Topoclass(object):
                                      self.config.project.CPU_cores)
             elif use_zarr:
 
-                cds = ta.ClimateDownscaler()
+                if (self.config.outputs.variables is None) or (self.config.outputs.variables=='all'):
+                    self.config.outputs.variables = tz.varout_default
+                if 
+
+                cda = tz.ClimateDownscaler(
+                            era5_zarr_path=self.config.era5_zarr_path,
+                            output_path=self.config.outputs.path,
+                            df_centroids=self.toposub.df_centroids,
+                            da_horizon=self.da_horizon,
+                            ds_solar=self.ds_solar,
+                            target_EPSG=self.dem.epsg,
+                            start_date=self.config.project.start,
+                            end_date=self.config.project.end,
+                            tstep=self.config.climate[self.config.project.climate].timestep,
+                            varout=self.config.outputs.variables,
+                            interp_method=self.config.toposcale.interpolation_method,
+                            lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
+                            precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
+                            file_pattern='down_pt*.nc',
+                            store_name='downscaled.zarr',
+                            n_core=self.config.project.CPU_cores,
+                            
+                    )
+                if parallel_method.lower() == 'multicore':
+                    cda.downscale_parallel(parallel_method='multicore')
+                elif parallel_method.lower() == 'dask':
+                    cda.downscale_parallel(parallel_method='dask', dask_worker=self.config.project.dask_worker)
+                else:
+                    raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
             else:
                 print('deadend')
 
