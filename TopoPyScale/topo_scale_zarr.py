@@ -194,7 +194,6 @@ class ClimateDownscaler:
         Ys = Ys.reshape(lons.shape)
 
         # ========= Converting z from [m**2 s**-2] to [m] asl =======
-        print(subset.z)
         subset.z.values = subset.z.values / g
         subset.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}
 
@@ -481,8 +480,9 @@ class ClimateDownscaler:
                 )
                 futures.append(future)
             
+            print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
             return client.gather(futures)
-        print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
+        
 
     def downscale_parallel(self, parallel_method='multicore', n_core=4, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
         
