@@ -59,6 +59,10 @@ or in bibtex:
 
 ```
 
+## Use cases
+
+`TopoPyScale` has been used in a number of projects. We are trying to keep track on the usage we hear about or you let us know about on the page [Use Cases](00_use_cases.md). **So please drop us a line about your project to be featured on the page** :)
+
 ## Contribution
 
 We welcome, and are pleased for any new contribution to this downscaling toolbox. So if you have suggestions, correction and addition to the current code, please come join us on [GitHub](https://github.com/ArcticSnow/TopoPyScale) and talk to us on the [Discussion](https://github.com/ArcticSnow/TopoPyScale/discussions) page.

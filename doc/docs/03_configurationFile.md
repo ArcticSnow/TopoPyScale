@@ -13,6 +13,7 @@ my_project/
             └── SURF*.nc
     ├── outputs/
             ├── tmp/
+            └── downscaled/
     ├── pipeline.py (OPTIONAL: script for the downscaling instructions)
     └── config.yml
 

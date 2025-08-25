@@ -11,7 +11,7 @@ nav:
     - Datasets: 04_datasetSources.md
     - Outputs: 05_outputs.md
     - Examples: 06_examples.md
-    - Clustering Methods: 07_topo_sub_methods.md
+    - Features: 07_features.md
     - Development: 08_development.md
     - FAQ: 20_FAQ.md
     - API:
