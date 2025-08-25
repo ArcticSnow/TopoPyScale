@@ -268,3 +268,13 @@ Klevavatnet,SN53480,60.7192,7.2085,402259.379226592,6732844.21093029
 
 This file will loaded in `mp.toposub.df_centroids` dataframe.
 
+## Parallelization
+
+TopoPyScale uses parallelization for a number of steps. For most, the Python library multiprocessing is used to either handle multithreads (management of downloading request from cds server), or multicore (clustering, solar geometry, downscaling). An optional method using [Dask](https://docs.dask.org/en/stable/) is available to perform the dowscaling step. 
+
+Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).  
+
+
+## Zarr
+
+As of now, we are starting using the file format Zarr to improve IO methods. Zarr is a recent archival format for multidimensional datasets. It behaves like a database, from whic only the data of interest are being loaded into memory. There exist a number of Zarr repository of the ERA5 dataset (Google, AWS, etc.) for which we do not have yet well establisehed  method to pull data from. However, when downloading data from CDS, it is now possible to download these data as `netcdf` as before, but then convert them localy into a zarr archive. This improves significantly the downscaling speed (x1.4). Example code will soon be available to demonstrate using these newly added options.
