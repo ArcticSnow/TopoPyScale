@@ -542,14 +542,9 @@ def pymodis_download(wdir, tile, STARTDATE, ENDDATE):
 
 
 def projFromLandform(pathtolandform):
-    src = gdal.Open(pathtolandform, gdal.GA_ReadOnly)
-    proj = osr.SpatialReference(wkt=src.GetProjection())
-    epsg = proj.GetAttrValue('AUTHORITY', 1)
-
-    ulx, xres, xskew, uly, yskew, yres = src.GetGeoTransform()
-    lrx = ulx + (src.RasterXSize * xres)
-    lry = uly + (src.RasterYSize * yres)
-    bbox = [ulx, lry, lrx, uly]
+    with rasterio.open(pathtolandform) as dataset:
+        epsg = dataset.crs.to_epsg()
+        bbox = dataset.bounds
 
     return epsg, bbox
 
