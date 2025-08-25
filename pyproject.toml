@@ -28,7 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13"
 ]
 dependencies = [
-    "xarray[complete]=>2025.07.1",
+    "xarray[complete]>=2025.07.1",
     "rioxarray",
     "matplotlib",
     "scikit-learn",
