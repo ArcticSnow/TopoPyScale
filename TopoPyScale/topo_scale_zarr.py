@@ -469,7 +469,7 @@ class ClimateDownscaler:
         """Process multiple subsets in parallel and store results to disk."""
         
         start_time = time.time()
-        cluster = LocalCluster(**dask_worker)
+        cluster = LocalCluster(processes=True, **dask_worker)
 
         with Client(cluster) as client:
             print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
