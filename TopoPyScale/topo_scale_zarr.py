@@ -228,8 +228,11 @@ class ClimateDownscaler:
         # ============ Extract specific humidity (q) for both dataset ============
         subset_interp = mu.dewT_2_q_magnus(subset_interp, mu.var_era_surf)
 
+
         #subset_interp['rh'] = mu.q_2_rh(subset_interp.t, subset_interp.tp, subset_interp.q)
         subset_interp = mu.t_rh_2_dewT(subset_interp, mu.var_era_plevel)
+
+        subset_interp = subset_interp.persist()
 
         down_pt = xr.Dataset(coords={
                 'time': subset_interp.time,
