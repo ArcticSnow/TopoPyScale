@@ -9,19 +9,19 @@ Retrieve ecmwf data with cdsapi.
 import pandas as pd
 import xarray as xr
 import numpy as np
+import dask
 from zarr.codecs import BloscCodec
 from datetime import datetime
 
 import cdsapi, os, sys
 from dateutil.relativedelta import *
-import glob
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
 from TopoPyScale import topo_export as te
-
+from TopoPyScale import topo_utils as tu
+from pathlib import Path
 import cfgrib
-import os
 import zipfile
 import shutil
 import glob
@@ -30,6 +30,9 @@ from cdo import *
 
 # [ ] remove this dependencie era5_downloader bringing little value
 import era5_downloader as era5down
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 var_surf_name_google = {'geopotential_at_surface':'z',
@@ -51,18 +54,23 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
-
-
-
-
-
+def append_nc_to_zarr_region(year, ncfile, zarrstore, surf=False):
+    ncfile = str(ncfile)
+    print(f"---> Appending {ncfile} to {zarrstore}")
+    dp = xr.open_dataset(ncfile, chunks='auto')
+    if surf:
+        dp = dp.rename({'z':'z_surf'})
+    dp.to_zarr(zarrstore, mode='a',region='auto', align_chunks=True)
+    dp = None
 
 def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
                                     zarrout='inputs/climate/ERA5.zarr', 
                                     chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13}, 
                                     compressor=None,
                                     plev_name='PLEV_*.nc',
-                                    surf_name='SURF_*.nc'):
+                                    surf_name='SURF_*.nc',
+                                    parallelize=False,
+                                    n_cores=4):
     """
     Function to convert a stack of netcdf PLEV and SURF files to a zarr store. Optimizing chunking based on auto detection by dask.
     
@@ -81,8 +89,8 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     # lazy load stack of PLEV netcdf to grab dimensions and attributes
     ds = xr.open_mfdataset(str(pn / plev_name), parallel=True, chunks='auto')
     tvec = ds.time.values
-    za1 = dask.array.zeros((len(tvec), ds.level.shape[0], ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
-    za2 = dask.array.zeros((len(tvec), ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
+    za1 = dask.array.empty((len(tvec), ds.level.shape[0], ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
+    za2 = dask.array.empty((len(tvec), ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
 
     dd = xr.Dataset(
         coords={
@@ -109,31 +117,42 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
         attrs=ds.attrs
     )
 
+    chunks_plev = chunks
+    chunks_surf = {'time':chunks.get('time'), 'latitude':chunks.get('latitude'),'longitude':chunks.get('longitude')}
+
     dd = dd.chunk(chunks=chunks).persist()
     vars = list(ds.keys())
     if compressor is None:
         compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
     encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
     dd.to_zarr(zarrout, mode='w',zarr_format=3, encoding=encoder)
-    ds = None
+    ds.close()
+    del ds
 
+    if not parallelize:
+        # loop through the years. This could be sent to multicore eventually
+        for year in pd.to_datetime(tvec).year.unique():
+            print(f"---> Appending PLEV year {year} to {pz.name}")
+            dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
+            dp.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
+            dp.close()
+            del dp
 
-    # loop through the years. This could be sent to multicore eventually
-    for year in np.unique(ds.time.dt.year.values):
-        print(f"---> Appending PLEV year {year} to {pz.name}")
-        dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
-        dp = dp.chunk(chunks=chunks).persist()
-        dp.to_zarr(str(pz), mode='a',region='auto')
-        dp = None
+            print(f"---> Appending SURF year {year} to {pz.name}")
+            du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
+            du = du.rename({'z':'z_surf'})
+            du.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
+            du.close()
+            del du
+    else:
+        flist = pn.glob(plev_name)
+        fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(False)*len(list(flist))])
+        tu.multicore_pooling(append_nc_to_zarr_region, fun_param, n_cores)
 
-        print(f"---> Appending SURF year {year} to {pz.name}")
-        du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
-        du = du.chunk(chunks=chunks).persist()
-        du = du.rename({'z':'z_surf'})
-
-        du.to_zarr(str(pz), mode='a',region='auto')
-        du = None
-
+        flist = pn.glob(surf_name)
+        fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(True)*len(list(flist))])
+        tu.multicore_pooling(append_nc_to_zarr_region, fun_param, n_cores)
+    print("Conversion done :)")
 
 
 def to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':8760, 'level':7}, compressor=None, mode='w'):
