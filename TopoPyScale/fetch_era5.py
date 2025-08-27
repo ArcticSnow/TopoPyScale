@@ -447,9 +447,6 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
             fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
             cdo.mergetime(input=fpat, output=fout)
 
-    # convert yearly files to individual timeseries per variable
-    os.system(command)
-
     if rm_daily:
         try:
             shutil.rmtree(eraDir / "daily")
