@@ -40,18 +40,20 @@ ds_surf = xr.open_mfdataset('inputs/climate/SUR*.nc')
 
 fe.convert_to_zarr(ds_plev, 
 					'inputs/climate/ERA5.zarr', 
-					chuncks={'x':3, 'y':3, 'time':1000, 'level':7},
+					chuncks={'latitude':3, 'longitude':3, 'time':1000, 'level':7},
 					compressor=None, 
 					mode='w')
 
 fe.convert_to_zarr(ds_surf, 
 					'inputs/climate/ERA5.zarr', 
-					chuncks={'x':3, 'y':3, 'time':1000},
+					chuncks={'latitude':3, 'longitude':3, 'time':1000},
 					compressor=None, 
 					mode='a')
 ```
 
 This will first create the Zarr store filled with the data from `ds_plev` (notice the `mode='w'`), and append the `ds_surf` data to the same zarr store (notice `mode='a'`). The default compression is using Blosc (when compressor is set to `None`. It is possible to use any other compression options supported by the Zarr library. 
+
+While this step improves significantly computation afterwards, converting the stack of netcdf to zarr can be long.
 
 ## Parallelization
 
@@ -118,4 +120,4 @@ As part of TPS, we integrated a number of functions to interact with the snow mo
 
 ## Realtime
 
-**@Joel can you write smthg**
+**@Joel can you write smthg?**

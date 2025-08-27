@@ -7,7 +7,11 @@ Retrieve ecmwf data with cdsapi.
 """
 # !/usr/bin/env python
 import pandas as pd
+import xarray as xr
+import numpy as np
+from zarr.codecs import BloscCodec
 from datetime import datetime
+
 import cdsapi, os, sys
 from dateutil.relativedelta import *
 import glob
@@ -15,14 +19,14 @@ import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
 from TopoPyScale import topo_export as te
-import xarray as xr
+
 import cfgrib
 import os
 import zipfile
 import shutil
 import glob
 from cdo import *
-from zarr.codecs import BloscCodec
+
 
 # [ ] remove this dependencie era5_downloader bringing little value
 import era5_downloader as era5down
@@ -47,15 +51,101 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
-def convert_to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':1000, 'level':7}, compressor=None, mode='w'):
+
+
+
+
+
+
+def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+                                    zarrout='inputs/climate/ERA5.zarr', 
+                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13}, 
+                                    compressor=None,
+                                    plev_name='PLEV_*.nc',
+                                    surf_name='SURF_*.nc'):
     """
-    Function to convert stack of netcdf to a zarr archive.
+    Function to convert a stack of netcdf PLEV and SURF files to a zarr store. Optimizing chunking based on auto detection by dask.
+    
+    Args:
+        path_to_netcdfs (str): path to yearly netcdf files of PLEV and SURF
+        zarrout (str): path and name of the output zarr store to be created 
+        chunks (dict): dictionnary indicating the size of the chunk for the output zarr store. Good practice to have time chunk equivalent to a yearly file size. 
+        compressor (obj): Compressor object to use for encoding. See Zarr compression. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+        plev_name (str): file pattern of the netcdf containing the pressure levels. Use * instead of the year 
+        surf_name (str): file pattern of the netcdf containing the surface level. Use * instead of the year 
+
+    """
+    pn = Path(path_to_netcdfs)
+    pz = Path(zarrout)
+
+    # lazy load stack of PLEV netcdf to grab dimensions and attributes
+    ds = xr.open_mfdataset(str(pn / plev_name), parallel=True, chunks='auto')
+    tvec = ds.time.values
+    za1 = dask.array.zeros((len(tvec), ds.level.shape[0], ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
+    za2 = dask.array.zeros((len(tvec), ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
+
+    dd = xr.Dataset(
+        coords={
+            'time':tvec,
+            'longitude': ds.longitude.values,
+            'latitude': ds.latitude.values,
+            'level': ds.level.values,
+            },
+        data_vars={
+            'z': (('time', 'level', 'latitude', 'longitude'),  za1),
+            't': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'u': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'v': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'q': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'r': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'z_surf': (('time', 'latitude', 'longitude'),  za2),
+            'd2m': (('time', 'latitude', 'longitude'),  za2),
+            'sp': (('time', 'latitude', 'longitude'),  za2),
+            'strd': (('time', 'latitude', 'longitude'),  za2),
+            'ssrd': (('time', 'latitude', 'longitude'),  za2),
+            'tp': (('time', 'latitude', 'longitude'),  za2),
+            't2m': (('time', 'latitude', 'longitude'),  za2),
+            },
+        attrs=ds.attrs
+    )
+
+    dd = dd.chunk(chunks=chunks).persist()
+    vars = list(ds.keys())
+    if compressor is None:
+        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+    encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
+    dd.to_zarr(zarrout, mode='w',zarr_format=3, encoding=encoder)
+    ds = None
+
+
+    # loop through the years. This could be sent to multicore eventually
+    for year in np.unique(ds.time.dt.year.values):
+        print(f"---> Appending PLEV year {year} to {pz.name}")
+        dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
+        dp = dp.chunk(chunks=chunks).persist()
+        dp.to_zarr(str(pz), mode='a',region='auto')
+        dp = None
+
+        print(f"---> Appending SURF year {year} to {pz.name}")
+        du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
+        du = du.chunk(chunks=chunks).persist()
+        du = du.rename({'z':'z_surf'})
+
+        du.to_zarr(str(pz), mode='a',region='auto')
+        du = None
+
+
+
+def to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':8760, 'level':7}, compressor=None, mode='w'):
+    """
+    Function to convert a dataset to a zarr store.
 
     Args:
         ds (dataset): dataset to convert to zarr
         fout (str): name of the zarr archive
-        chuncks (dict): {'x':3, 'y':3, 'time':1000, 'level':7}
+        chuncks (dict): {'x':3, 'y':3, 'time':8760, 'level':7}
         compressor (obj): default is None, otherwise use an encoder compatible with zarr3. Blosc is default
+        mode (str): mode to write to zarr store. See the xarray to_zarr() documentation
     """
     vars = list(ds.keys())
 
@@ -335,8 +425,11 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 
         if surf_plev == 'plev':
             fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
-            fout = str(eraDir / ("PLEV_%04d.nc" % (year)))
+            fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
             cdo.mergetime(input=fpat, output=fout)
+
+    # convert yearly files to individual timeseries per variable
+    os.system(command)
 
     if rm_daily:
         try:
@@ -344,37 +437,6 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
             print('---> Daily files removed')
         except:
             raise IOError('deletion of daily files issue')
-
-    if store_as_zarr is not None:
-        # create PLEV zarr
-        mode = 'w'
-        if (eraDir / store_as_zarr).exists():
-                mode = 'a'
-
-        if surf_plev == 'surf':                
-            dplev = xr.open_mfdataset(str(eraDir/'PLEV*.nc'))
-            convert_to_zarr(dplev, str(eraDir / 'ERA5.zarr'), 
-                            chuncks={'longitude':3, 'latitude':3, 'time':1000, 'level':7}, 
-                            compressor=None,
-                            mode=mode)
-            dplev = None
-
-        # create SURF zarr
-        if surf_plev == 'surf':
-            dsurf = xr.open_mfdataset(str(eraDir/'SURF*.nc'))
-            dsurf = dsurf.rename({'z':'z_surf'})
-            convert_to_zarr(dsurf, str(eraDir / store_as_zarr), 
-                            chuncks={'longitude':3, 'latitude':3, 'time':1000}, 
-                            compressor=None,
-                            mode=mode)
-        print('---> ERA5 Zarr archive created')
-
-        # remove yearly netcdf
-        for file in eraDir.glob('SURF*.nc'):
-            file.unlink()
-        for file in eraDir.glob('PLEV*.nc'):
-            file.unlink()
-        print('---> Yearly netcdf deleted')
 
     print("===> ERA5 files ready")
 
