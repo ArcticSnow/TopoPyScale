@@ -126,6 +126,8 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
         compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
     encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
     dd.to_zarr(zarrout, mode='w',zarr_format=3, encoding=encoder)
+    dd.close()
+    del dd
     ds.close()
     del ds
 

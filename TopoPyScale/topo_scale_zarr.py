@@ -92,11 +92,11 @@ class ClimateDownscaler:
         self.tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
         tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
-        n_digits = len(str(self.df_centroids.cluster_labels.max()))
+        #n_digits = len(str(self.df_centroids.cluster_labels.max()))
         self.meta = {'interp_method': interp_method,
                                   'lw_terrain_flag': lw_terrain_flag,
                                   'tstep': tstep_dict.get(tstep),
-                                  'n_digits': n_digits,
+                                  'n_digits': self.n_digits,
                                   'file_pattern': file_pattern,
                                   'target_epsg':target_EPSG,
                                   'precip_lapse_rate_flag':precip_lapse_rate_flag,
