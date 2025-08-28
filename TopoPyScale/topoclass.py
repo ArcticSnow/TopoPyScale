@@ -50,7 +50,9 @@ class Topoclass(object):
                 self.config = DefaultMunch.fromYAML(f)
 
             if self.config.project.directory in [None, {}]:
-                self.config.project.directory = os.getcwd() + '/'
+                self.config.project.directory = Path(os.getcwd())
+            else:
+                self.config.project.directory = Path(self.config.project.directory)
 
         except IOError:
             print(
@@ -74,14 +76,14 @@ class Topoclass(object):
         # remove output fsm directory
         if self.config.outputs.file.clean_FSM:
             try:
-                shutil.rmtree(self.config.project.directory + '/fsm_sims/')
+                shutil.rmtree(str(self.config.project.directory / 'fsm_sims'))
                 print('---> FSM directory cleaned')
             except:
                 print("---> no FSM directory to clean")
 
             # remove output fsm directory
             try:
-                shutil.rmtree(self.config.project.directory + '/ensemble/')
+                shutil.rmtree(str(self.config.project.directory / 'ensemble'))
                 print("---> Ensemble directory cleaned")
             except:
                 print("---> no ensemble directory to clean")
@@ -92,7 +94,7 @@ class Topoclass(object):
             self.config.climate.path = Path(self.config.climate[self.config.project.climate].path)
 
         else:
-            self.config.climate.path = Path(self.config.project.directory) / 'inputs' / 'climate'
+            self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
         self.config.climate.tmp_path = self.config.climate.path / 'tmp'
 
         # check if tree directory exists. If not create it
@@ -103,11 +105,11 @@ class Topoclass(object):
         os.makedirs(self.config.outputs.downscaled, exist_ok=True)
 
         if not self.config.dem.path:
-            self.config.dem.path = self.config.project.directory + '/inputs/dem/'
-        os.makedirs(self.config.dem.path, exist_ok=True)
+            self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
+        os.makedirs(str(self.config.dem.path), exist_ok=True)
 
-        self.config.dem.filepath = self.config.dem.path + self.config.dem.file
-        if not os.path.isfile(self.config.dem.filepath):
+        self.config.dem.filepath = self.config.dem.path / self.config.dem.file
+        if not self.config.dem.filepath.exists():
 
             if self.config.project.extent is not None:
                 self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))
@@ -115,7 +117,7 @@ class Topoclass(object):
                 print('ERROR: no extent provided. Must follow this format: [latN, latS, lonW, lonE]')
                 sys.exit()
 
-            fd.fetch_dem(self.config.dem.path, self.config.project.extent, self.config.dem.epsg, self.config.dem.file)
+            fd.fetch_dem(str(self.config.dem.path), self.config.project.extent, self.config.dem.epsg, self.config.dem.file)
         else:
             print('\n---> DEM file found')
 
@@ -226,7 +228,7 @@ class Topoclass(object):
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                      fname=self.config.outputs.file.ds_param,
-                                                     project_directory=Path(self.config.project.directory),
+                                                     project_directory=self.config.project.directory,
                                                      output_folder=self.config.outputs.path)
 
     def search_optimum_number_of_clusters(self,
@@ -270,8 +272,8 @@ class Topoclass(object):
         Returns:
         """
         if not os.path.isabs(self.config.sampling.points.csv_file):
-            self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
-        df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
+            self.config.sampling.points.csv_file = self.config.project.directory / 'inputs'/'dem' / self.config.sampling.points.csv_file
+        df_centroids = pd.read_csv(str(self.config.sampling.points.csv_file), **kwargs)
         if self.config.sampling.points.name_column:
             df_centroids['point_name'] = df_centroids[self.config.sampling.points.name_column].astype(str)
         else:
