@@ -203,19 +203,19 @@ def to_cryogrid(ds,
         fo['rainfall'], fo['snowfall'] = ('time', rain * 24), ('time', snow * 24)  # convert from mm/hr to mm/day
 
         fo.Tair.attrs = {'units': '°C', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
-                         '_FillValue': -9999999.0}
+                         '_FillValue': -9999.0}
         fo.q.attrs = {'units': 'kg/kg', 'standard_name': 'q', 'long_name': 'Near Surface Specific Humidity',
-                      '_FillValue': -9999999.0}
-        fo.wind.attrs = {'units': 'm/s', 'standard_name': 'wind', 'long_name': 'Wind Speed', '_FillValue': -9999999.0}
+                      '_FillValue': -9999.0}
+        fo.wind.attrs = {'units': 'm/s', 'standard_name': 'wind', 'long_name': 'Wind Speed', '_FillValue': -9999.0}
         fo.rainfall.attrs = {'units': 'mm/d', 'standard_name': 'rainfall', 'long_name': 'Rainfall Rate',
-                             '_FillValue': -9999999.0}
+                             '_FillValue': -9999.0}
         fo.snowfall.attrs = {'units': 'mm/d', 'standard_name': 'snowfall', 'long_name': 'Snowfall Rate',
-                             '_FillValue': -9999999.0}
+                             '_FillValue': -9999.0}
         fo.Sin.attrs = {'units': 'W/m^2', 'standard_name': 'Sin',
-                        'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+                        'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999.0}
         fo.Lin.attrs = {'units': 'W/m^2', 'standard_name': 'Lin', 'long_name': 'Surface Incident Longtwave Radiation',
-                        '_FillValue': -9999999.0}
-        fo.p.attrs = {'units': 'Pa', 'standard_name': 'p', 'long_name': 'Surface Pressure', '_FillValue': -9999999.0}
+                        '_FillValue': -9999.0}
+        fo.p.attrs = {'units': 'Pa', 'standard_name': 'p', 'long_name': 'Surface Pressure', '_FillValue': -9999.0}
 
         fo.attrs = {'title': 'Forcing for Cryogrid Community model',
                     'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
