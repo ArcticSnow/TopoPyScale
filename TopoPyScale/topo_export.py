@@ -77,7 +77,7 @@ def to_musa(ds,
             da_label,
             fname_met='musa_met.nc',
             fname_labels='musa_labels.nc',
-            path='outputs/',
+            path='outputs',
             climate_dataset_name='ERA5',
             project_authors='S. Filhol'
             ):
@@ -96,7 +96,7 @@ def to_musa(ds,
     ver_dict = tu.get_versionning()
 
     if da_label is not None:
-        da_label.to_netcdf(str(path + fname_labels))
+        da_label.to_netcdf(str(path / fname_labels))
 
     da_label.to_netcdf(str(path / fname_labels))
 
@@ -156,7 +156,7 @@ def to_musa(ds,
 def to_cryogrid(ds,
                 df_pts,
                 fname_format='Cryogrid_pt_*.nc',
-                path='outputs/',
+                path='outputs',
                 label_map=False,
                 da_label=None,
                 snow_partition_method='continuous',
@@ -187,7 +187,7 @@ def to_cryogrid(ds,
     n_digits = len(str(len(ds.point_name))) + 1
 
     for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(path) + fname_format.split('*')[0] + str(pt_ind).zfill(n_digits) + fname_format.split('*')[1]
+        foutput = str(path / (fname_format.split('*')[0] + str(pt_ind).zfill(n_digits) + fname_format.split('*')[1]))
         ds_pt = ds.sel(point_name=pt_name).copy()
         fo = xr.Dataset()
         fo['time'] = ds_pt.time
