@@ -7,23 +7,32 @@ Retrieve ecmwf data with cdsapi.
 """
 # !/usr/bin/env python
 import pandas as pd
+import xarray as xr
+import numpy as np
+import dask
+from zarr.codecs import BloscCodec
 from datetime import datetime
+
 import cdsapi, os, sys
 from dateutil.relativedelta import *
-import glob
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
 from TopoPyScale import topo_export as te
-import xarray as xr
+from TopoPyScale import topo_utils as tu
+from pathlib import Path
 import cfgrib
-import os
 import zipfile
 import shutil
 import glob
 from cdo import *
 
+
+# [ ] remove this dependencie era5_downloader bringing little value
 import era5_downloader as era5down
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 var_surf_name_google = {'geopotential_at_surface':'z',
@@ -45,6 +54,127 @@ var_plev_name_google = {'geopotential':'z',
                 'specific_humidity':'q'}
 
 
+def append_nc_to_zarr_region(year, ncfile, zarrstore, surf=False):
+    ncfile = str(ncfile)
+    print(f"---> Appending {ncfile} to {zarrstore}")
+    dp = xr.open_dataset(ncfile, chunks='auto')
+    if surf:
+        dp = dp.rename({'z':'z_surf'})
+    dp.to_zarr(zarrstore, mode='a',region='auto', align_chunks=True)
+    dp = None
+
+def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+                                    zarrout='inputs/climate/ERA5.zarr', 
+                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13}, 
+                                    compressor=None,
+                                    plev_name='PLEV_*.nc',
+                                    surf_name='SURF_*.nc',
+                                    parallelize=False,
+                                    n_cores=4):
+    """
+    Function to convert a stack of netcdf PLEV and SURF files to a zarr store. Optimizing chunking based on auto detection by dask.
+    
+    Args:
+        path_to_netcdfs (str): path to yearly netcdf files of PLEV and SURF
+        zarrout (str): path and name of the output zarr store to be created 
+        chunks (dict): dictionnary indicating the size of the chunk for the output zarr store. Good practice to have time chunk equivalent to a yearly file size. 
+        compressor (obj): Compressor object to use for encoding. See Zarr compression. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+        plev_name (str): file pattern of the netcdf containing the pressure levels. Use * instead of the year 
+        surf_name (str): file pattern of the netcdf containing the surface level. Use * instead of the year 
+
+    """
+    pn = Path(path_to_netcdfs)
+    pz = Path(zarrout)
+
+    # lazy load stack of PLEV netcdf to grab dimensions and attributes
+    ds = xr.open_mfdataset(str(pn / plev_name), parallel=True, chunks='auto')
+    tvec = ds.time.values
+    za1 = dask.array.empty((len(tvec), ds.level.shape[0], ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
+    za2 = dask.array.empty((len(tvec), ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
+
+    dd = xr.Dataset(
+        coords={
+            'time':tvec,
+            'longitude': ds.longitude.values,
+            'latitude': ds.latitude.values,
+            'level': ds.level.values,
+            },
+        data_vars={
+            'z': (('time', 'level', 'latitude', 'longitude'),  za1),
+            't': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'u': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'v': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'q': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'r': (('time', 'level', 'latitude', 'longitude'),  za1),
+            'z_surf': (('time', 'latitude', 'longitude'),  za2),
+            'd2m': (('time', 'latitude', 'longitude'),  za2),
+            'sp': (('time', 'latitude', 'longitude'),  za2),
+            'strd': (('time', 'latitude', 'longitude'),  za2),
+            'ssrd': (('time', 'latitude', 'longitude'),  za2),
+            'tp': (('time', 'latitude', 'longitude'),  za2),
+            't2m': (('time', 'latitude', 'longitude'),  za2),
+            },
+        attrs=ds.attrs
+    )
+
+    chunks_plev = chunks
+    chunks_surf = {'time':chunks.get('time'), 'latitude':chunks.get('latitude'),'longitude':chunks.get('longitude')}
+
+    dd = dd.chunk(chunks=chunks).persist()
+    vars = list(ds.keys())
+    if compressor is None:
+        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+    encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
+    dd.to_zarr(zarrout, mode='w',zarr_format=3, encoding=encoder)
+    dd.close()
+    del dd
+    ds.close()
+    del ds
+
+    if not parallelize:
+        # loop through the years. This could be sent to multicore eventually
+        for year in pd.to_datetime(tvec).year.unique():
+            print(f"---> Appending PLEV year {year} to {pz.name}")
+            dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
+            dp.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
+            dp.close()
+            del dp
+
+            print(f"---> Appending SURF year {year} to {pz.name}")
+            du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
+            du = du.rename({'z':'z_surf'})
+            du.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
+            du.close()
+            del du
+    else:
+        flist = pn.glob(plev_name)
+        fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(False)*len(list(flist))])
+        tu.multicore_pooling(append_nc_to_zarr_region, fun_param, n_cores)
+
+        flist = pn.glob(surf_name)
+        fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(True)*len(list(flist))])
+        tu.multicore_pooling(append_nc_to_zarr_region, fun_param, n_cores)
+    print("Conversion done :)")
+
+
+def to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':8760, 'level':7}, compressor=None, mode='w'):
+    """
+    Function to convert a dataset to a zarr store.
+
+    Args:
+        ds (dataset): dataset to convert to zarr
+        fout (str): name of the zarr archive
+        chuncks (dict): {'x':3, 'y':3, 'time':8760, 'level':7}
+        compressor (obj): default is None, otherwise use an encoder compatible with zarr3. Blosc is default
+        mode (str): mode to write to zarr store. See the xarray to_zarr() documentation
+    """
+    vars = list(ds.keys())
+
+    if compressor is None:
+        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+
+    encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
+    ds.chunk(chuncks).to_zarr(fout,  zarr_format=3, encoding=encoder, mode=mode)
 
 
 def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, step='3H',num_threads=1):
@@ -116,8 +246,7 @@ def fetch_era5_google(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevel
 
 
 
-def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, 
-    bucket='gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'):
+def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, latN, plevels, bucket='gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'):
     '''
     Function to download data from Zarr repository on Google Cloud Storage (https://github.com/google-research/arco-era5/tree/main)
 
@@ -153,7 +282,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
                     num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
-                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False):
+                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False, store_as_zarr='ERA5.zarr'):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -176,6 +305,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
         rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
+        store_as_zarr (str): name of the Zarr store. None if you want to use the old system with Netcdf
 
     Returns:
         Monthly era surface files stored in disk.
@@ -316,12 +446,15 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 
         if surf_plev == 'plev':
             fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
-            fout = str(eraDir / ("PLEV_%04d.nc" % (year)))
+            fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
             cdo.mergetime(input=fpat, output=fout)
 
     if rm_daily:
-        shutil.rmtree(eraDir / "daily")
-
+        try:
+            shutil.rmtree(eraDir / "daily")
+            print('---> Daily files removed')
+        except:
+            raise IOError('deletion of daily files issue')
 
     print("===> ERA5 files ready")
 

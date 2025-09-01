@@ -13,6 +13,7 @@ my_project/
             └── SURF*.nc
     ├── outputs/
             ├── tmp/
+            └── downscaled/
     ├── pipeline.py (OPTIONAL: script for the downscaling instructions)
     └── config.yml
 
@@ -47,18 +48,33 @@ project:
     time: 2         # number of years to split timeline in
     space: None     # NOT IMPLEMENTED
 
+  # indicate which climate data to use. Currently only era5 available (see climate section below)
+  climate: era5
+
   # This is for the option of fetching DEM with API (NOT YET SUPPORTED)
   extent:
 
-  # Indicate the number of core to use
-  CPU_cores: 4
+  # method and setting for parallelizing (for clustering, solar geometry (multicore only), and downscaling (multicore and dask))
+  parallelization:
+    downscaling_method: dask                  # multicore or dask. Multicore is using the Python library multiprocessing
+    setting:      
+        multicore:
+            CPU_cores: 6                      # number of core to use (clustering, solar geometry and downscaling)
+        dask:                                 # Options to use Dask for Dowsncaling. See dask documentation (https://docs.dask.org)
+            n_workers: 6                      # number of workers
+            threads_per_worker: 1             # number of threads per worker 
+            memory_target_fraction: 0.95      # fraction of memory to use
+            memory_limit: 1.2GB               # max memory usage per worker.
 
-  # indicate which climate data to use. Currently only era5 available (see climate section below)
-  climate: era5
+
+  
 
 #.....................................................................................................
 climate:
   # For now TopoPyScale only supports ERA5-reanalysis input climate data
+  precip_lapse_rate: False     # Apply precipitation lapse-rate correction (currently valid for Northern Hemisphere only)
+  
+  # Settings for the ERA5 atmospheric forcings
   era5:
     path: inputs/climate/   # Can either be a absolute path or relative to the project directory
     product: reanalysis     # ensemble not available yet
@@ -72,8 +88,7 @@ climate:
     cds_output_format: netcdf         # netcdt or grib. Grib is not supported by topoclass
     cds_download_format: unarchived   # unarchived or zip
     rm_daily: False                   # remove 
-
-  precip_lapse_rate: False     # Apply precipitation lapse-rate correction (currently valid for Northern Hemisphere only)
+    zarr_store: ERA5.zarr             # name of the zarr store containing the ERA5 data (local store. currently not yet compatible with remote store)
 
 #.....................................................................................................
 dem:
@@ -121,7 +136,8 @@ outputs:
     ds_solar: ds_solar.nc               # (netcdf)  solar geometry
     da_horizon: da_horizon.nc           # (netcdf)  horizon angles
     landform: landform.tif              # (geotiff) rasters of of cluster labels, [TopoSub]
-    downscaled_pt: down_pt_*.nc         # (netcdf)  Downscales
+    downscaled_pt: down_pt_*.nc         # (netcdf)  filename of the downscaled timeseries
+    zarr_store: down.zarr               # (zarr)    name of the zarr store for the downscaled timeseries (optional, only working with Dask)
 
 clean_up:
   rm_tmp_dirs: True                   # (optional: bool) remove the created tmp directories after downscaling?
@@ -147,13 +163,24 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | time        | 1                     | only if `split.IO` is `True` |                 | Number of years to chunck climate data timeseries                                                                            |
 | space       | None                  | no                           |                 | not yet implemented                                                                                                          |
 | extent      | None                  | no                           |                 | not yet implemented                                                                                                          |
-| CPU_cores   | 4                     | yes                          | integer         | Number of cores to use                                                                                                       |
 | climate     | era5                  | yes                          | era5            | source of climate data. ERA5 is the only supported dataset at the moment                                                     |
+|***parallelization***  |     |     |     | Settings and method to parallelize    |
+| downscaling_method | multicore    | yes    | multicore, dask    | method to parallelize downscaling   |
+| **setting**  |     |     |     |    |
+| *multicore*  |     |  yes   |     |    |
+| CPU_cores   | 4                     | yes                          | integer         | Number of cores to use                                                                                                       |
+| *dask*  |     |  no, only if using dask   |     |    |
+| n_workers  |  6   |     | integer    |  number of workers  |
+| threads_per_worker  |  1   |     | integer    | number of threads per worker   |
+| memory_target_fraction  |  0.95   |     |  float (0-1)   | fraction of memory to use   |
+| memory_limit  | 1.2GB    |     | string    | max memory usage per worker   |
+
 
 ### Climate
 
 | Field             | Example Value      | Required | Possible Values | Description                                                                                                        |
 |-------------------|--------------------|----------|-----------------|--------------------------------------------------------------------------------------------------------------------|
+| precip_lapse_rate | True               | y        | True, False     | Apply precipitation lapse rate                                                                                     |
 | **era5**          |                    |          |                 | As of now TopoPyScale only supports ERA5 data                                                                      |
 | path              | inputs/climate/    | y        | string          | path to store climate data (either relative to the project directory or absolute path possible)                    |
 | product           | reanalysis         | y        | reanalysis      | no other product available at the moment.                                                                          |
@@ -165,7 +192,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | cds_download_format  | unarchived | n       | string         | indicate download format CDS will deliver. unarchived or zip|  
 | rm_daily  | False | n       | string         | remove or not daily downloads. To save storage after download|
 | realtime          | False              | n        | True, False     | Upon each new run of code redownloads latest month (ERA5T) to obtain daily updates of partial months.              |
-| precip_lapse_rate | True               | y        | True, False     | Apply precipitation lapse rate                                                                                     |
+| zarr_store  | ERA5.zarr    | no    | string    | name of the zarr store containing the ERA5 data (local store. currently not yet compatible with remote store)   |
 
 ### dem
 
@@ -216,7 +243,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | da_horizon    | da_horizon.nc      | yes      | `*.nc`              | filename to store DataArray of the DEM horizons. File is saved in `outputs/`                                                                                                                                                                                  |
 | landform      | landform.tif       | no       | `*.tif`             | filename to store raster of the points/centroids downscaling map. File is saved in `outputs/`                                                                                                                                                                 |
 | downscaled_pt | down_pt_*.nc       | yes      | `*.nc`              | filename to store dataset of the dowsncaled points/centroids. File is saved in `outputs/`                                                                                                                                                                     |
-
+| zarr_store  | down.zarr    | no    | string    | name of the zarr store for the downscaled timeseries (optional, only working with Dask)   |
 ### clean_up
 
 | Field           | Example Value | Required | Possible Values | Description                                                                         |
@@ -242,3 +269,13 @@ Klevavatnet,SN53480,60.7192,7.2085,402259.379226592,6732844.21093029
 
 This file will loaded in `mp.toposub.df_centroids` dataframe.
 
+## Parallelization
+
+TopoPyScale uses parallelization for a number of steps. For most, the Python library multiprocessing is used to either handle multithreads (management of downloading request from cds server), or multicore (clustering, solar geometry, downscaling). An optional method using [Dask](https://docs.dask.org/en/stable/) is available to perform the dowscaling step. 
+
+Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).  
+
+
+## Zarr
+
+As of now, we are starting using the file format Zarr to improve IO methods. Zarr is a recent archival format for multidimensional datasets. It behaves like a database, from whic only the data of interest are being loaded into memory. There exist a number of Zarr repository of the ERA5 dataset (Google, AWS, etc.) for which we do not have yet well establisehed  method to pull data from. However, when downloading data from CDS, it is now possible to download these data as `netcdf` as before, but then convert them localy into a zarr archive. This improves significantly the downscaling speed (x1.4). Example code will soon be available to demonstrate using these newly added options.

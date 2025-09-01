@@ -29,6 +29,7 @@ R = 287.05  #  Gas constant for dry air [JK^-1kg^-1]
 eps0 = 0.622  # Ratio of molecular weight of water and dry air [-]
 S0 = 1370    # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
 
+
 def steep_snow_reduce_all(snow, slope):
     # ======================================================================================
     # # linearly reduce snow to zero in steep slopes
@@ -117,6 +118,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
     rain = precip - snow
     return rain, snow
 
+
 def q_2_rh(temp, pressure, qair):
     """
     Function to convert specific humidity (q) to relative humidity (RH) following Bolton (1980)
@@ -153,7 +155,7 @@ def mixing_ratio(ds, var):
 
 def t_rh_2_dewT(ds, var):
     """
-    Function to compute dea temperature from air temperature and relative humidity
+    Function to compute dew temperature from air temperature and relative humidity
 
     Args:
         ds: dataset with temperature ('t') and relative humidity ('r') variables
@@ -164,6 +166,7 @@ def t_rh_2_dewT(ds, var):
     ds['dew'] = 243.04 * (np.log(ds[var['rh']] / 100) + ((17.625 * ds[var['temp']]) / (243.04 + ds[var['temp']])))/\
                 (17.625-np.log(ds[var['rh']] / 100) - ((17.625 * ds[var['temp']]) / (243.04 + ds[var['temp']])))
     return ds
+
 
 def dewT_2_q_magnus(ds, var):
     """
@@ -181,6 +184,7 @@ def dewT_2_q_magnus(ds, var):
     wsl = eps0 * vpsl / (ds[var['pressure']] - vpsl)
     ds[var['spec_h']] = wsl / (1 + wsl)
     return ds
+
 
 def vapor_pressure(ds, var):
     """

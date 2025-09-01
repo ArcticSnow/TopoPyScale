@@ -13,7 +13,7 @@ conda activate downscaling
 conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4 h5netcdf rasterio pyproj dask geopandas
 
 # install forked version of Topocalc compatible with Python >3.9 (tested with 3.13)
-pip install pip@git+https://github.com/ArcticSnow/topocalc
+pip install git+https://github.com/ArcticSnow/topocalc
 
 ```
 

@@ -5,7 +5,7 @@ import linecache
 from matplotlib import pyplot as plt
 import numpy as np
 import glob
-from TopoPyScale import topo_da as da
+#from TopoPyScale import topo_da as da
 import git
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
@@ -226,7 +226,8 @@ def getCoordinatePixel(map_path, x_coord, y_coord, epsg_in, epsg_out):
     clip = dataset.read(window=window)
     return (int(clip))
 
-
+'''
+Commented as it relies on topo_da.py which is currently having dependencies from gdal and osgeo. To Be Changed to Rasterio
 def val_plots():
     # script from topo_utils (validation stuff)
     map_path = "/home/joel/sim/topoPyscale_davos/landform.tif"
@@ -298,7 +299,7 @@ def val_plots():
     myfile = "/home/joel/sim/topoPyscale_davos/fsm_sims/sim_ENS1_FSM_pt_00.txt"
     df = FsmSnowParser(myfile)
     #FsmPlot(df)
-
+'''
 
 def time_vecs(start_date, end_date):
     """Function to build timestamp vectors of year starts and year ends for arbitrary time range.

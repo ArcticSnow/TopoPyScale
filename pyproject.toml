@@ -10,7 +10,7 @@ name = "topopyscale"
 version = "0.2.10"
 description = "TopoPyScale: A Python Package for Hillslope Climate Downscaling"
 authors = [
-    { name = "Simon Filhol", email = "simon.filhol@geo.uio.no" },
+    { name = "Simon Filhol", email = "simon.filhol@meteo.fr" },
     { name = "Joel Fiddes" },
     { name = "Kristoffer Aalstad" }
 ]
@@ -28,7 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13"
 ]
 dependencies = [
-    "xarray[complete]",
+    "xarray[complete]>=2025.07.1",
     "rioxarray",
     "matplotlib",
     "scikit-learn",

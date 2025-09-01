@@ -8,7 +8,7 @@ TopoPyScale relies on two main types of data: climate and topographical data. Th
 
 ERA5 comes in two parts:
 
-- [Hourly land](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-land?tab=overview)
+- [Hourly Surface level](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-land?tab=overview)
 - [Hourly pressure levels](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-pressure-levels?tab=overview)
 
 #### From Copernicus repository
@@ -58,7 +58,7 @@ gdal_merge.py -init -9999 -o Copernicus_DSM_merged.tif --optfile tile_list.txt
 ```
 
 
-## Observation Dataset
+## Observation Datasets
 
 - [WMO](https://cds.climate.copernicus.eu/cdsapp#!/dataset/insitu-observations-surface-land?tab=overview) stations (Global)
 - Norwegian meteorological Institute [Frost API](https://frost.met.no/index.html) (Norway)

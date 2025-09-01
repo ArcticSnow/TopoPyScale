@@ -634,25 +634,38 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
 
     for i in range(0, nclust):
         lookup2D[:, i] = ds_var[i, :]
-
-    from osgeo import gdal
+    
     inputFile = "outputs/landform.tif"
     outputFile = "outputs/landform_newres.tif"
-
-    # check if new_res is declared - if so resample landform and therefore output
     if new_res is not None:
         xres = new_res
         yres = new_res
-        resample_alg = gdal.GRA_NearestNeighbour
 
-        ds = gdal.Warp(destNameOrDestDS=outputFile,
-                       srcDSOrSrcDSTab=inputFile,
-                       format='GTiff',
-                       xRes=xres,
-                       yRes=yres,
-                       resampleAlg=resample_alg)
-        del ds
-        landformfile = "outputs/landform_newres.tif"
+        with rasterio.open(inputFile) as dataset:
+            # resample data to target shape
+            data = dataset.read(
+                out_shape=(
+                    dataset.count,
+                    yres,
+                    xres,
+                    int(dataset.width * upscale_factor)
+                ),
+                resampling=Resampling.nearest
+            )
+
+            # scale image transform
+            transform = dataset.transform * dataset.transform.scale(
+                (dataset.width / data.shape[-1]),
+                (dataset.height / data.shape[-2])
+            )
+            with rasterio.open(outputFile, 'w', 
+                                driver=GTiff, 
+                                height=data.shape[-2],
+                                width=data.shape[-1],
+                                count=1,
+                                dtype=data.dtype,
+                                crs=dataset.crs,
+                                transform=transform)
     else:
         landformfile = "outputs/landform.tif"
 

@@ -35,6 +35,7 @@ from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_sub as ts
+from TopoPyScale import topo_scale_zarr as tz 
 
 
 class Topoclass(object):
@@ -49,7 +50,9 @@ class Topoclass(object):
                 self.config = DefaultMunch.fromYAML(f)
 
             if self.config.project.directory in [None, {}]:
-                self.config.project.directory = os.getcwd() + '/'
+                self.config.project.directory = Path(os.getcwd())
+            else:
+                self.config.project.directory = Path(self.config.project.directory)
 
         except IOError:
             print(
@@ -73,14 +76,14 @@ class Topoclass(object):
         # remove output fsm directory
         if self.config.outputs.file.clean_FSM:
             try:
-                shutil.rmtree(self.config.project.directory + '/fsm_sims/')
+                shutil.rmtree(str(self.config.project.directory / 'fsm_sims'))
                 print('---> FSM directory cleaned')
             except:
                 print("---> no FSM directory to clean")
 
             # remove output fsm directory
             try:
-                shutil.rmtree(self.config.project.directory + '/ensemble/')
+                shutil.rmtree(str(self.config.project.directory / 'ensemble'))
                 print("---> Ensemble directory cleaned")
             except:
                 print("---> no ensemble directory to clean")
@@ -91,7 +94,7 @@ class Topoclass(object):
             self.config.climate.path = Path(self.config.climate[self.config.project.climate].path)
 
         else:
-            self.config.climate.path = Path(self.config.project.directory) / 'inputs' / 'climate'
+            self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
         self.config.climate.tmp_path = self.config.climate.path / 'tmp'
 
         # check if tree directory exists. If not create it
@@ -102,11 +105,11 @@ class Topoclass(object):
         os.makedirs(self.config.outputs.downscaled, exist_ok=True)
 
         if not self.config.dem.path:
-            self.config.dem.path = self.config.project.directory + '/inputs/dem/'
-        os.makedirs(self.config.dem.path, exist_ok=True)
+            self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
+        os.makedirs(str(self.config.dem.path), exist_ok=True)
 
-        self.config.dem.filepath = self.config.dem.path + self.config.dem.file
-        if not os.path.isfile(self.config.dem.filepath):
+        self.config.dem.filepath = self.config.dem.path / self.config.dem.file
+        if not self.config.dem.filepath.exists():
 
             if self.config.project.extent is not None:
                 self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))
@@ -114,7 +117,7 @@ class Topoclass(object):
                 print('ERROR: no extent provided. Must follow this format: [latN, latS, lonW, lonE]')
                 sys.exit()
 
-            fd.fetch_dem(self.config.dem.path, self.config.project.extent, self.config.dem.epsg, self.config.dem.file)
+            fd.fetch_dem(str(self.config.dem.path), self.config.project.extent, self.config.dem.epsg, self.config.dem.file)
         else:
             print('\n---> DEM file found')
 
@@ -225,7 +228,7 @@ class Topoclass(object):
     def compute_dem_param(self):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                      fname=self.config.outputs.file.ds_param,
-                                                     project_directory=Path(self.config.project.directory),
+                                                     project_directory=self.config.project.directory,
                                                      output_folder=self.config.outputs.path)
 
     def search_optimum_number_of_clusters(self,
@@ -269,8 +272,8 @@ class Topoclass(object):
         Returns:
         """
         if not os.path.isabs(self.config.sampling.points.csv_file):
-            self.config.sampling.points.csv_file = self.config.project.directory + 'inputs/dem/' + self.config.sampling.points.csv_file
-        df_centroids = pd.read_csv(self.config.sampling.points.csv_file, **kwargs)
+            self.config.sampling.points.csv_file = self.config.project.directory / 'inputs'/'dem' / self.config.sampling.points.csv_file
+        df_centroids = pd.read_csv(str(self.config.sampling.points.csv_file), **kwargs)
         if self.config.sampling.points.name_column:
             df_centroids['point_name'] = df_centroids[self.config.sampling.points.name_column].astype(str)
         else:
@@ -393,7 +396,7 @@ class Topoclass(object):
                         df_scaled,
                         n_clusters=n_clusters,
                         features=self.config.sampling.toposub.clustering_features,
-                        n_cores=self.config.project.CPU_cores,
+                        n_cores=self.config.project.parallelization.setting.multicore.CPU_cores,
                         seed=self.config.sampling.toposub.random_seed)
                 else:
                     raise ValueError(
@@ -526,7 +529,7 @@ class Topoclass(object):
                                                       end,
                                                       self.config.climate[self.config.project.climate].timestep,
                                                       str(self.config.dem.epsg),
-                                                      self.config.project.CPU_cores,
+                                                      self.config.project.parallelization.setting.multicore.CPU_cores,
                                                       self.time_splitter.ds_solar_flist[i],
                                                       self.config.outputs.path,
                                                       method_solar=self.config.solar_position_method)
@@ -542,7 +545,7 @@ class Topoclass(object):
                                                   self.config.project.end,
                                                   self.config.climate[self.config.project.climate].timestep,
                                                   str(self.config.dem.epsg),
-                                                  self.config.project.CPU_cores,
+                                                  self.config.project.parallelization.setting.multicore.CPU_cores,
                                                   self.config.outputs.file.ds_solar,
                                                   self.config.outputs.path)
 
@@ -557,7 +560,7 @@ class Topoclass(object):
         else:
             self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
                                                  self.config.dem.horizon_increments,
-                                                 self.config.project.CPU_cores,
+                                                 self.config.project.parallelization.setting.multicore.CPU_cores,
                                                  self.config.outputs.file.da_horizon,
                                                  self.config.outputs.path)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
@@ -584,17 +587,18 @@ class Topoclass(object):
         f_pattern = self.config.outputs.file.downscaled_pt
         output_folder = self.config.outputs.path.name
 
-        if '*' not in f_pattern:
+        if (f_pattern is not None) and ('*' not in f_pattern):
             raise ValueError(
                 f'ERROR: The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
 
-        # clean directory from files with the same downscaled output file pattern (so they get replaced)
-        existing_files = sorted(downscaled_dir.glob(f_pattern))
-        for file in existing_files:
-            file.unlink()
-            print(f'existing file {file.name} removed.')
+            # clean directory from files with the same downscaled output file pattern (so they get replaced)
+            existing_files = sorted(downscaled_dir.glob(f_pattern))
+            for file in existing_files:
+                file.unlink()
+                print(f'existing file {file.name} removed.')
 
         if self.config.project.split.IO:
+            raise Warning("This section of the code has been tested for a while. It may be prone to bugs. Not compatible with Zarr system.")
             for i, start in enumerate(self.time_splitter.start_list):
                 print()
                 end = self.time_splitter.end_list[i]
@@ -618,7 +622,7 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate.precip_lapse_rate,
                                      fname,
-                                     self.config.project.CPU_cores)
+                                     self.config.project.parallelization.setting.multicore.CPU_cores)
 
             for pt_id in self.toposub.df_centroids.point_name.values:
                 print(f'Concatenating point {pt_id}')
@@ -651,21 +655,64 @@ class Topoclass(object):
             del ds
 
         else:
-            ta.downscale_climate(self.config.project.directory,
-                                 self.config.climate.path,
-                                 self.config.outputs.path,
-                                 self.toposub.df_centroids,
-                                 self.da_horizon,
-                                 self.ds_solar,
-                                 self.config.dem.epsg,
-                                 self.config.project.start,
-                                 self.config.project.end,
-                                 self.config.climate[self.config.project.climate].timestep,
-                                 self.config.toposcale.interpolation_method,
-                                 self.config.toposcale.LW_terrain_contribution,
-                                 self.config.climate.precip_lapse_rate,
-                                 self.config.outputs.file.downscaled_pt,
-                                 self.config.project.CPU_cores)
+            if self.config.climate.era5.zarr_store is None:
+                ta.downscale_climate(self.config.project.directory,
+                                     self.config.climate.path,
+                                     self.config.outputs.path,
+                                     self.toposub.df_centroids,
+                                     self.da_horizon,
+                                     self.ds_solar,
+                                     self.config.dem.epsg,
+                                     self.config.project.start,
+                                     self.config.project.end,
+                                     self.config.climate[self.config.project.climate].timestep,
+                                     self.config.toposcale.interpolation_method,
+                                     self.config.toposcale.LW_terrain_contribution,
+                                     self.config.climate.precip_lapse_rate,
+                                     self.config.outputs.file.downscaled_pt,
+                                     self.config.project.parallelization.setting.multicore.CPU_cores)
+            
+            elif self.config.climate.era5.zarr_store is not None:
+
+                if (self.config.outputs.variables is None) or (self.config.outputs.variables=='all'):
+                    self.config.outputs.variables = tz.varout_default
+
+
+                era5_zarr_path = self.config.climate.path / Path(self.config.climate.era5.zarr_store)
+                cda = tz.ClimateDownscaler(
+                            era5_zarr_path=era5_zarr_path,
+                            output_path=downscaled_dir,
+                            df_centroids=self.toposub.df_centroids,
+                            da_horizon=self.da_horizon,
+                            ds_solar=self.ds_solar,
+                            target_EPSG=self.config.dem.epsg,
+                            start_date=self.config.project.start,
+                            end_date=self.config.project.end,
+                            tstep=self.config.climate[self.config.project.climate].timestep,
+                            varout=self.config.outputs.variables,
+                            interp_method=self.config.toposcale.interpolation_method,
+                            lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
+                            precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
+                            file_pattern=self.config.outputs.file.downscaled_pt,
+                            store_name=self.config.outputs.file.zarr_store                            
+                    )
+
+                if self.config.project.parallelization.downscaling_method.lower() == 'multicore':
+                    cda.multicore_parallel_process_multiple_subsets(n_core=self.config.project.parallelization.setting.multicore.CPU_cores)
+                
+                elif self.config.project.parallelization.downscaling_method.lower() == 'dask':
+                    dask_worker={
+                        'n_workers': self.config.project.parallelization.setting.dask.n_workers,
+                        'threads_per_worker': self.config.project.parallelization.setting.dask.threads_per_worker,
+                        'memory_target_fraction': self.config.project.parallelization.setting.dask.memory_target_fraction,
+                        'memory_limit': self.config.project.parallelization.setting.dask.memory_limit
+                    }
+                    cda.dask_parallel_process_multiple_subsets(dask_worker=self.config.project.dask_worker)
+                
+                else:
+                    raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
+            else:
+                print('deadend')
 
         self.downscaled_pts = ta.read_downscaled(f'{downscaled_dir}/{f_pattern}')
         # update plotting class variables
@@ -737,7 +784,8 @@ class Topoclass(object):
                 output_format=output_format,
                 download_format=download_format,
                 new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
+                store_as_zarr=self.config.climate.era5.zarr_store
             )
             # retrieve era5 plevels
             fe.retrieve_era5(
@@ -753,7 +801,9 @@ class Topoclass(object):
                 realtime=realtime,
                 output_format=output_format,
                 download_format=download_format,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily
+                new_CDS_API=True,
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
+                store_as_zarr=self.config.climate.era5.zarr_store
             )
 
         elif data_repository == 'google_cloud_storage':
