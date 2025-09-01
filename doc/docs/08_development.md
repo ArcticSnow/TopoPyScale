@@ -14,7 +14,7 @@ pip install -e TopoPyScale    #install a development version, remove the -e for 
 python -m ipykernel install --user --name downscaling
 
 # OPTIONAL: To be able to compile the documentation locally
-pip install lazydocs
+pip install lazydocs flit
 git clone git@github.com:ArcticSnow/TopoPyScale_Documentation.git
 ```
 
