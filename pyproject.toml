@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "topopyscale"
-version = "0.2.10"
+version = "0.3.0"
 description = "TopoPyScale: A Python Package for Hillslope Climate Downscaling"
 authors = [
     { name = "Simon Filhol", email = "simon.filhol@meteo.fr" },
