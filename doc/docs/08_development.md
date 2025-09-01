@@ -65,17 +65,14 @@ lazydocs --output-path="path/to/TopoPyScale/doc/docs" --overview-file="README.md
 ## New Release and Pypi Version (for the code maintainers)
 
 
-From the terminal run the following
+We are now using the new system of `pyproject.toml` with which the tool [`flit`](https://flit.pypa.io/en/latest/index.html#) is helping building and publishing the software to Pypi.org.
+
 ```sh
 # First, make sure twine is installed and you have your Pypi credentials
-pip install twine
-
-# Run from the relevant VE
-python setup.py sdist
-twine upload dist/* --verbose
+pip install flit
 ```
 
 ### Push TopoPyScale
 ```sh
-twine upload --config-file ~.pypirc --repository TopoPyScale dist/* --verbose
+flit publish --repository TopoPyScale --pypirc {path_to_}/.pypirc
 ```
