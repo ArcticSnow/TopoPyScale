@@ -665,7 +665,9 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
                                 count=1,
                                 dtype=data.dtype,
                                 crs=dataset.crs,
-                                transform=transform)
+                                transform=transform) as rt:
+                rt.write(data,1)
+
     else:
         landformfile = "outputs/landform.tif"
 

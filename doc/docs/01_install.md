@@ -14,15 +14,8 @@ conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4
 
 # install forked version of Topocalc compatible with Python >3.9 (tested with 3.13)
 pip install git+https://github.com/ArcticSnow/topocalc
-
 ```
 
-**Option 2:**
-```bash
-wget https://raw.githubusercontent.com/ArcticSnow/TopoPyScale/main/environment.yml
-conda env create -f environment.yml
-rm environment.yml
-```
 
 ## Latest Release Installation
 
