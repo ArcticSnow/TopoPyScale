@@ -4,6 +4,21 @@ docs/site/
 TopoPyScale/test_data/
 TopoPyScale/tmp.py
 
+JOSS/Downscaling.bib
+JOSS/figure2.svg
+JOSS/joss_figure.ipynb
+JOSS/temperature_comparison_crop.png
+Jenningsetal2022 testing.ipynb
+TopoPyScale/.idea/
+TopoPyScale/test.py
+doc/docs/.pages
+doc/docs/index.md.save
+doc/random_notes.md
+rect3378-7-2.png
+
+
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
