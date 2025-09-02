@@ -7,10 +7,15 @@ my_project/
     ├── inputs/
         ├── dem/ 
             ├── my_dem.tif
-            └── pts_list.csv  (OPTIONAL: to downscale to specific points)
+            ├── my_dem_mask.tif     (OPTIONAL: to mask part of the DEM)
+            ├── my_dem_groups.tif   (OPTIONAL: to delineate groups of clusters)
+            └── pts_list.csv        (OPTIONAL: to downscale to specific points)
         └── climate/
-            ├── PLEV*.nc
-            └── SURF*.nc
+            ├── daily/
+            ├── ERA5.zarr           (OPTIONAL: to downscale with zarr optimization)
+            └── yearly/
+                ├── PLEV*.nc
+                └── SURF*.nc
     ├── outputs/
             ├── tmp/
             └── downscaled/
@@ -116,8 +121,8 @@ sampling:
     n_clusters: 50                      # number of cluster to segment the DEM
     random_seed: 2                      # random seed for the K-mean clustering 
     clustering_features: { 'x': 1, 'y': 1, 'elevation': 1, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # dictionnary of the features of choice to use in clustering with their relative importance. Relative importance is a multiplier after scaling
-    clustering_mask: clustering/catchment_mask.tif # optional path to tif containing a mask (0/1)
-    clustering_groups: clustering/groups.tif # optional path to a tif containing cluster groups (int values), e.g. land cover
+    clustering_mask: inputs/dem/catchment_mask.tif  # optional path to tif containing a mask (0/1)
+    clustering_groups: inputs/dem/groups.tif        # optional path to a tif containing cluster groups (int values), e.g. land cover
 
 #.....................................................................................................
 toposcale:

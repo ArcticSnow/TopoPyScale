@@ -315,8 +315,13 @@ class Topoclass(object):
         else:
             if not os.path.isabs(mask_file):
                 mask_file = Path(self.config.project.directory, mask_file)
+                if not mask_file.exists():
+                    raise ValueError(f'File {mask_file} does not exist.')
+
             # read mask TIFF
-            ds_mask = rio.open_rasterio(mask_file).to_dataset('band').rename({1: 'mask'})
+            ds_mask = xr.open_dataset(mask_file, engine='rasterio').band_data.isel(band=0).drop_vars('band').to_dataset()
+            ds_mask = ds_mask.rename({'band_data': 'mask'})
+            self.toposub.ds_param['mask'] = ds_mask.mask.drop_vars('spatial_ref')
 
             # check if bounds and resolution match
             if not ds_mask.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_mask.rio.resolution() == self.toposub.ds_param.rio.resolution():
@@ -340,9 +345,12 @@ class Topoclass(object):
             split_clustering = True
             if not os.path.isabs(groups_file):
                 groups_file = Path(self.config.project.directory, groups_file)
+                if not groups_file.exists():
+                    raise ValueError(f'File {groups_file} does not exist.')
 
             # read cluster TIFF
-            ds_group = rio.open_rasterio(groups_file).to_dataset('band').rename({1: 'group'})
+            ds_group = xr.open_dataset(groups_file, engine='rasterio').band_data.isel(band=0).drop_vars('band').to_dataset()
+            ds_group = ds_group.rename({'band_data': 'group'})
 
             # check if bounds and resolution match
             if not ds_group.rio.bounds() == self.toposub.ds_param.rio.bounds() or not ds_group.rio.resolution() == self.toposub.ds_param.rio.resolution():
@@ -784,8 +792,7 @@ class Topoclass(object):
                 output_format=output_format,
                 download_format=download_format,
                 new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                store_as_zarr=self.config.climate.era5.zarr_store
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily
             )
             # retrieve era5 plevels
             fe.retrieve_era5(
@@ -802,8 +809,7 @@ class Topoclass(object):
                 output_format=output_format,
                 download_format=download_format,
                 new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                store_as_zarr=self.config.climate.era5.zarr_store
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily
             )
 
         elif data_repository == 'google_cloud_storage':

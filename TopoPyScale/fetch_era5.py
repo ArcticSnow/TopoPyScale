@@ -41,11 +41,7 @@ var_surf_name_google = {'geopotential_at_surface':'z',
                 'surface_solar_radiation_downwards':'ssrd',
                 'surface_pressure':'sp',
                 'total_precipitation':'tp',
-                '2m_temperature':'t2m', 
-                'toa_incident_solar_radiation':'tisr',
-                'friction_velocity':'zust', 
-                'instantaneous_moisture_flux':'ie', 
-                'instantaneous_surface_sensible_heat_flux':'ishf'}
+                '2m_temperature':'t2m'}
 
 var_plev_name_google = {'geopotential':'z', 
                 'temperature':'t', 
@@ -282,7 +278,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
                     num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
-                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False, store_as_zarr='ERA5.zarr'):
+                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -305,7 +301,6 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
         rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
-        store_as_zarr (str): name of the Zarr store. None if you want to use the old system with Netcdf
 
     Returns:
         Monthly era surface files stored in disk.
@@ -456,10 +451,10 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         except:
             raise IOError('deletion of daily files issue')
 
-    print("===> ERA5 files ready")
+    print("===> ERA5 netcdf files ready")
 
 
-def era5_request_surf(dataset, year, month, day, bbox, target, product, time, output_format= "netcdf", download_format="unarchived"):
+def era5_request_surf(dataset, year, month, day, bbox, target, product, time, varoi=None, output_format= "netcdf", download_format="unarchived"):
     """CDS surface api call
 
     Args:
@@ -470,6 +465,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
         target (str): filename
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours for which to download data
+        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
         output_format (str): default is "netcdf", can be "grib".
         download_format (str): default "unarchived". Can be "zip"
 
@@ -477,16 +473,18 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
         Store to disk dataset as indicated
 
     """
-
-    varnames = ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
-                      'surface_solar_radiation_downwards','surface_pressure',
-                      'total_precipitation', '2m_temperature', 'toa_incident_solar_radiation',
-                      'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux']
-
+    if varoi is None:
+        varoi = ['geopotential', 
+                    '2m_dewpoint_temperature',
+                    'surface_thermal_radiation_downwards',
+                    'surface_solar_radiation_downwards','surface_pressure',
+                    'total_precipitation',
+                    '2m_temperature']
+    
     c = cdsapi.Client()
     c.retrieve(
         dataset,
-        {'variable': varnames,
+        {'variable': varoi,
          'product_type': [product],
          "area": bbox,
          'year': year,
@@ -502,7 +500,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
     unzip_file(str(target))
 
 
-def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, output_format= "netcdf", download_format="unarchived"):
+def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, varoi=None, output_format= "netcdf", download_format="unarchived"):
     """CDS plevel api call
 
     Args:
@@ -514,6 +512,7 @@ def era5_request_plev(dataset, year, month, day, bbox, target, product, time, pl
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours to query
         plevels (str or list): pressure levels to query
+        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
         output_format (str): default is "netcdf", can be "grib".
         download_format (str): default "unarchived". Can be "zip"
 
@@ -521,16 +520,22 @@ def era5_request_plev(dataset, year, month, day, bbox, target, product, time, pl
         Store to disk dataset as indicated
 
     """
+    if varoi is None:
+        varoi = ['geopotential',
+                 'temperature',
+                 'u_component_of_wind',
+                 'v_component_of_wind',
+                 'specific_humidity',
+                 'relative_humidity']
+
+
     c = cdsapi.Client()
     c.retrieve(
         dataset,
         {
             'product_type': [product],
             "area": bbox,
-            'variable': [
-                'geopotential', 'temperature', 'u_component_of_wind',
-                'v_component_of_wind', 'specific_humidity', 'relative_humidity'
-            ],
+            'variable': varoi,
             'pressure_level': plevels,
             'year': year,
             'month': '%02d'%(month),
@@ -684,7 +689,7 @@ def unzip_file(file_path):
             merged_file_path = os.path.join(os.path.dirname(zip_file_path), os.path.basename(zip_file_path).replace('.zip', '.nc'))
             try:
                 # Combine all `.nc` files
-                datasets = [xr.open_dataset(nc_file) for nc_file in nc_files]
+                datasets = [xr.open_dataset(nc_file, engine='netcdf4') for nc_file in nc_files]
                 merged_ds = xr.merge(datasets)  # Adjust dimension as needed
                 merged_ds.to_netcdf(merged_file_path)
                 print(f"Merged .nc files into {merged_file_path}.")
@@ -721,12 +726,12 @@ def remap_CDSbeta(file_pattern, file_type='SURF'):
                 try:
                     ds = ds.drop_vars('number')
                 except:
-                    print("variables not found")
+                    print("Coordinate 'number' not found")
 
                 try:
                     ds = ds.drop_vars('expver')
                 except:
-                    print("variables not found")
+                    print("Coordinate 'expver' not found")
 
                 ds.to_netcdf(nc_file+ "_remap", mode='w')
                 # move remap back to orig name
@@ -740,25 +745,24 @@ def remap_CDSbeta(file_pattern, file_type='SURF'):
                 ds = xr.open_dataset(nc_file)
                 ds = ds.rename({ 'valid_time' : 'time'})
 
-                try:
-                    #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
-                    #ds2 = ds.swap_dims({'valid_time': 'time'})
-                    ds = ds.drop_vars('ishf')
-                    ds = ds.drop_vars('ie')
-                    ds = ds.drop_vars('zust')
-                    ds = ds.drop_vars('tisr')
-                except:
-                    print("variables not found")
+                #try:
+                #    #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
+                #    ds = ds.drop_vars('ishf')
+                #    ds = ds.drop_vars('ie')
+                #    ds = ds.drop_vars('zust')
+                #    ds = ds.drop_vars('tisr')
+                #except:
+                #    print("variables not found")
 
                 try:
                     ds = ds.drop_vars('number')
                 except:
-                    print("variables not found")
+                    print("Coordinate 'number' not found")
 
                 try:
                     ds = ds.drop_vars('expver')
                 except:
-                    print("variables not found")
+                    print("Coordinate 'expver' not found")
 
                 ds.to_netcdf(nc_file + "_remap", mode='w')
                 # move remap back to orig name
