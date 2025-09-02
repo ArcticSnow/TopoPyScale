@@ -99,6 +99,7 @@ class FetchERA5():
         except IOError:
             print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
+
     def get_era5(self, surf_plev='all'):
             """
             Funtion to call fetching of ERA5 data
@@ -169,7 +170,7 @@ class FetchERA5():
                     self.config.climate[self.config.project.climate].download_threads,
                     surf_plev='plev',
                     plevels=self.config.climate[self.config.project.climate].plevels,
-                    realtime=realtime,
+                    realtime=self.realtime,
                     output_format=output_format,
                     download_format=download_format,
                     new_CDS_API=True,
