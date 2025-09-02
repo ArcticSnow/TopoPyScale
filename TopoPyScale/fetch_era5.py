@@ -54,6 +54,15 @@ var_plev_name_google = {'geopotential':'z',
 
 
 class FetchERA5():
+    """
+    Class to fetch data from ERA5 based on config of loaded by the main class Topoclass.config or config loaded directly from yml file.
+
+    Args:
+        config (str or DefaultMunch): point to a config object (inherited from Topoclass, or filepath to yml)
+        varoi_surf (list): list of surface variables to download. Default is None which will fetch only necessary for TPS 
+        varoi_plev (list): list of pressure level variables to download. Default is None which will fetch only necessary for TPS
+    """
+    
     def __init__(self, config, varoi_surf=None, varoi_plev=None):
 
         if type(config) is DefaultMunch:
@@ -100,7 +109,7 @@ class FetchERA5():
             print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
 
-    def get_era5(self, surf_plev='all'):
+    def go_fetch(self, surf_plev='all'):
             """
             Funtion to call fetching of ERA5 data
 

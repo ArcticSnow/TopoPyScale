@@ -147,6 +147,7 @@ class Topoclass(object):
         self.toposub.project_directory = self.config.project.directory
 
         if self.config.project.climate.lower() == 'era5':
+            self.get_era5 = fe.FetchERA5(config=self.config)
             print("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
 
         if self.config.project.climate.lower() == 'ifs_forecast':
@@ -729,100 +730,8 @@ class Topoclass(object):
             shutil.rmtree(self.config.climate.tmp_path, ignore_errors=True)
 
     def get_era5(self):
-        """
-        Funtion to call fetching of ERA5 data
-
-        """
-        lonW = self.config.project.extent.get('lonW') - 0.4
-        lonE = self.config.project.extent.get('lonE') + 0.4
-        latN = self.config.project.extent.get('latN') + 0.4
-        latS = self.config.project.extent.get('latS') - 0.4
-
-        # if keyword exists in config set realtime to value (True/False)
-        if self.config.climate[self.config.project.climate].realtime:
-            realtime = self.config.climate[self.config.project.climate].realtime
-        # else set realtime to False
-        else:
-            realtime = False
-
-        if realtime:  # make sure end date is correct
-            lastdate = fe.return_last_fullday()
-            # 5th day will always be incomplete so we got to last fullday
-            self.config.project.end = self.config.project.end.replace(year=lastdate.year, month=lastdate.month,
-                                                                      day=lastdate.day)
-
-            # remove existing results (temporary results are ok and updated but cannot append to final files eg .outputs/downscaled/down_pt_0.nc)
-            try:
-                shutil.rmtree(self.config.outputs.path / "downscaled")
-                print('---> Downscaled directory cleaned')
-                os.makedirs(self.config.outputs.path / "downscaled")
-            except:
-                os.makedirs(self.config.outputs.path / "downscaled")
-                
-        realtime = False # always false now as redownload of current month handled elsewhere ? key required only to dynamically set config.project.end
-
-
-        # if keyword exists in config set out_format to value or default to netcdf
-        if self.config.climate[self.config.project.climate].cds_output_format:
-            output_format = self.config.climate[self.config.project.climate].cds_output_format
-        else:
-            output_format = 'netcdf'
-
-        if self.config.climate[self.config.project.climate].cds_download_format:
-            download_format = self.config.climate[self.config.project.climate].cds_download_format
-        else: 
-            download_format = 'unarchived'
-
-        data_repository = self.config.climate[self.config.project.climate].data_repository
-        if data_repository == 'cds':
-            # retreive ERA5 surface data
-            fe.retrieve_era5(
-                self.config.climate[self.config.project.climate].product,
-                self.config.project.start,
-                self.config.project.end,
-                self.config.climate.path,
-                latN, latS, lonE, lonW,
-                self.config.climate[self.config.project.climate].timestep,
-                self.config.climate[self.config.project.climate].download_threads,
-                surf_plev='surf',
-                realtime=realtime,
-                output_format=output_format,
-                download_format=download_format,
-                new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-            )
-            # retrieve era5 plevels
-            fe.retrieve_era5(
-                self.config.climate[self.config.project.climate].product,
-                self.config.project.start,
-                self.config.project.end,
-                self.config.climate.path,
-                latN, latS, lonE, lonW,
-                self.config.climate[self.config.project.climate].timestep,
-                self.config.climate[self.config.project.climate].download_threads,
-                surf_plev='plev',
-                plevels=self.config.climate[self.config.project.climate].plevels,
-                realtime=realtime,
-                output_format=output_format,
-                download_format=download_format,
-                new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily
-            )
-
-        elif data_repository == 'google_cloud_storage':
-            raise ValueError("WARNING: fetching ERA5 from Google Storage Cloud is not fully implemented yet")
-
-            fe.fetch_era5_google(self.config.climate.path, self.config.project.start, 
-                self.config.project.end,
-                lonW,
-                latS,
-                lonE,
-                latN,
-                self.config.climate[self.config.project.climate].plevels,
-                step=self.config.climate[self.config.project.climate].timestep,
-                num_threads=self.config.climate[self.config.project.climate].download_threads)
-        else:
-            raise ValueError("Config file for climate data specification issues.")
+        # to maintain backward compatibility and simplicity of use.
+        self.get_era5.go_fetch(surf_plev='all')
 
 
     def get_era5_snowmapper(self, surf_plev, lastday):
