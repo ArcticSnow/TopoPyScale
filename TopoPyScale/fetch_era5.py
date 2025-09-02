@@ -29,6 +29,9 @@ from cdo import *
 
 
 # [ ] remove this dependencie era5_downloader bringing little value
+# [ ] create a class to execute download
+
+
 import era5_downloader as era5down
 
 import warnings
@@ -371,7 +374,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         surf_varoi = ['geopotential', 
                     '2m_dewpoint_temperature',
                     'surface_thermal_radiation_downwards',
-                    'surface_solar_radiation_downwards','surface_pressure',
+                    'surface_solar_radiation_downwards',
+                    'surface_pressure',
                     'total_precipitation',
                     '2m_temperature']
     if plev_varoi is None: 
@@ -396,6 +400,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.name))
 
     download = df.loc[df.file_exist == 0]
+    pdb.set_trace()
     if download.shape[0] > 0:
         if surf_plev == 'surf':
             pool = ThreadPool(num_threads)
