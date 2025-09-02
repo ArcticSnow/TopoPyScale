@@ -792,7 +792,7 @@ class Topoclass(object):
                 output_format=output_format,
                 download_format=download_format,
                 new_CDS_API=True,
-                rm_daily=self.config.climate[self.config.project.climate].rm_daily
+                rm_daily=self.config.climate[self.config.project.climate].rm_daily,
             )
             # retrieve era5 plevels
             fe.retrieve_era5(

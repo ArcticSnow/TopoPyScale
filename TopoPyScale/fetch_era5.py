@@ -278,7 +278,8 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
                     num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
-                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, rm_daily=False):
+                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, 
+                    rm_daily=False, surf_varoi=None, plev_varoi=None):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -301,7 +302,9 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
         rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
-
+        surf_varoi: list of surface variable to download. Default is None, automatically assigning minimum required for topo_scale
+        plev_varoi: list of pressure level variables to download. . Default is None, automatically assigning minimum required for topo_scale
+        
     Returns:
         Monthly era surface files stored in disk.
 
@@ -364,6 +367,23 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     df['output_format'] = output_format
     df['download_format'] = download_format
 
+    if surf_varoi is None:
+        surf_varoi = ['geopotential', 
+                    '2m_dewpoint_temperature',
+                    'surface_thermal_radiation_downwards',
+                    'surface_solar_radiation_downwards','surface_pressure',
+                    'total_precipitation',
+                    '2m_temperature']
+    if plev_varoi is None: 
+        plev_varoi = ['geopotential',
+                 'temperature',
+                 'u_component_of_wind',
+                 'v_component_of_wind',
+                 'specific_humidity',
+                 'relative_humidity']
+    df['surf_varoi'] = df.step.apply(lambda x: surf_varoi)
+    df['plev_varoi'] = df.step.apply(lambda x: plev_varoi)
+
     print("Start = ", df.dates[0].strftime('%Y-%m-%d'))
     print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%m-%d'))
 
@@ -385,6 +405,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
+                                                list(download.surf_varoi)
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.output_format),
@@ -399,6 +420,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
+                                                list(download.plev_varoi)
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.plevels),
@@ -436,7 +458,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         
         if surf_plev == 'surf':
             fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
-            fout = str(eraDir / ("SURF_%04d.nc" % (year)))
+            fout = str(eraDir / "yearly" / ("SURF_%04d.nc" % (year)))
             cdo.mergetime(input=fpat, output=fout)
 
         if surf_plev == 'plev':
@@ -744,15 +766,6 @@ def remap_CDSbeta(file_pattern, file_type='SURF'):
             try:
                 ds = xr.open_dataset(nc_file)
                 ds = ds.rename({ 'valid_time' : 'time'})
-
-                #try:
-                #    #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
-                #    ds = ds.drop_vars('ishf')
-                #    ds = ds.drop_vars('ie')
-                #    ds = ds.drop_vars('zust')
-                #    ds = ds.drop_vars('tisr')
-                #except:
-                #    print("variables not found")
 
                 try:
                     ds = ds.drop_vars('number')
