@@ -400,7 +400,6 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.name))
 
     download = df.loc[df.file_exist == 0]
-    pdb.set_trace()
     if download.shape[0] > 0:
         if surf_plev == 'surf':
             pool = ThreadPool(num_threads)
@@ -410,11 +409,11 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
-                                                list(download.surf_varoi),
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.output_format),
-                                                list(download.download_format)))
+                                                list(download.download_format),
+                                                list(download.surf_varoi),))
             pool.close()
             pool.join()
         elif surf_plev == 'plev':
@@ -425,12 +424,12 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
-                                                list(download.plev_varoi),
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.plevels),
                                                 list(download.output_format),
-                                                list(download.download_format)))
+                                                list(download.download_format),
+                                                list(download.plev_varoi)))
             pool.close()
             pool.join()
         else:
@@ -481,7 +480,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     print("===> ERA5 netcdf files ready")
 
 
-def era5_request_surf(dataset, year, month, day, bbox, target, product, time, varoi=None, output_format= "netcdf", download_format="unarchived"):
+def era5_request_surf(dataset, year, month, day, bbox, target, product, time, output_format= "netcdf", download_format="unarchived", varoi=None):
     """CDS surface api call
 
     Args:
@@ -492,9 +491,9 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, va
         target (str): filename
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours for which to download data
-        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
         output_format (str): default is "netcdf", can be "grib".
         download_format (str): default "unarchived". Can be "zip"
+        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
 
     Returns:
         Store to disk dataset as indicated
@@ -527,7 +526,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, va
     unzip_file(str(target))
 
 
-def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, varoi=None, output_format= "netcdf", download_format="unarchived"):
+def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, output_format= "netcdf", download_format="unarchived", varoi=None):
     """CDS plevel api call
 
     Args:
@@ -539,9 +538,9 @@ def era5_request_plev(dataset, year, month, day, bbox, target, product, time, pl
         product (str): type of model run. defaul: reanalysis
         time (str or list): hours to query
         plevels (str or list): pressure levels to query
-        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
         output_format (str): default is "netcdf", can be "grib".
         download_format (str): default "unarchived". Can be "zip"
+        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
 
     Returns:
         Store to disk dataset as indicated
