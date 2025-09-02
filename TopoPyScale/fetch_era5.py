@@ -405,7 +405,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
-                                                list(download.surf_varoi)
+                                                list(download.surf_varoi),
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.output_format),
@@ -420,7 +420,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.day),
                                                 list(download.bbox),
                                                 list(download.target_file),
-                                                list(download.plev_varoi)
+                                                list(download.plev_varoi),
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.plevels),
