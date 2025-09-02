@@ -288,9 +288,6 @@ class Topoclass(object):
         self.toposub.df_centroids = df_centroids
 
 
-    def extract_grid_param(self):
-        return
-
     def extract_topo_cluster_param(self):
         """
         Function to segment a DEM in clusters and retain only the centroids of each cluster.

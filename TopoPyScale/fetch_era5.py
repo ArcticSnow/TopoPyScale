@@ -26,6 +26,7 @@ import zipfile
 import shutil
 import glob
 from cdo import *
+from munch import DefaultMunch
 
 
 # [ ] remove this dependencie era5_downloader bringing little value
@@ -53,13 +54,13 @@ var_plev_name_google = {'geopotential':'z',
 
 
 class FetchERA5():
-    def __init__(self, config, varoi_surf, varoi_plev):
+    def __init__(self, config, varoi_surf=None, varoi_plev=None):
 
-        if type(config) is munch.DefaultMunch:
+        if type(config) is DefaultMunch:
             self.config = config
             print("---> Config loaded")
         elif type(config) is str:
-            load_config(config_file=config)
+            self.config = self.load_config(config_file=config)
             print(f"---> Config from {config} loaded")
         else:
             raise ValueError('Cannot find config. Check path to config, or config is a Munch.DefaultMunch object.')
@@ -90,131 +91,131 @@ class FetchERA5():
                     
         self.realtime = False # always false now as redownload of current month handled elsewhere ? key required only to dynamically set config.project.end
 
+    @staticmethod
+    def load_config(config_file):
+        try:
+            with open(config_file, 'r') as f:
+                return DefaultMunch.fromYAML(f)
+        except IOError:
+            print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
 
-        def load_config(self, config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    self.config = DefaultMunch.fromYAML(f)
-            except IOError:
-                print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
-
-        def get_era5(self, surf_plev='all'):
-                """
-                Funtion to call fetching of ERA5 data
-
-                """
-                if surf_plev.lower() == 'surf':
-                    self.get_plev = False
-                    self.get_surf = True 
-                elif surf_plev.lower() == 'plev':
-                    self.get_plev = True 
-                    self.get_surf = False 
-
-                elif surf_plev.lower() == 'all':
-                    self.get_plev = True 
-                    self.get_surf = True 
-
-                lonW = self.config.project.extent.get('lonW') - 0.4
-                lonE = self.config.project.extent.get('lonE') + 0.4
-                latN = self.config.project.extent.get('latN') + 0.4
-                latS = self.config.project.extent.get('latS') - 0.4
-
-                # if keyword exists in config set out_format to value or default to netcdf
-                if self.config.climate[self.config.project.climate].cds_output_format:
-                    output_format = self.config.climate[self.config.project.climate].cds_output_format
-                else:
-                    output_format = 'netcdf'
-
-                if self.config.climate[self.config.project.climate].cds_download_format:
-                    download_format = self.config.climate[self.config.project.climate].cds_download_format
-                else: 
-                    download_format = 'unarchived'
-
-                # Check data repository is currently supported
-                data_repository = self.config.climate[self.config.project.climate].data_repository
-                if data_repository == 'cds':
-                    continue
-                else:
-                    raise ValueError(f"Data repository {data_repository} not yet supported.")
-
-                if self.get_surf:
-                    # retreive ERA5 surface data
-                    retrieve_era5(
-                        self.config.climate[self.config.project.climate].product,
-                        self.config.project.start,
-                        self.config.project.end,
-                        self.config.climate.path,
-                        latN, latS, lonE, lonW,
-                        self.config.climate[self.config.project.climate].timestep,
-                        self.config.climate[self.config.project.climate].download_threads,
-                        surf_plev='surf',
-                        realtime=self.realtime,
-                        output_format=output_format,
-                        download_format=download_format,
-                        new_CDS_API=True,
-                        rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                        surf_varoi=self.varoi_surf, 
-                        plev_varoi=self.varoi_plev
-                    )
-                if self.get_plev:
-                    # retrieve era5 plevels
-                    retrieve_era5(
-                        self.config.climate[self.config.project.climate].product,
-                        self.config.project.start,
-                        self.config.project.end,
-                        self.config.climate.path,
-                        latN, latS, lonE, lonW,
-                        self.config.climate[self.config.project.climate].timestep,
-                        self.config.climate[self.config.project.climate].download_threads,
-                        surf_plev='plev',
-                        plevels=self.config.climate[self.config.project.climate].plevels,
-                        realtime=realtime,
-                        output_format=output_format,
-                        download_format=download_format,
-                        new_CDS_API=True,
-                        rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                        surf_varoi=self.varoi_surf, 
-                        plev_varoi=self.varoi_plev
-                    )
-
-
-        def get_era5_snowmapper(self, surf_plev, lastday):
+    def get_era5(self, surf_plev='all'):
             """
             Funtion to call fetching of ERA5 data
-            TODO:
-            - merge monthly data into one file (cdo?)- this creates massive slow down!
+
             """
+            if surf_plev.lower() == 'surf':
+                self.get_plev = False
+                self.get_surf = True 
+            elif surf_plev.lower() == 'plev':
+                self.get_plev = True 
+                self.get_surf = False 
+
+            elif surf_plev.lower() == 'all':
+                self.get_plev = True 
+                self.get_surf = True 
+
             lonW = self.config.project.extent.get('lonW') - 0.4
             lonE = self.config.project.extent.get('lonE') + 0.4
             latN = self.config.project.extent.get('latN') + 0.4
             latS = self.config.project.extent.get('latS') - 0.4
 
-
             # if keyword exists in config set out_format to value or default to netcdf
-            if self.config.climate[self.config.project.climate].output_format:
-                output_format = self.config.climate[self.config.project.climate].output_format
-            # else set realtime to False
+            if self.config.climate[self.config.project.climate].cds_output_format:
+                output_format = self.config.climate[self.config.project.climate].cds_output_format
             else:
                 output_format = 'netcdf'
 
-            if surf_plev == 'surf':
+            if self.config.climate[self.config.project.climate].cds_download_format:
+                download_format = self.config.climate[self.config.project.climate].cds_download_format
+            else: 
+                download_format = 'unarchived'
+
+            # Check data repository is currently supported
+            data_repository = self.config.climate[self.config.project.climate].data_repository
+            if data_repository == 'cds':
+                pass
+            else:
+                raise ValueError(f"Data repository {data_repository} not yet supported.")
+
+            if self.get_surf:
                 # retreive ERA5 surface data
-                fe.era5_request_surf_snowmapper(
-                    lastday,
-                    latN, latS, lonE, lonW,
+                retrieve_era5(
+                    self.config.climate[self.config.project.climate].product,
+                    self.config.project.start,
+                    self.config.project.end,
                     self.config.climate.path,
-                    output_format=output_format
+                    latN, latS, lonE, lonW,
+                    self.config.climate[self.config.project.climate].timestep,
+                    self.config.climate[self.config.project.climate].download_threads,
+                    surf_plev='surf',
+                    realtime=self.realtime,
+                    output_format=output_format,
+                    download_format=download_format,
+                    new_CDS_API=True,
+                    rm_daily=self.config.climate[self.config.project.climate].rm_daily,
+                    surf_varoi=self.varoi_surf, 
+                    plev_varoi=self.varoi_plev
+                )
+            if self.get_plev:
+                # retrieve era5 plevels
+                retrieve_era5(
+                    self.config.climate[self.config.project.climate].product,
+                    self.config.project.start,
+                    self.config.project.end,
+                    self.config.climate.path,
+                    latN, latS, lonE, lonW,
+                    self.config.climate[self.config.project.climate].timestep,
+                    self.config.climate[self.config.project.climate].download_threads,
+                    surf_plev='plev',
+                    plevels=self.config.climate[self.config.project.climate].plevels,
+                    realtime=realtime,
+                    output_format=output_format,
+                    download_format=download_format,
+                    new_CDS_API=True,
+                    rm_daily=self.config.climate[self.config.project.climate].rm_daily,
+                    surf_varoi=self.varoi_surf, 
+                    plev_varoi=self.varoi_plev
                 )
 
-            if surf_plev == 'plev':            
-                # retrieve era5 plevels
-                fe.era5_request_plev_snowmapper(
-                    lastday,
-                    latN, latS, lonE, lonW,
-                    self.config.climate.path,
-                    plevels=self.config.climate[self.config.project.climate].plevels,
-                    output_format=output_format
-                )
+
+    def get_era5_snowmapper(self, surf_plev, lastday):
+        """
+        Funtion to call fetching of ERA5 data
+        TODO:
+        - merge monthly data into one file (cdo?)- this creates massive slow down!
+        """
+        lonW = self.config.project.extent.get('lonW') - 0.4
+        lonE = self.config.project.extent.get('lonE') + 0.4
+        latN = self.config.project.extent.get('latN') + 0.4
+        latS = self.config.project.extent.get('latS') - 0.4
+
+
+        # if keyword exists in config set out_format to value or default to netcdf
+        if self.config.climate[self.config.project.climate].output_format:
+            output_format = self.config.climate[self.config.project.climate].output_format
+        # else set realtime to False
+        else:
+            output_format = 'netcdf'
+
+        if surf_plev == 'surf':
+            # retreive ERA5 surface data
+            fe.era5_request_surf_snowmapper(
+                lastday,
+                latN, latS, lonE, lonW,
+                self.config.climate.path,
+                output_format=output_format
+            )
+
+        if surf_plev == 'plev':            
+            # retrieve era5 plevels
+            fe.era5_request_plev_snowmapper(
+                lastday,
+                latN, latS, lonE, lonW,
+                self.config.climate.path,
+                plevels=self.config.climate[self.config.project.climate].plevels,
+                output_format=output_format
+            )
 
 
 
