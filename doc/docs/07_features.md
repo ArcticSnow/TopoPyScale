@@ -12,6 +12,41 @@ name,x,y
 
 Using the setting spatial in `toposub` will lead you using the clustering method decribed in more details here below. 
 
+## Fetching ERA5 data from CDS
+
+As of now, TPS includes a class to implementing all the functionalities in dealing with the ERA5 data independent from `Topoclass`. This makes the process, now very long, of fetching data more flexible and robuts. The class eith inherits the config from `Topoclass`, or can be directly pointed towards the `config.yml` file.
+
+```python
+from TopoPyScale import fetch_era5 as fe 
+from TopoPyScale import topoclass as tc 
+
+config_file = 'config.yml'
+mp = tc.Topoclass(config_file)
+era = fe.FetchERA5(config=mp.config)
+era.go_fetch()
+```
+
+The class integrate a number of options to make the downloading more flexible. For instance only download Surface Level data, with a given set of variables.
+
+```python
+from TopoPyScale import fetch_era5 as fe 
+era = fe.FetchERA5(config='config.yml')
+
+varoi = ['geopotential_at_surface',
+			'surface_thermal_radiation_downwards',
+            'surface_solar_radiation_downwards',
+            'surface_pressure',
+            'total_precipitation', 
+            '2m_temperature'
+        ]
+
+era.varoi_surf = varoi
+era.go_fetch()
+```
+
+This way it is possible to use routines for TPS project but not only.
+
+
 ## Convert ERA5 to Zarr
 
 As explained in the (Datasets)[04_datasetSources.md], TPS relies on ERA5 data. In the future more datasets could be included. The minimum data required are at pressure levels `t,p,q,u,v`, and the surface level:
