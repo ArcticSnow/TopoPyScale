@@ -210,7 +210,7 @@ class FetchERA5():
 
         if surf_plev == 'surf':
             # retreive ERA5 surface data
-            fe.era5_request_surf_snowmapper(
+            era5_request_surf_snowmapper(
                 lastday,
                 latN, latS, lonE, lonW,
                 self.config.climate.path,
@@ -219,12 +219,31 @@ class FetchERA5():
 
         if surf_plev == 'plev':            
             # retrieve era5 plevels
-            fe.era5_request_plev_snowmapper(
+            era5_request_plev_snowmapper(
                 lastday,
                 latN, latS, lonE, lonW,
                 self.config.climate.path,
                 plevels=self.config.climate[self.config.project.climate].plevels,
                 output_format=output_format
+            )
+
+    def to_zarr(self):
+
+        # extract chunk size for time and pressure level
+        nlevels = len(self.config.climate[self.config.project.climate].plevels)
+        ntime = int(self.config.climate.era5.timestep[:-1]) * 365
+
+        print("Be aware that the conversion to Zarr requires plenty of memory, and may crash the console if resources are not sufficient")
+
+        convert_netcdf_stack_to_zarr(
+            path_to_netcdfs= str(self.config.climate.path / 'yearly'),
+            zarrout= str(self.config.climate.path/'ERA5.zarr'), 
+            chunks={'latitude':3, 'longitude':3, 'time':ntime, 'level':nlevels}, 
+            compressor=None,
+            plev_name='PLEV_*.nc',
+            surf_name='SURF_*.nc',
+            parallelize=False,
+            n_cores=self.config.project.parallelization.setting.multicore.CPU_cores
             )
 
 
