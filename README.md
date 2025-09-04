@@ -42,6 +42,8 @@ Follow procedure and conventions described in: https://www.youtube.com/watch?v=O
 
 Our forum is now on [Github Discussions](https://github.com/ArcticSnow/TopoPyScale/discussions). Come visit!
 
+## Need help
+Please reach out in case you need help in approaching your problem with TopoPyScale. We always appreciate to know the various usages people find to TopoPyScale. And we also welcome academic collaboration. 
 
 ## Design
 
