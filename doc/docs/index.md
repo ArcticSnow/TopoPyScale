@@ -68,7 +68,7 @@ or in bibtex:
 We welcome, and are pleased for any new contribution to this downscaling toolbox. So if you have suggestions, correction and addition to the current code, please come join us on [GitHub](https://github.com/ArcticSnow/TopoPyScale) and talk to us on the [Discussion](https://github.com/ArcticSnow/TopoPyScale/discussions) page.
 
 ## Need Help?
-Please reach out in case you need help in approaching your problem with TopoPyScale. We always appreciate to know the various usages people find to TopoPyScale. And we also welcome academic collaboration.
+Please reach out in case you need help in approaching your problem with TopoPyScale. We always appreciate to know the various [use cases](00_use_cases.md) people find to TopoPyScale. And we also welcome academic collaboration.
 
 ## References
 
