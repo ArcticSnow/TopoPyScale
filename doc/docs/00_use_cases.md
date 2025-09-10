@@ -3,7 +3,7 @@ This is a non-exhaustive list of use cases of TopoPyScale.
 **Please drop us a line about your usage of TopoPyScale to be featured.** 
 
 ## Genesis project (2025)
-The [Genesis project](https://genesisnbs.eu/) , funded by [Horizon Europe](https://cordis.europa.eu/project/id/101157447 ), aims to study how climatic risks affect Nature based Solutions in the water sector, in the Macaronesian archipelagos. TopoPyScale was applied to downscale 30 years of ERA5 hourly data to the topography of Canary Islands, Azores, Madeira and Cape Verde, from ~25 km to 180 m DEM (from resampled SRTM data). This data has been used as input to estimate extreme weather events using GEV distribution among other methods, and serve as information to elaborate the risk profiles which engineers and other roles in the project need for further analysis.
+The [Genesis project](https://genesisnbs.eu/) , funded by [Horizon Europe](https://cordis.europa.eu/project/id/101157447 ), aims to study how climatic risks affect Nature based Solutions in the water sector, in the Macaronesian archipelagos. TopoPyScale was applied to downscale 30 years of ERA5 hourly data to the topography of Canary Islands, Azores, Madeira and Cape Verde, from ~25 km to 180 m DEM (from resampled SRTM data). This data has been used as input to estimate extreme weather events using GEV distribution among other methods, and serve as information to elaborate the risk profiles which engineers and other stackeholders in the project need for further quantitative risk analysis.
 
 ## SnowMapper.ch Online Dashboard
 
