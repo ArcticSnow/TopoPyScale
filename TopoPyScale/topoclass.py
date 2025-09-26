@@ -147,7 +147,7 @@ class Topoclass(object):
         self.toposub.project_directory = self.config.project.directory
 
         if self.config.project.climate.lower() == 'era5':
-            self.get_era5 = fe.FetchERA5(config=self.config)
+            self.era5_obj = fe.FetchERA5(config=self.config)
             print("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
 
         if self.config.project.climate.lower() == 'ifs_forecast':
@@ -731,7 +731,7 @@ class Topoclass(object):
 
     def get_era5(self):
         # to maintain backward compatibility and simplicity of use.
-        self.get_era5.go_fetch(surf_plev='all')
+        self.era5_obj.go_fetch(surf_plev='all')
 
 
     def get_era5_snowmapper(self, surf_plev, lastday):
