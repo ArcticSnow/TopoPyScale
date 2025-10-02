@@ -28,6 +28,11 @@ TopoPyScale has been tested on the OS:
 - [x] MacOS
 - [ ] Windows
 
+## Installing CDO
+`TopoPyScale` uses CDO to merge daily netcdf into yearly files. To install CDO, make sure to no install the version 2.5 which has an issue. Either pick an earlier version or >2.5. 
+Installation and documentatino avaialble on the website of the [Max Planck Institute](https://code.mpimet.mpg.de/projects/cdo/wiki)
+
+
 ## Setting up `cdsapi`
 
 Then you need to setup your `cdsapi` with the Copernicus API key system. Follow [this tutorial](https://cds.climate.copernicus.eu/api-how-to#install-the-cds-api-key) after creating an account with [Copernicus](https://cds.climate.copernicus.eu/). On Linux, create a file `nano ~/.cdsapirc` with inside:
