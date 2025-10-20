@@ -1,12 +1,12 @@
 # Installation
 
 ## Python Environment Preparation
-`TopoPyScale` is tested for Python 3.9. You may create a new virtual environment using conda prior to installation.
+`TopoPyScale` is tested for Python 3.13. You may create a new virtual environment using conda prior to installation.
 
 
 **Option 1 (recommended):**
 ```bash
-conda create -n downscaling python ipython
+conda create -n downscaling python=3.13 ipython
 conda activate downscaling
 
 # Recomended way to install dependencies:

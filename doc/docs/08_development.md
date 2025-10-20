@@ -65,7 +65,8 @@ lazydocs --output-path="path/to/TopoPyScale/doc/docs" --overview-file="README.md
 ## New Release and Pypi Version (for the code maintainers)
 
 
-We are now using the new system of `pyproject.toml` with which the tool [`flit`](https://flit.pypa.io/en/latest/index.html#) is helping building and publishing the software to Pypi.org.
+We are now using the new system of `pyproject.toml` with which the tool [`flit`](https://flit.pypa.io/en/latest/index.html#) is helping building and publishing the software to Pypi.org. 
+To upgrade the version, first increment the version number in the file `__init__.py`
 
 ```sh
 # First, make sure twine is installed and you have your Pypi credentials
