@@ -21,7 +21,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import rioxarray as rio
 import xarray as xr
 from munch import DefaultMunch
 from sklearn.preprocessing import StandardScaler
@@ -450,11 +449,12 @@ class Topoclass(object):
             df_param['point_ind'] = df_param.cluster_labels.astype(int)
 
         # Build the final cluster map
-        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.values, self.toposub.ds_param.slope.shape))
-        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, self.toposub.ds_param.slope.shape))
-        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.values, self.toposub.ds_param.slope.shape))
+        shape = [self.toposub.ds_param.slope.shape[1], self.toposub.ds_param.slope.shape[0]]
+        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.values, shape).T)
+        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, shape).T)
+        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.values, shape).T)
         if split_clustering:
-            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.values, self.toposub.ds_param.slope.shape))
+            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.values, shape).T)
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
