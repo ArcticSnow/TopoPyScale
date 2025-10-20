@@ -449,7 +449,7 @@ class Topoclass(object):
             df_param['point_ind'] = df_param.cluster_labels.astype(int)
 
         # Build the final cluster map
-        shape = [self.toposub.ds_param.slope.shape[1], self.toposub.ds_param.slope.shape[0]]
+        shape = self.toposub.ds_param.slope.shape
         self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.values, shape,order='F'))
         self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, shape,order='F'))
         self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.values, shape,order='F'))
