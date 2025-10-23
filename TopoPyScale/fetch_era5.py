@@ -77,6 +77,9 @@ class FetchERA5():
         self.varoi_surf = varoi_surf
         self.varoi_plev = varoi_plev
 
+        os.makedirs(self.config.climate.path / 'yearly', exist_ok=True)
+        os.makedirs(self.config.climate.path/ 'daily', exist_ok=True)
+
         # if keyword exists in config set realtime to value (True/False)
         if self.config.climate[self.config.project.climate].realtime:
             self.realtime = self.config.climate[self.config.project.climate].realtime
