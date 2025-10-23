@@ -442,7 +442,34 @@ def downscale_climate(project_directory,
         ds_ = None
         ds_tmp = None
         
-    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    
+    try:
+        ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
+    except KeyError as e:
+        # Find which timesteps are missing
+        ds_plev = _open_dataset_climate(flist_PLEV)
+        available_times = pd.to_datetime(ds_plev.time.values)
+        requested_times = pd.to_datetime(tvec.values)
+        
+        # Find missing timesteps
+        missing_times = []
+        for req_time in requested_times:
+            # Check if any available time matches within a small tolerance (1 minute)
+            time_diffs = abs(available_times - req_time)
+            if time_diffs.min() > pd.Timedelta('1min'):
+                missing_times.append(req_time)
+        
+        if missing_times:
+            missing_str = ', '.join([t.strftime('%Y-%m-%d %H:%M') for t in missing_times[:10]])  # Show first 10
+            if len(missing_times) > 10:
+                missing_str += f" ... and {len(missing_times) - 10} more"
+            
+            print(f"WARNING: {len(missing_times)} timesteps are missing from the climate data:")
+            print(f"Available time range: {available_times.min()} to {available_times.max()}")
+            print(f"Requested time range: {requested_times.min()} to {requested_times.max()}")
+            print(f"Missing timesteps: {missing_str}")
+
+
     #    to avoid chunk warning   
     
     #with dask.config.set(**{'array.slicing.split_large_chunks': True}):
@@ -469,7 +496,32 @@ def downscale_climate(project_directory,
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
-    ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
+    try:
+        ds_plev = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
+    except KeyError as e:
+        # Find which timesteps are missing
+        ds_plev = _open_dataset_climate(flist_SURF)
+        available_times = pd.to_datetime(ds_plev.time.values)
+        requested_times = pd.to_datetime(tvec.values)
+        
+        # Find missing timesteps
+        missing_times = []
+        for req_time in requested_times:
+            # Check if any available time matches within a small tolerance (1 minute)
+            time_diffs = abs(available_times - req_time)
+            if time_diffs.min() > pd.Timedelta('1min'):
+                missing_times.append(req_time)
+        
+        if missing_times:
+            missing_str = ', '.join([t.strftime('%Y-%m-%d %H:%M') for t in missing_times[:10]])  # Show first 10
+            if len(missing_times) > 10:
+                missing_str += f" ... and {len(missing_times) - 10} more"
+            
+            print(f"WARNING: {len(missing_times)} timesteps are missing from the climate data:")
+            print(f"Available time range: {available_times.min()} to {available_times.max()}")
+            print(f"Requested time range: {requested_times.min()} to {requested_times.max()}")
+            print(f"Missing timesteps: {missing_str}")
+                          
     ds_list = []
     for _, _ in df_centroids.iterrows():
         ds_list.append(ds_surf)
