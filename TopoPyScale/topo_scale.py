@@ -380,6 +380,10 @@ def downscale_climate(project_directory,
     global pt_downscale_radiations
     global _subset_climate_dataset
 
+    # Use default file_pattern if None is passed
+    if file_pattern is None:
+        file_pattern = 'down_pt*.nc'
+
     print('\n-------------------------------------------------')
     print('           TopoScale - Downscaling\n')
     print('---> Downscaling climate to list of points using TopoScale')
