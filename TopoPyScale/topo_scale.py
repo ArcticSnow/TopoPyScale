@@ -497,11 +497,11 @@ def downscale_climate(project_directory,
     fun_param = None
     ds_plev = None
     try:
-        ds_plev = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
+        ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
     except KeyError as e:
         # Find which timesteps are missing
-        ds_plev = _open_dataset_climate(flist_SURF)
-        available_times = pd.to_datetime(ds_plev.time.values)
+        ds_surf = _open_dataset_climate(flist_SURF)
+        available_times = pd.to_datetime(ds_surf.time.values)
         requested_times = pd.to_datetime(tvec.values)
         
         # Find missing timesteps
