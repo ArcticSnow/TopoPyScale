@@ -52,6 +52,44 @@ In order to use the routine to download ERA5 data from the [Google Cloud Storage
 
 Go to [Development page](./08_Development.md)
 
+### Step 1. Clone the repository
+
+Clone the GitHub repo:
+
+```bash
+git clone git@github.com:ArcticSnow/TopoPyScale.git
+cd TopoPyScale
+```
+
+---
+
+### Step 2. Install it in **editable/development mode**
+
+This lets you modify the source code and have changes take effect immediately:
+
+```bash
+pip install -e .
+```
+
+The `-e` flag means *editable* —  for development work.
+
+---
+
+### Step 3. Verify your setup
+
+Check that Python is using your local copy:
+
+```bash
+python -m pip show topopyscale
+```
+
+You should see something like:
+
+```bash
+Location: /home/user/TopoPyScale
+Editable project location: /home/user/TopoPyScale
+```
+
 ## Install Pvlib with SPA C-implementation
 By default, TopoPyScale uses the Python Numpy implementatino of Pvlib to compute solar position. The Pvlib library offers multiple method to compute the solar position, with one using a C-implementation. Because of licensing, the C files are not distributed within the Pvlib library. This requries a special manipulation to execute:
 
