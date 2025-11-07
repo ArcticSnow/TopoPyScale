@@ -76,7 +76,11 @@ def get_versionning():
         hash = repo.head.object.hexsha
     except:
         hash = 'Not available'
-    version = metadata.version('TopoPyScale')
+    try:
+        version = metadata.version('TopoPyScale')
+    except (metadata.PackageNotFoundError, ImportError):
+        # Fallback for development/source installations
+        version = "dev"
     ver_dic = {'git_commit': hash,
                'package_version': version}
     return ver_dic
