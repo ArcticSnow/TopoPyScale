@@ -14,7 +14,15 @@ TODO:
 """
 
 
-from zarr.codecs import BloscCodec
+try:
+    from zarr.codecs import BloscCodec
+except ImportError:
+    # For newer versions of zarr
+    try:
+        from zarr.codecs._blosc import BloscCodec
+    except ImportError:
+        # Fallback for older versions or different structure
+        from zarr import Blosc as BloscCodec
 from dask.distributed import LocalCluster, Client
 import numpy as np
 from datetime import datetime
