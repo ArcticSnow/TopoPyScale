@@ -776,11 +776,11 @@ class Topoclass(object):
         lastday = fe.return_last_fullday()
         return(lastday)
 
-    def process_SURF_file(self, wdir):
-        fe.process_SURF_file(wdir)
+    def unzip_file(self, filepath):
+        fe.unzip_file(filepath)
 
-    def remap_netcdf(self, filepath):
-        fe.remap_CDSbeta(filepath)
+    def remap_netcdf(self, filepath, file_type):
+        fe.remap_CDSbeta(filepath, file_type)
 
     def get_ifs_forecast(self):
         # run openData script here
