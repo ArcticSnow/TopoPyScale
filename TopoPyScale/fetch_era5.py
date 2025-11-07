@@ -10,7 +10,15 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 import dask
-from zarr.codecs import BloscCodec
+try:
+    from zarr.codecs import BloscCodec
+except ImportError:
+    # For newer versions of zarr
+    try:
+        from zarr.codecs._blosc import BloscCodec
+    except ImportError:
+        # Fallback for older versions or different structure
+        from zarr import Blosc as BloscCodec
 from datetime import datetime
 
 import cdsapi, os, sys
