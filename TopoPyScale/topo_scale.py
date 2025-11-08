@@ -184,7 +184,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     else:
         down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
 
-    down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp * 1 / meta.get('tstep') * 10 ** 3  # Convert to mm/hr
+    down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp * 1 * meta.get('tstep') * 10 ** 3  # Convert to mm/hr
     down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
     down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
     down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
@@ -252,7 +252,7 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     surf_interp['cse'] = 0.23 + x1 * (surf_interp.vp / surf_interp.t2m) ** (1 / x2)
     # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
 
-    tstep_seconds = pd.Timedelta(f"{meta.get('tstep')}H").seconds
+    tstep_seconds = 3600
 
     surf_interp['cle'] = (surf_interp.strd / tstep_seconds) / (sbc * surf_interp.t2m ** 4) - \
                          surf_interp['cse']
