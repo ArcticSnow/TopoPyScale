@@ -605,12 +605,34 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         if surf_plev == 'surf':
             fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
             fout = str(eraDir / "yearly" / ("SURF_%04d.nc" % (year)))
-            cdo.mergetime(input=fpat, output=fout)
+
+
+            try:
+                cdo.mergetime(input=fpat, output=fout)
+            except Exception as e:
+                print(f"CDO warning (non-fatal): {e}")
+                # Check if output file was actually created despite warnings
+                if os.path.exists(fout):
+                    print(f"Merge completed successfully: {fout}")
+                else:
+                    raise e  # Re-raise if it's a real error
+
+
 
         if surf_plev == 'plev':
             fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
             fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
-            cdo.mergetime(input=fpat, output=fout)
+
+            try:
+                cdo.mergetime(input=fpat, output=fout)
+            except Exception as e:
+                print(f"CDO warning (non-fatal): {e}")
+                # Check if output file was actually created despite warnings
+                if os.path.exists(fout):
+                    print(f"Merge completed successfully: {fout}")
+                else:
+                    raise e  # Re-raise if it's a real error
+            
 
     if rm_daily:
         try:
@@ -858,7 +880,7 @@ def unzip_file(file_path):
             try:
                 # Combine all `.nc` files
                 datasets = [xr.open_dataset(nc_file, engine='netcdf4') for nc_file in nc_files]
-                merged_ds = xr.merge(datasets)  # Adjust dimension as needed
+                merged_ds = xr.merge(datasets, compat='override')  # Use override to handle conflicting metadata like 'expver'
                 merged_ds.to_netcdf(merged_file_path)
                 print(f"Merged .nc files into {merged_file_path}.")
 
