@@ -181,8 +181,9 @@ my_project/
             ├── my_dem.tif
             └── pts_list.csv  (optional)
         └── climate/
-            ├── PLEV*.nc
-            └── SURF*.nc
+            └── yearly/
+                ├── PLEV*.nc
+                └── SURF*.nc
     ├── outputs/
     └── config.ini
 ```

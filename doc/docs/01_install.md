@@ -41,7 +41,7 @@ CDS is the Copernicus portal from which `TopoPyScale` will download the ERA5 dat
 url: https://cds.climate.copernicus.eu/api/v2
 key: {uid}:{api-key}
 ```
-Once the installation finished, and you are ready to launch your first TopoPyScale job, that will fetch data from CDS, you will have first to accept the terms and conditions of CDS for the two datasets TopoPyScale will download data from : ERA5 Pressure levl hourly, and ERA5 Single level hourly.
+Once the installation finished, and you are ready to launch your first TopoPyScale job, that will fetch data from CDS. Though, you will have first to accept the terms and conditions of CDS for the two datasets TopoPyScale will download data from : ERA5 Pressure levl hourly, and ERA5 Single level hourly.
 
 ## Setting up Google Cloud authentification
 
