@@ -10,6 +10,7 @@ import git
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
+import warnings
 
 def ds_to_indexed_dataframe(ds):
     """
@@ -38,10 +39,10 @@ def multicore_pooling(fun, fun_param, n_cores):
     '''
     if n_cores is None:
         n_cores = mproc.cpu_count() - 2
-        raise Warning(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
+        warnings.warn(f'WARNING: number of cores to use not provided. By default {n_cores} cores will be used')
     elif n_cores > mproc.cpu_count():
         n_cores = mproc.cpu_count() - 2
-        raise Warning(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
+        warnings.warn(f'WARNING: Only {mproc.cpu_count()} cores available on this machine, reducing n_cores to {n_cores} ')
 
     # make sure it will run on one core at least
     if n_cores == 0:
