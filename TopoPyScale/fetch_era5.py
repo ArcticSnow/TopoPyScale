@@ -411,7 +411,7 @@ def process_SURF_file( wdir):
         try:
             # Combine all `.nc` files
             datasets = [xr.open_dataset(nc_file) for nc_file in nc_files]
-            merged_ds = xr.concat(datasets, dim='time')  # Adjust dimension as needed
+            merged_ds = xr.merge(datasets)  # Adjust dimension as needed
             merged_ds.to_netcdf(merged_file_path)
             print(f"Merged .nc files into {merged_file_path}.")
         finally:
@@ -463,12 +463,7 @@ def remap_CDSbeta(wdir):
     for nc_file in surf_files:
         try:
             ds = xr.open_dataset(nc_file)
-            ds = ds.rename({ 'time' : 'strangetime'})
             ds = ds.rename({ 'valid_time' : 'time'})
-            ds = ds.isel({'strangetime': 0})
-            
-            
-
             try:
                 #cdo delname,number,ishf,ie,zust,tisr SURF_20240925.nc SURF_clean.nc
                 #ds2 = ds.swap_dims({'valid_time': 'time'})
