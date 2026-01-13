@@ -708,7 +708,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     # # plt.show()
     #
     # with rasterio.open('output_raster.tif', 'w', **profile) as dst:
-    #     # Write to disk
+    #     # Write to disk1
     #     dst.write(array.astype(rasterio.int16))
     #
     # src = rasterio.open("output_raster.tif")
@@ -823,6 +823,62 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     return grid_stack, lats, lons
 
 
+def topo_map_sim_memsafe(ds_var, n_decimals=2, dtype='float32', new_res=None):
+    import numpy as np
+    import rasterio
+    from rasterio.enums import Resampling
+
+    ds_var = np.asarray(ds_var)
+
+    inputFile = "outputs/landform.tif"
+
+    with rasterio.open(inputFile) as src:
+        # Optional resampling of landform raster
+        if new_res is not None:
+            scale_factor = src.res[0] / new_res
+            new_height = int(src.height * scale_factor)
+            new_width = int(src.width * scale_factor)
+            array = src.read(1, out_shape=(new_height, new_width), resampling=Resampling.nearest)
+            # Recalculate bounds for new resolution
+            min_E, min_N, max_E, max_N = src.bounds
+            lons = np.linspace(min_E, max_E, new_width)
+            lats = np.linspace(min_N, max_N, new_height)[::-1]
+        else:
+            array = src.read(1)  # landform cluster IDs
+            min_E, min_N, max_E, max_N = src.bounds
+            lons = np.linspace(min_E, max_E, src.width)
+            lats = np.linspace(min_N, max_N, src.height)[::-1]
+        
+    # Initialize output
+    T, N = ds_var.shape  # time × clusters
+    H, W = array.shape
+
+    grid_stack = np.zeros((T, H, W), dtype=dtype)
+
+    # Memory-efficient loop over clusters
+    for clust_id in range(N):
+        print(clust_id)
+        mask = (array == clust_id)  # 2D boolean
+        if not np.any(mask):
+            continue  # skip if cluster not in landform
+
+        for t in range(T):
+            grid_stack[t][mask] = np.round(ds_var[t, clust_id], n_decimals)
+            #value = ds_var.iloc[t, clust_id]
+            #grid_stack[t][mask] = value
+
+
+    #grid_stack = np.round(grid_stack, n_decimals)
+    return grid_stack, lats, lons
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
 def write_ncdf(wdir, grid_stack, var, units,epsg,res,  mytime, lats, lons, mydtype,newfile, outname=None):
     # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
