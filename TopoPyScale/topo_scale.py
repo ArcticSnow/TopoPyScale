@@ -447,48 +447,31 @@ def downscale_climate(project_directory,
         ds_tmp = None
         
     
-    try:
-        ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
-    except KeyError as e:
-        # Find which timesteps are missing
-        ds_plev = _open_dataset_climate(flist_PLEV)
-        available_times = pd.to_datetime(ds_plev.time.values)
-        requested_times = pd.to_datetime(tvec.values)
-        
-        # Find missing timesteps
-        missing_times = []
-        for req_time in requested_times:
-            # Check if any available time matches within a small tolerance (1 minute)
-            time_diffs = abs(available_times - req_time)
-            if time_diffs.min() > pd.Timedelta('1min'):
-                missing_times.append(req_time)
-        
-        if missing_times:
-            missing_str = ', '.join([t.strftime('%Y-%m-%d %H:%M') for t in missing_times[:10]])  # Show first 10
-            if len(missing_times) > 10:
-                missing_str += f" ... and {len(missing_times) - 10} more"
-            
-            print(f"WARNING: {len(missing_times)} timesteps are missing from the climate data:")
-            print(f"Available time range: {available_times.min()} to {available_times.max()}")
-            print(f"Requested time range: {requested_times.min()} to {requested_times.max()}")
-            print(f"Missing timesteps: {missing_str}")
-
-
-    #    to avoid chunk warning   
-    
-    #with dask.config.set(**{'array.slicing.split_large_chunks': True}):
-    #    ds_plev = _open_dataset_climate(flist_PLEV).sel(time=tvec.values)
-
+    ds_plev = _open_dataset_climate(flist_PLEV)
+    available_times = pd.to_datetime(ds_plev.time.values)
+    requested_times = pd.to_datetime(tvec.values)
 
     # Check tvec is within time period of ds_plev.time or return error
-    if ds_plev.time.min() > tvec.min():
-        raise ValueError(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
-        return
-    elif ds_plev.time.max() < tvec.max():
-        raise ValueError(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in climate forcing.')
-        return
-    else:
-        ds_plev = ds_plev.sel(time=tvec.values)
+    if available_times.min() > requested_times.min():
+        raise ValueError(f'ERROR: start date {tvec[0].strftime(format="%Y-%m-%d")} not covered in PLEV climate forcing. '
+                         f'PLEV data starts at {available_times.min()}')
+    if available_times.max() < requested_times.max():
+        raise ValueError(f'ERROR: end date {tvec[-1].strftime(format="%Y-%m-%d")} not covered in PLEV climate forcing. '
+                         f'PLEV data ends at {available_times.max()}')
+
+    # Check for missing timesteps within the range
+    missing_times = requested_times[~requested_times.isin(available_times)]
+    if len(missing_times) > 0:
+        missing_str = ', '.join([t.strftime('%Y-%m-%d %H:%M') for t in missing_times[:10]])
+        if len(missing_times) > 10:
+            missing_str += f" ... and {len(missing_times) - 10} more"
+        raise ValueError(f"ERROR: {len(missing_times)} timesteps are missing from PLEV climate data:\n"
+                         f"  Available time range: {available_times.min()} to {available_times.max()}\n"
+                         f"  Requested time range: {requested_times.min()} to {requested_times.max()}\n"
+                         f"  Missing timesteps: {missing_str}\n"
+                         f"  Please re-download ERA5 data or adjust your config time range.")
+
+    ds_plev = ds_plev.sel(time=tvec.values)
 
     row_list = []
     ds_list = []

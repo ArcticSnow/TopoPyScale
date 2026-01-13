@@ -92,7 +92,7 @@ class FetchERA5():
         if self.config.climate[self.config.project.climate].realtime:
             self.realtime = self.config.climate[self.config.project.climate].realtime
             # make sure end date is correct
-            lastdate = fe.return_last_fullday()
+            lastdate = return_last_fullday()
             self.config.project.end = self.config.project.end.replace(year=lastdate.year, 
                                                                         month=lastdate.month,
                                                                         day=lastdate.day)
@@ -820,7 +820,7 @@ def return_last_fullday():
     print("Current time (rounded down) in UTC:", current_time_utc_str)
     print("Last full day ERA5T data in UTC:", last_fullday_data_str)
 
-    return (last_fullday_data_str)
+    return six_days_ago_utc
 
 
 def grib2netcdf(gribname, outname=None):
