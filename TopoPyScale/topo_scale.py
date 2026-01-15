@@ -79,7 +79,10 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     # convert gridcells coordinates from WGS84 to DEM projection
     lons, lats = np.meshgrid(ds_plev_pt.longitude.values, ds_plev_pt.latitude.values)
-    trans = Transformer.from_crs("epsg:4326", "epsg:" + str(meta.get('target_epsg')), always_xy=True)
+    trans = meta.get('transformer')  # Use cached transformer
+    if trans is None:
+        # Fallback for backwards compatibility
+        trans = Transformer.from_crs("epsg:4326", f"epsg:{meta.get('target_epsg')}", always_xy=True)
     Xs, Ys = trans.transform(lons.flatten(), lats.flatten())
     Xs = Xs.reshape(lons.shape)
     Ys = Ys.reshape(lons.shape)
@@ -517,6 +520,9 @@ def downscale_climate(project_directory,
 
     # Preparing list to feed into Pooling
     # Pre-build meta dict once (same for all points)
+    # Pre-create transformer once (used by all points for CRS conversion)
+    transformer = Transformer.from_crs("epsg:4326", f"epsg:{target_EPSG}", always_xy=True)
+
     meta_template = {
         'interp_method': interp_method,
         'lw_terrain_flag': lw_terrain_flag,
@@ -526,6 +532,7 @@ def downscale_climate(project_directory,
         'target_epsg': target_EPSG,
         'precip_lapse_rate_flag': precip_lapse_rate_flag,
         'output_directory': output_directory,
+        'transformer': transformer,  # Cached CRS transformer
     }
 
     # Build lists using itertuples (faster than iterrows)
