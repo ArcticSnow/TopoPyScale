@@ -9,6 +9,7 @@ import os, re
 import sys
 import glob
 import re
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import numpy as np
 import rasterio
@@ -315,7 +316,7 @@ def fsm_sim(nlstfile, fsm_exec, delete_nlst_files=True):
 
 
 
-def agg_by_var_fsm( var='snd', fsm_path = "./outputs/fsm_sims"):
+def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -332,19 +333,16 @@ def agg_by_var_fsm( var='snd', fsm_path = "./outputs/fsm_sims"):
                 gt50 - ground temperature (50cm depth) degC
 
         fsm_path (str): location of simulation files
-    Returns: 
+        n_workers (int): number of parallel threads for file reading (default: 8)
+    Returns:
         dataframe
-
-
-
     """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob(fsm_path+"/sim_*")
 
-    if len(a) == 0:                                                                                                                                                                                                                           
-        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")   
-
+    if len(a) == 0:
+        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -358,8 +356,6 @@ def agg_by_var_fsm( var='snd', fsm_path = "./outputs/fsm_sims"):
                    'gst':-2,
                    'gt50':-1}
 
-
-
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
@@ -367,26 +363,31 @@ def agg_by_var_fsm( var='snd', fsm_path = "./outputs/fsm_sims"):
 
     file_list = natural_sort(a)
 
-    mydf = pd.read_csv(file_list[0], sep='\s+', parse_dates=[[0, 1, 2]], header=None)
-    mydates = mydf.iloc[:, 0]
-
-    # can do temp subset here
-    # startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
-    # endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
+    mydf = pd.read_csv(file_list[0], sep=r'\s+', header=None)
+    # Combine date columns (year, month, day) into datetime
+    mydates = pd.to_datetime(mydf.iloc[:, 0].astype(str) + '-' +
+                             mydf.iloc[:, 1].astype(str) + '-' +
+                             mydf.iloc[:, 2].astype(str))
 
     # all values
     startIndex = 0
     endIndex = mydf.shape[0]
 
-    # efficient way to parse multifile
-    data = []
-    for file_path in file_list:
+    # Read file helper for parallel execution
+    def read_fsm_file(file_path):
+        return np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)]
 
-        data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)])
+    # Parallel file reading - much faster for large cluster counts
+    n_files = len(file_list)
+    if n_files > 50 and n_workers > 1:
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            data = list(executor.map(read_fsm_file, file_list))
+    else:
+        # Sequential for small cluster counts (thread overhead not worth it)
+        data = [read_fsm_file(f) for f in file_list]
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
