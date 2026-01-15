@@ -21,6 +21,7 @@ import numpy as np
 import time
 from typing import Union, Optional
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
 from TopoPyScale import topo_utils as tu
 
 
@@ -154,6 +155,65 @@ def minibatch_kmeans_clustering(df_param,
     return df_centers, miniBkmeans, df_param['cluster_labels']
 
 
+def _evaluate_n_clusters(args):
+    """
+    Worker function to evaluate a single n_clusters value.
+    Used by search_number_of_clusters for parallel execution.
+    """
+    n_clusters, df_param, method, features, scaler_type, scaler, seed = args
+    feature_list = list(features.keys())
+
+    # Scale data
+    if scaler_type is not None:
+        df_scaled, scaler_l = scale_df(df_param[feature_list], scaler=scaler_type, features=features)
+    else:
+        df_scaled = df_param[feature_list]
+        scaler_l = None
+
+    # Run clustering
+    if method.lower() in ['minibatchkmean', 'minibatchkmeans']:
+        df_centroids, kmeans_obj, cluster_labels = minibatch_kmeans_clustering(df_scaled,
+                                                                               n_clusters,
+                                                                               features=features,
+                                                                               seed=seed)
+    elif method.lower() in ['kmean', 'kmeans']:
+        df_centroids, kmeans_obj, cluster_labels = kmeans_clustering(df_scaled,
+                                                                     n_clusters,
+                                                                     features=features,
+                                                                     seed=seed)
+
+    labels = kmeans_obj.labels_
+
+    # Compute RMSE
+    if scaler_type is not None and scaler_l is not None:
+        cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler_l, features=features).elevation.loc[
+            cluster_labels].values
+        rmse = (((df_param.elevation - cluster_elev) ** 2).mean()) ** 0.5
+    elif scaler is not None:
+        cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler, features=features).elevation.loc[
+            cluster_labels].values
+        rmse = (((df_param.elevation - cluster_elev) ** 2).mean()) ** 0.5
+    else:
+        rmse = 0
+
+    # Compute cluster size stats
+    df_tmp = df_param.copy()
+    df_tmp['cluster_labels'] = cluster_labels
+    pix_count = df_tmp.groupby('cluster_labels').count()['x']
+
+    return {
+        'n_clusters': n_clusters,
+        'wcss_score': kmeans_obj.inertia_,
+        'db_score': davies_bouldin_score(df_param, labels),
+        'ch_score': calinski_harabasz_score(df_param, labels),
+        'rmse_elevation': rmse,
+        'n_pixels_min': pix_count.min(),
+        'n_pixels_max': pix_count.max(),
+        'n_pixels_mean': pix_count.mean(),
+        'n_pixels_median': pix_count.median(),
+    }
+
+
 def search_number_of_clusters(df_param,
                               method='minibatchkmean',
                               cluster_range=np.arange(100, 1000, 200),
@@ -161,7 +221,8 @@ def search_number_of_clusters(df_param,
                               scaler_type=StandardScaler(),
                               scaler=None,
                               seed=2,
-                              plot=True):
+                              plot=True,
+                              n_workers=None):
     '''
     Function to help identify an optimum number of clusters using the elbow method
     Args:
@@ -173,72 +234,35 @@ def search_number_of_clusters(df_param,
         scaler (scikit_learn obj): fitted scaler to dataset. Implies that df_param is already scaled
         seed (int): random seed for kmeans clustering
         plot (bool): plot results or not
+        n_workers (int): number of parallel workers. None = sequential, 0 or negative = all CPUs
 
     Returns:
         dataframe: wcss score, Davies Boulding score, Calinsky Harabasz score
 
     '''
-    feature_list = features.keys()
-    wcss = []  # Define a list to hold the Within-Cluster-Sum-of-Squares (WCSS)
-    db_scores = []
-    ch_scores = []
-    rmse_elevation = []
-    n_pixels_median = []
-    n_pixels_min = []
-    n_pixels_max = []
-    n_pixels_mean = []
+    import os
 
-    for n_clusters in cluster_range:
-        if scaler_type is not None:
-            df_scaled, scaler_l = scale_df(df_param[feature_list], scaler=scaler_type, features=features)
-        else:
-            df_scaled = df_param[feature_list]
-        
-        if method.lower() in ['minibatchkmean', 'minibatchkmeans']:
-            df_centroids, kmeans_obj, df_param['cluster_labels'] = minibatch_kmeans_clustering(df_scaled,
-                                                                                               n_clusters,
-                                                                                               features=features,
-                                                                                               seed=seed)
-        elif method.lower() in ['kmean', 'kmeans']:
-            df_centroids, kmeans_obj, df_param['cluster_labels'] = kmeans_clustering(df_scaled,
-                                                                                     n_clusters,
-                                                                                     features=features,
-                                                                                     seed=seed)
+    # Build argument list for parallel execution
+    args_list = [
+        (n_clusters, df_param, method, features, scaler_type, scaler, seed)
+        for n_clusters in cluster_range
+    ]
 
-        labels = kmeans_obj.labels_
-        if scaler_type is not None:
-            cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler_l, features=features).elevation.loc[
-                df_param.cluster_labels].values
-            rmse = (((df_param.elevation - cluster_elev) ** 2).mean()) ** 0.5
-        elif scaler is not None:
-            cluster_elev = inverse_scale_df(df_centroids[feature_list], scaler, features=features).elevation.loc[
-                df_param.cluster_labels].values
-            rmse = (((df_param.elevation - cluster_elev) ** 2).mean()) ** 0.5
-        else:
-            rmse = 0
+    # Parallel or sequential execution
+    if n_workers is None or len(cluster_range) < 3:
+        # Sequential execution
+        results = [_evaluate_n_clusters(args) for args in args_list]
+    else:
+        # Parallel execution
+        if n_workers <= 0:
+            n_workers = os.cpu_count()
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            results = list(executor.map(_evaluate_n_clusters, args_list))
 
-        # compute scores
-        wcss.append(kmeans_obj.inertia_)
-        db_scores.append(davies_bouldin_score(df_param, labels))
-        ch_scores.append(calinski_harabasz_score(df_param, labels))
-        rmse_elevation.append(rmse)
+    # Sort results by n_clusters (parallel execution may return out of order)
+    results = sorted(results, key=lambda x: x['n_clusters'])
 
-        # compute stats on cluster sizes
-        pix_count = df_param.groupby('cluster_labels').count()['x']
-        n_pixels_min.append(pix_count.min())
-        n_pixels_max.append(pix_count.max())
-        n_pixels_mean.append(pix_count.mean())
-        n_pixels_median.append(pix_count.median())
-
-    df = pd.DataFrame({'n_clusters': cluster_range,
-                       'wcss_score': wcss,
-                       'db_score': db_scores,
-                       'ch_score': ch_scores,
-                       'rmse_elevation': rmse_elevation,
-                       'n_pixels_min': n_pixels_min,
-                       'n_pixels_median': n_pixels_median,
-                       'n_pixels_mean': n_pixels_mean,
-                       'n_pixels_max': n_pixels_max})
+    df = pd.DataFrame(results)
 
     if plot:
         fig, ax = plt.subplots(4, 1, sharex=True)
