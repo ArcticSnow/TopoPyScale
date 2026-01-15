@@ -407,7 +407,7 @@ def downscale_climate(project_directory,
 
     def _open_dataset_climate(flist):
 
-        ds_ = xr.open_mfdataset(flist, parallel=False, concat_dim="time", combine='nested', coords='minimal')
+        ds_ = xr.open_mfdataset(flist, parallel=True, concat_dim="time", combine='nested', coords='minimal')
 
         # this block handles the expver dimension that is in downloaded ERA5 data if data is ERA5/ERA5T mix. If only ERA5 or
         # only ERA5T it is not present. ERA5T data can be present in the timewindow T-5days to T -3months, where T is today.
@@ -565,5 +565,5 @@ def read_downscaled(path='outputs/down_pt*.nc'):
         dataset: merged dataset readily to use and loaded in chuncks via Dask
     """
 
-    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested', parallel=False)
+    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested', parallel=True)
     return down_pts
