@@ -180,10 +180,10 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
                 },
                 coords={'month': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
             )
-        down_pt['precip_lapse_rate'] = (1 + monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
-                    row.elevation - surf_interp.z) * 1e-3) / \
-                                           (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
-                                                   row.elevation - surf_interp.z) * 1e-3)
+        # Cache coefficient selection (avoid duplicate .sel() call)
+        coef = monthly_coeffs.coef.sel(month=down_pt.month.values).data
+        elev_diff = (row.elevation - surf_interp.z) * 1e-3
+        down_pt['precip_lapse_rate'] = (1 + coef * elev_diff) / (1 - coef * elev_diff)
     else:
         down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
 
