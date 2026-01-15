@@ -473,11 +473,9 @@ def downscale_climate(project_directory,
 
     ds_plev = ds_plev.sel(time=tvec.values)
 
-    row_list = []
-    ds_list = []
-    for _, row in df_centroids.iterrows():
-        row_list.append(row)
-        ds_list.append(ds_plev)
+    # Convert to list of row tuples (faster than iterrows)
+    row_list = list(df_centroids.itertuples(index=False))
+    ds_list = [ds_plev] * len(row_list)
 
     fun_param = zip(ds_list, row_list, ['plev'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
@@ -509,9 +507,8 @@ def downscale_climate(project_directory,
             print(f"Requested time range: {requested_times.min()} to {requested_times.max()}")
             print(f"Missing timesteps: {missing_str}")
                           
-    ds_list = []
-    for _, _ in df_centroids.iterrows():
-        ds_list.append(ds_surf)
+    # Repeat ds_surf for each centroid (no loop needed)
+    ds_list = [ds_surf] * len(row_list)
 
     fun_param = zip(ds_list, row_list, ['surf'] * len(row_list))  # construct here the tuple that goes into the pooling for arguments
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
@@ -519,29 +516,27 @@ def downscale_climate(project_directory,
     ds_surf = None
 
     # Preparing list to feed into Pooling
-    surf_pt_list = []
-    plev_pt_list = []
-    ds_solar_list = []
-    horizon_da_list = []
-    row_list = []
-    meta_list = []
-    i = 0
-    for _, row in df_centroids.iterrows():
-        surf_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_surf_pt_{row.point_name}.nc', engine='h5netcdf'))
-        plev_pt_list.append(xr.open_dataset(output_directory / f'tmp/ds_plev_pt_{row.point_name}.nc', engine='h5netcdf'))
-        ds_solar_list.append(ds_solar.sel(point_name=row.point_name))
-        horizon_da_list.append(horizon_da)
-        row_list.append(row)
-        meta_list.append({'interp_method': interp_method,
-                          'lw_terrain_flag': lw_terrain_flag,
-                          'tstep': tstep_dict.get(tstep),
-                          'n_digits': n_digits,
-                          'file_pattern': file_pattern,
-                          'target_epsg':target_EPSG,
-                          'precip_lapse_rate_flag':precip_lapse_rate_flag,
-                          'output_directory':output_directory,
-                          'lw_terrain_flag':lw_terrain_flag})
-        i+=1
+    # Pre-build meta dict once (same for all points)
+    meta_template = {
+        'interp_method': interp_method,
+        'lw_terrain_flag': lw_terrain_flag,
+        'tstep': tstep_dict.get(tstep),
+        'n_digits': n_digits,
+        'file_pattern': file_pattern,
+        'target_epsg': target_EPSG,
+        'precip_lapse_rate_flag': precip_lapse_rate_flag,
+        'output_directory': output_directory,
+    }
+
+    # Build lists using itertuples (faster than iterrows)
+    row_list = list(df_centroids.itertuples(index=False))
+    point_names = df_centroids.point_name.values
+
+    surf_pt_list = [xr.open_dataset(output_directory / f'tmp/ds_surf_pt_{pn}.nc', engine='h5netcdf') for pn in point_names]
+    plev_pt_list = [xr.open_dataset(output_directory / f'tmp/ds_plev_pt_{pn}.nc', engine='h5netcdf') for pn in point_names]
+    ds_solar_list = [ds_solar.sel(point_name=pn) for pn in point_names]
+    horizon_da_list = [horizon_da] * len(row_list)
+    meta_list = [meta_template.copy() for _ in row_list]
 
     fun_param = zip(row_list, plev_pt_list, surf_pt_list, meta_list)  # construct here the tuple that goes into the pooling for arguments
     tu.multicore_pooling(pt_downscale_interp, fun_param, n_core)

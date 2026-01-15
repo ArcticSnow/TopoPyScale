@@ -87,16 +87,16 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     df_pts[['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = 0
 
     if method == 'nearest':
-        for i, row in df_pts.iterrows():
+        for row in df_pts.itertuples():
             d_mini = ds_param.sel(x=row.x, y=row.y, method='nearest')
-            df_pts.loc[i, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
+            df_pts.loc[row.Index, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
                                                                                                    d_mini.slope.values,
                                                                                                    d_mini.aspect.values,
                                                                                                    d_mini.aspect_cos,
                                                                                                    d_mini.aspect_sin,
                                                                                                    d_mini.svf.values))
     elif method == 'idw' or method == 'linear':
-        for i, row in df_pts.iterrows():
+        for row in df_pts.itertuples():
             ind_lat = np.abs(ds_param.y-row.y).argmin()
             ind_lon = np.abs(ds_param.x-row.x).argmin()
             ds_param_pt = ds_param.isel(y=[ind_lat-1, ind_lat, ind_lat+1], x=[ind_lon-1, ind_lon, ind_lon+1])
@@ -119,7 +119,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
                               )
             dw = xr.Dataset.weighted(ds_param_pt, da_idw)
             d_mini = dw.sum(['x', 'y'], keep_attrs=True)
-            df_pts.loc[i, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
+            df_pts.loc[row.Index, ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = np.array((d_mini.elevation.values,
                                                                                                    d_mini.slope.values,
                                                                                                    d_mini.aspect.values,
                                                                                                    d_mini.aspect_cos,

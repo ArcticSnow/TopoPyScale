@@ -911,7 +911,7 @@ def remap_CDSbeta(file_pattern, file_type='SURF'):
             try:
                 ds = xr.open_dataset(nc_file)
                 ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
-                ds = ds.isel(level=slice(None, None, -1))  # reverse order of levels
+                ds = ds.sortby('level', ascending=True)  # sort levels ascending (300 to 1000)
 
                 try:
                     ds = ds.drop_vars('number')
@@ -984,7 +984,7 @@ def era5_request_surf_snowmapper( today, latN, latS, lonE, lonW, eraDir, output_
 
     bbox = [str(latN), str(lonW), str(latS), str(lonE)]
 
-    target = eraDir + "/forecast/SURF_%04d%02d%02d.nc" % (today.year, today.month, today.day)
+    target = str(eraDir) + "/forecast/SURF_%04d%02d%02d.nc" % (today.year, today.month, today.day)
 
     c = cdsapi.Client()
     c.retrieve(
@@ -1036,7 +1036,7 @@ def era5_request_plev_snowmapper(today, latN, latS, lonE, lonW, eraDir, plevels,
 
     bbox = [str(latN), str(lonW), str(latS), str(lonE)]
 
-    target = eraDir + "/forecast/PLEV_%04d%02d%02d.nc" % (today.year, today.month, today.day)
+    target = str(eraDir) + "/forecast/PLEV_%04d%02d%02d.nc" % (today.year, today.month, today.day)
 
 
     c = cdsapi.Client()
