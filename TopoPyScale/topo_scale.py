@@ -42,6 +42,7 @@ import dask
 from pyproj import Transformer
 import numpy as np
 import sys, time
+from types import SimpleNamespace
 import datetime as dt
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
@@ -551,7 +552,10 @@ def downscale_climate(project_directory,
     }
 
     # Build lists using itertuples (faster than iterrows)
-    row_list = list(df_centroids.itertuples(index=False))
+    # Convert to SimpleNamespace for pickling compatibility with pandas 2.x + multiprocessing
+    cols = df_centroids.columns.tolist()
+    row_list = [SimpleNamespace(**dict(zip(cols, row)))
+                for row in df_centroids.itertuples(index=False, name=None)]
     point_names = df_centroids.point_name.values
 
     surf_pt_list = [xr.open_dataset(output_directory / f'tmp/ds_surf_pt_{pn}.nc', engine='h5netcdf') for pn in point_names]
