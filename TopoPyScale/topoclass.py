@@ -93,8 +93,9 @@ class Topoclass(object):
             self.config.climate.path = Path(self.config.climate[self.config.project.climate].path)
 
         else:
-            self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
-        self.config.climate.tmp_path = self.config.climate.path / 'tmp'
+            #self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
+            self.config.climate.path = self.config.project.directory / Path(self.config.climate.era5.path) 
+            self.config.climate.tmp_path = self.config.climate.path / 'tmp'
 
         # check if tree directory exists. If not create it
         os.makedirs(self.config.climate.path, exist_ok=True)

@@ -329,7 +329,10 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     chunks_plev = chunks
     chunks_surf = {'time':chunks.get('time'), 'latitude':chunks.get('latitude'),'longitude':chunks.get('longitude')}
 
-    dd = dd.chunk(chunks=chunks).persist()
+    #dd = dd.chunk(chunks=chunks).persist()
+    # Suggested by leChat
+    dd = dd.chunk(chunks=chunks)
+
     vars = list(ds.keys())
     if compressor is None:
         compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
@@ -340,21 +343,62 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     ds.close()
     del ds
 
+    zarr_store = xr.open_zarr(str(pz))
+    current_time_length = zarr_store.sizes['time']
+    zarr_store.close()
+
     if not parallelize:
         # loop through the years. This could be sent to multicore eventually
         for year in pd.to_datetime(tvec).year.unique():
+
             print(f"---> Appending PLEV year {year} to {pz.name}")
-            dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
-            dp.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
-            dp.close()
-            del dp
+            # Open the current year's NetCDF file
+            with xr.open_dataset(str(pn / (plev_name.replace('*', f'{year}'))), chunks='auto') as dp:
+                # Number of time steps in the current year
+                year_time_length = dp.sizes['time']
+
+                # Compute start and end indices for the Zarr archive
+                start_idx = current_time_length
+                end_idx = start_idx + year_time_length
+
+                # Append the data to the Zarr archive
+                dp.to_zarr(
+                    str(pz),
+                    mode='a',
+                    region={'time': slice(start_idx, end_idx)},
+                    append_dim='time',
+                    align_chunks=True  # Ensure chunks are aligned
+                )
+
+                # Update the current time length for the next iteration
+                current_time_length = end_idx
+            
 
             print(f"---> Appending SURF year {year} to {pz.name}")
-            du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
-            du = du.rename({'z':'z_surf'})
-            du.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
-            du.close()
-            del du
+            # Repeat for the SURF file
+            with xr.open_dataset(str(pn / (surf_name.replace('*', f'{year}'))), chunks='auto') as du:
+                du = du.rename({'z': 'z_surf'})
+                du.to_zarr(
+                    str(pz),
+                    mode='a',
+                    region={'time': slice(start_idx, end_idx)},
+                    append_dim='time',
+                    align_chunks=True  # Ensure chunks are aligned
+                )
+
+
+            # print(f"---> Appending PLEV year {year} to {pz.name}")
+            # dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
+            # dp.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
+            # dp.close()
+            # del dp
+            #
+            # print(f"---> Appending SURF year {year} to {pz.name}")
+            # du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
+            # du = du.rename({'z':'z_surf'})
+            # du.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
+            # du.close()
+            # del du
     else:
         flist = pn.glob(plev_name)
         fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(False)*len(list(flist))])
