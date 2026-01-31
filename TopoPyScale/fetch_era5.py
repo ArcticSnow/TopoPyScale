@@ -208,6 +208,7 @@ class FetchERA5():
         Funtion to call fetching of ERA5 data
         TODO:
         - merge monthly data into one file (cdo?)- this creates massive slow down!
+        - merge monthly data into one file (cdo?)- this creates massive slow down!
         """
         lonW = self.config.project.extent.get('lonW') - 0.4
         lonE = self.config.project.extent.get('lonE') + 0.4
@@ -241,24 +242,33 @@ class FetchERA5():
                 output_format=output_format
             )
 
-    def to_zarr(self):
+    def to_zarr(self, from_daily=True):
+        """
+        Funtion to convert netcdf files into a Zarr store.
+        """
 
         # extract chunk size for time and pressure level
-        nlevels = len(self.config.climate[self.config.project.climate].plevels)
         ntime = int(self.config.climate.era5.timestep[:-1]) * 365
-
-        print("Be aware that the conversion to Zarr requires plenty of memory, and may crash the console if resources are not sufficient")
-
-        convert_netcdf_stack_to_zarr(
-            path_to_netcdfs= str(self.config.climate.path / 'yearly'),
-            zarrout= str(self.config.climate.path/'ERA5.zarr'), 
-            chunks={'latitude':3, 'longitude':3, 'time':ntime, 'level':nlevels}, 
-            compressor=None,
-            plev_name='PLEV_*.nc',
-            surf_name='SURF_*.nc',
-            parallelize=False,
-            n_cores=self.config.project.parallelization.setting.multicore.CPU_cores
+        if from_daily:
+            convert_daily_nc_to_zarr(
+                path_to_netcdfs= str(self.config.climate.path / 'daily'),
+                zarr_store= str(self.config.climate.path/ self.config.climate.era5.zarr_store), 
+                chunks={'latitude':3, 'longitude':3, 'time':ntime}, 
+                compressor=None,
+                plev_name='dPLEV_*.nc',
+                surf_name='dSURF_*.nc',
+                dask_worker=self.config.project.parallelization.dask
             )
+
+        else:
+            print('---> Converting yearly netcdf files to Zarr')
+            convert_yearly_nc_to_zarr(
+                path_to_netcdfs= str(self.config.climate.path / 'yearly'),
+                zarr_store= str(self.config.climate.path/ self.config.climate.era5.zarr_store), 
+                chunks={'latitude':3, 'longitude':3, 'time':ntime}, 
+                compressor=None,
+                plev_name='PLEV_*.nc',
+                surf_name='SURF_*.nc')
 
 
 def convert_yearly_nc_to_zarr(path_to_netcdfs='inputs/climate/yearly',
@@ -295,6 +305,67 @@ def convert_yearly_nc_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     print(f"===> Combined Zarr store saved to {zarr_store}")
 
 
+def convert_daily_nc_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+                                    zarr_store='inputs/climate/ERA5.zarr', 
+                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13}, 
+                                    compressor=None,
+                                    plev_name='dPLEV_*.nc',
+                                    surf_name='dSURF_*.nc',
+                                    n_cores=4,
+                                    dask_worker={'n_workers':4,
+                                                 'threads_per_worker':1,
+                                                 'memory_target_fraction':0.95,
+                                                 'memory_limit':'1.5GB'}):
+    """
+    Function to convert a stack of netcdf PLEV and SURF files to a zarr store. Optimizing chunking based on auto detection by dask.
+    
+    Args:
+        path_to_netcdfs (str): path to yearly netcdf files of PLEV and SURF
+        zarrout (str): path and name of the output zarr store to be created 
+        chunks (dict): dictionnary indicating the size of the chunk for the output zarr store. Good practice to have time chunk equivalent to a yearly file size. 
+        compressor (obj): Compressor object to use for encoding. See Zarr compression. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+        plev_name (str): file pattern of the netcdf containing the pressure levels. Use * instead of the year 
+        surf_name (str): file pattern of the netcdf containing the surface level. Use * instead of the year 
+        dask_worker (dict): specification of the dask worker in a dictionnary
+
+    """
+    cluster = LocalCluster(processes=True, **dask_worker)
+
+    with Client(cluster) as client:
+            print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
+
+        dwd = Path(path_to_netcdfs)
+        surface_files = sorted(dwd.glob(surf_name))
+        pressure_files = sorted(dwd.glob(plev_name))
+
+        if compressor is None:
+            compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+
+        surface_ds = xr.open_mfdataset(
+            surface_files,
+            combine="by_coords",
+            parallel=True,
+            chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
+        )
+     
+        pressure_ds = xr.open_mfdataset(
+            pressure_files,
+            combine="by_coords",
+            parallel=True,
+            chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
+        )
+
+        # Rechunk spatial dimensions
+        surface_ds = surface_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
+        pressure_ds = pressure_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
+        
+        combined_ds = xr.merge([surface_ds, pressure_ds], compat='override')
+        encoding = {var: {"compressors": [compressor]} for var in combined_ds.data_vars}
+        combined_ds.to_zarr(zarr_store, mode="w", encoding=encoding, compute=True)
+        print(f"===> Combined NC files to Zarr store: {zarr_store}")
+
+
+
 def append_year_to_zarr(path_to_netcdfs='inputs/climate/yearly',
                                     zarr_store='inputs/climate/ERA5.zarr', 
                                     chunks={'latitude':3, 'longitude':3, 'time':8760}, 
@@ -313,58 +384,6 @@ def append_year_to_zarr(path_to_netcdfs='inputs/climate/yearly',
             combined_ds.chunk(chunks).to_zarr(zarr_store, append_dim="time")
     print(f"===> Years {lyear} appended to the Zarr store {zarr_store}")
 
-
-def convert_daily_nc_to_zarr(path_to_netcdfs='inputs/climate/yearly',
-                                    zarrout='inputs/climate/ERA5.zarr', 
-                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13}, 
-                                    compressor=None,
-                                    plev_name='dPLEV_*.nc',
-                                    surf_name='dSURF_*.nc',
-                                    n_cores=4):
-    """
-    Function to convert a stack of netcdf PLEV and SURF files to a zarr store. Optimizing chunking based on auto detection by dask.
-    
-    Args:
-        path_to_netcdfs (str): path to yearly netcdf files of PLEV and SURF
-        zarrout (str): path and name of the output zarr store to be created 
-        chunks (dict): dictionnary indicating the size of the chunk for the output zarr store. Good practice to have time chunk equivalent to a yearly file size. 
-        compressor (obj): Compressor object to use for encoding. See Zarr compression. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
-        plev_name (str): file pattern of the netcdf containing the pressure levels. Use * instead of the year 
-        surf_name (str): file pattern of the netcdf containing the surface level. Use * instead of the year 
-        n_cores (int): number of cores on which to distribute the load
-
-    """
-
-    client = Client(n_workers=n_cores, threads_per_worker=1, dashboard_address=':8787')
-    dwd = Path(path_to_netcdfs)
-    surface_files = sorted(dwd.glob(surf_name))
-    pressure_files = sorted(dwd.glob(plev_name))
-
-    if compressor is None:
-        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
-
-    surface_ds = xr.open_mfdataset(
-        surface_files,
-        combine="by_coords",
-        parallel=True,
-        chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
-    )
- 
-    pressure_ds = xr.open_mfdataset(
-        pressure_files,
-        combine="by_coords",
-        parallel=True,
-        chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
-    )
-
-    # Rechunk spatial dimensions
-    surface_ds = surface_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
-    pressure_ds = pressure_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
-    
-    combined_ds = xr.merge([surface_ds, pressure_ds], compat='override')
-    encoding = {var: {"compressors": [compressor]} for var in combined_ds.data_vars}
-    combined_ds.to_zarr(zarr_store, mode="w", encoding=encoding, compute=True)
-    print(f"===> Combined NC files to Zarr store: {zarr_store}")
 
 
 def to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':8760, 'level':7}, compressor=None, mode='w'):
@@ -425,7 +444,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
                     num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
                     output_format='netcdf', download_format="unarchived", new_CDS_API=True, 
-                    rm_daily=False, surf_varoi=None, plev_varoi=None):
+                    surf_varoi=None, plev_varoi=None, merge_to_yearly=False, rm_daily=False):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -447,12 +466,13 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         output_format (str): default is "netcdf", can be "grib".
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
-        rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
         surf_varoi: list of surface variable to download. Default is None, automatically assigning minimum required for topo_scale
         plev_varoi: list of pressure level variables to download. . Default is None, automatically assigning minimum required for topo_scale
+        merge_to_yearly (bool): if true, daily files are merged into yearly netcdf
+        rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
         
     Returns:
-        Monthly era surface files stored in disk.
+        ERA surface and pressure level files stored in disk, either as daily (default) or yearly.
 
     """
     print('\n')
@@ -597,50 +617,51 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         if surf_plev == 'plev':
             remap_CDSbeta(str(eraDir / "daily" / "dPLEV*.nc"), file_type='plev')
 
-    # code to merge daily files to monthly
-    # - [ ] write option earlier that checks also if monthly files already exist. improve logic that does not require to have both monthly and daily files
-    cdo = Cdo()
-    for year in df.year.unique():
-        print(f"---> Merging daily {surf_plev.upper()} files from {year}")
-        
-        if surf_plev == 'surf':
-            fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
-            fout = str(eraDir / "yearly" / ("SURF_%04d.nc" % (year)))
-
-
-            try:
-                cdo.mergetime(input=fpat, output=fout)
-            except Exception as e:
-                print(f"CDO warning (non-fatal): {e}")
-                # Check if output file was actually created despite warnings
-                if os.path.exists(fout):
-                    print(f"Merge completed successfully: {fout}")
-                else:
-                    raise e  # Re-raise if it's a real error
-
-
-
-        if surf_plev == 'plev':
-            fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
-            fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
-
-            try:
-                cdo.mergetime(input=fpat, output=fout)
-            except Exception as e:
-                print(f"CDO warning (non-fatal): {e}")
-                # Check if output file was actually created despite warnings
-                if os.path.exists(fout):
-                    print(f"Merge completed successfully: {fout}")
-                else:
-                    raise e  # Re-raise if it's a real error
+    if merge_to_yearly:
+        # code to merge daily files to monthly
+        # - [ ] Remove if conversion of daily files to Zarr works fine. This would remove the cdo dependency.
+        cdo = Cdo()
+        for year in df.year.unique():
+            print(f"---> Merging daily {surf_plev.upper()} files from {year}")
             
+            if surf_plev == 'surf':
+                fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
+                fout = str(eraDir / "yearly" / ("SURF_%04d.nc" % (year)))
 
-    if rm_daily:
-        try:
-            shutil.rmtree(eraDir / "daily")
-            print('---> Daily files removed')
-        except:
-            raise IOError('deletion of daily files issue')
+
+                try:
+                    cdo.mergetime(input=fpat, output=fout)
+                except Exception as e:
+                    print(f"CDO warning (non-fatal): {e}")
+                    # Check if output file was actually created despite warnings
+                    if os.path.exists(fout):
+                        print(f"Merge completed successfully: {fout}")
+                    else:
+                        raise e  # Re-raise if it's a real error
+
+
+
+            if surf_plev == 'plev':
+                fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
+                fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
+
+                try:
+                    cdo.mergetime(input=fpat, output=fout)
+                except Exception as e:
+                    print(f"CDO warning (non-fatal): {e}")
+                    # Check if output file was actually created despite warnings
+                    if os.path.exists(fout):
+                        print(f"Merge completed successfully: {fout}")
+                    else:
+                        raise e  # Re-raise if it's a real error
+                
+
+        if rm_daily:
+            try:
+                shutil.rmtree(eraDir / "daily")
+                print('---> Daily files removed')
+            except:
+                raise IOError('deletion of daily files issue')
 
     print("===> ERA5 netcdf files ready")
 
