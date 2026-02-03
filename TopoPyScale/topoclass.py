@@ -306,9 +306,15 @@ class Topoclass(object):
         # read df param
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
 
+        # Auto-mask nodata pixels (e.g. from reprojected DEMs with non-rectangular valid regions)
+        valid_elev = ~df_param['elevation'].isna()
+        n_nodata = (~valid_elev).sum()
+        if n_nodata > 0:
+            print(f'---> Auto-masking {n_nodata} nodata pixels from DEM')
+
         # add mask and cluster feature
         if mask_file in [None, {}]:
-            mask = [True] * len(df_param)
+            mask = valid_elev
         else:
             if not os.path.isabs(mask_file):
                 mask_file = Path(self.config.project.directory, mask_file)
@@ -330,8 +336,8 @@ class Topoclass(object):
                     f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
-            # get mask
-            mask = ts.ds_to_indexed_dataframe(ds_mask)['mask'] == 1
+            # get mask (combine with nodata auto-mask)
+            mask = (ts.ds_to_indexed_dataframe(ds_mask)['mask'] == 1) & valid_elev
 
         # add cluster groups. Groups can be landcover classes for instance
         if groups_file in [None, {}]:
