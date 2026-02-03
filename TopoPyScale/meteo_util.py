@@ -125,7 +125,7 @@ def q_2_rh(temp, pressure, qair):
 
     Args:
         temp (array): temperature in degree K
-        pressure (array): aire pressure in Pa
+        pressure (array): air pressure in Pa
         qair (array): specific humidity in kg/kg
     Returns: 
         array: relative humidity in the range of [0-1]

@@ -93,8 +93,9 @@ class Topoclass(object):
             self.config.climate.path = Path(self.config.climate[self.config.project.climate].path)
 
         else:
-            self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
-        self.config.climate.tmp_path = self.config.climate.path / 'tmp'
+            #self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
+            self.config.climate.path = self.config.project.directory / Path(self.config.climate.era5.path) 
+            self.config.climate.tmp_path = self.config.climate.path / 'tmp'
 
         # check if tree directory exists. If not create it
         os.makedirs(self.config.climate.path, exist_ok=True)
@@ -776,11 +777,11 @@ class Topoclass(object):
         lastday = fe.return_last_fullday()
         return(lastday)
 
-    def process_SURF_file(self, wdir):
-        fe.process_SURF_file(wdir)
+    def unzip_file(self, filepath):
+        fe.unzip_file(filepath)
 
-    def remap_netcdf(self, filepath):
-        fe.remap_CDSbeta(filepath)
+    def remap_netcdf(self, filepath, file_type):
+        fe.remap_CDSbeta(filepath, file_type)
 
     def get_ifs_forecast(self):
         # run openData script here

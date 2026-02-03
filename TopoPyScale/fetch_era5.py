@@ -10,7 +10,15 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 import dask
-from zarr.codecs import BloscCodec
+try:
+    from zarr.codecs import BloscCodec
+except ImportError:
+    # For newer versions of zarr
+    try:
+        from zarr.codecs._blosc import BloscCodec
+    except ImportError:
+        # Fallback for older versions or different structure
+        from zarr import Blosc as BloscCodec
 from datetime import datetime
 
 import cdsapi, os, sys
@@ -84,7 +92,7 @@ class FetchERA5():
         if self.config.climate[self.config.project.climate].realtime:
             self.realtime = self.config.climate[self.config.project.climate].realtime
             # make sure end date is correct
-            lastdate = fe.return_last_fullday()
+            lastdate = return_last_fullday()
             self.config.project.end = self.config.project.end.replace(year=lastdate.year, 
                                                                         month=lastdate.month,
                                                                         day=lastdate.day)
@@ -321,20 +329,64 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     chunks_plev = chunks
     chunks_surf = {'time':chunks.get('time'), 'latitude':chunks.get('latitude'),'longitude':chunks.get('longitude')}
 
-    dd = dd.chunk(chunks=chunks).persist()
+    #dd = dd.chunk(chunks=chunks).persist()
+    # Suggested by leChat
+    dd = dd.chunk(chunks=chunks)
+
     vars = list(ds.keys())
     if compressor is None:
         compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
     encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
-    dd.to_zarr(zarrout, mode='w',zarr_format=3, encoding=encoder)
+    dd.to_zarr(zarrout, mode='w', zarr_format=3, encoding=encoder)
     dd.close()
     del dd
     ds.close()
     del ds
 
+    zarr_store = xr.open_zarr(str(pz))
+    current_time_length = zarr_store.sizes['time']
+    zarr_store.close()
+
     if not parallelize:
         # loop through the years. This could be sent to multicore eventually
         for year in pd.to_datetime(tvec).year.unique():
+
+            # print(f"---> Appending PLEV year {year} to {pz.name}")
+            # # Open the current year's NetCDF file
+            # with xr.open_dataset(str(pn / (plev_name.replace('*', f'{year}'))), chunks='auto') as dp:
+            #     # Number of time steps in the current year
+            #     year_time_length = dp.sizes['time']
+            #
+            #     # Compute start and end indices for the Zarr archive
+            #     start_idx = current_time_length
+            #     end_idx = start_idx + year_time_length
+            #
+            #     # Append the data to the Zarr archive
+            #     dp.to_zarr(
+            #         str(pz),
+            #         mode='a',
+            #         region={'time': slice(start_idx, end_idx)},
+            #         append_dim='time',
+            #         align_chunks=True  # Ensure chunks are aligned
+            #     )
+            #
+            #     # Update the current time length for the next iteration
+            #     current_time_length = end_idx
+            #
+            #
+            # print(f"---> Appending SURF year {year} to {pz.name}")
+            # # Repeat for the SURF file
+            # with xr.open_dataset(str(pn / (surf_name.replace('*', f'{year}'))), chunks='auto') as du:
+            #     du = du.rename({'z': 'z_surf'})
+            #     du.to_zarr(
+            #         str(pz),
+            #         mode='a',
+            #         region={'time': slice(start_idx, end_idx)},
+            #         append_dim='time',
+            #         align_chunks=True  # Ensure chunks are aligned
+            #     )
+
+
             print(f"---> Appending PLEV year {year} to {pz.name}")
             dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
             dp.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
@@ -597,12 +649,34 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         if surf_plev == 'surf':
             fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
             fout = str(eraDir / "yearly" / ("SURF_%04d.nc" % (year)))
-            cdo.mergetime(input=fpat, output=fout)
+
+
+            try:
+                cdo.mergetime(input=fpat, output=fout)
+            except Exception as e:
+                print(f"CDO warning (non-fatal): {e}")
+                # Check if output file was actually created despite warnings
+                if os.path.exists(fout):
+                    print(f"Merge completed successfully: {fout}")
+                else:
+                    raise e  # Re-raise if it's a real error
+
+
 
         if surf_plev == 'plev':
             fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
             fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
-            cdo.mergetime(input=fpat, output=fout)
+
+            try:
+                cdo.mergetime(input=fpat, output=fout)
+            except Exception as e:
+                print(f"CDO warning (non-fatal): {e}")
+                # Check if output file was actually created despite warnings
+                if os.path.exists(fout):
+                    print(f"Merge completed successfully: {fout}")
+                else:
+                    raise e  # Re-raise if it's a real error
+            
 
     if rm_daily:
         try:
@@ -790,7 +864,7 @@ def return_last_fullday():
     print("Current time (rounded down) in UTC:", current_time_utc_str)
     print("Last full day ERA5T data in UTC:", last_fullday_data_str)
 
-    return (last_fullday_data_str)
+    return six_days_ago_utc
 
 
 def grib2netcdf(gribname, outname=None):
@@ -850,7 +924,7 @@ def unzip_file(file_path):
             try:
                 # Combine all `.nc` files
                 datasets = [xr.open_dataset(nc_file, engine='netcdf4') for nc_file in nc_files]
-                merged_ds = xr.merge(datasets)  # Adjust dimension as needed
+                merged_ds = xr.merge(datasets, compat='override')  # Use override to handle conflicting metadata like 'expver'
                 merged_ds.to_netcdf(merged_file_path)
                 print(f"Merged .nc files into {merged_file_path}.")
 

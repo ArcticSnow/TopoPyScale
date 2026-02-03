@@ -9,6 +9,7 @@ import os, re
 import sys
 import glob
 import re
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import numpy as np
 import rasterio
@@ -315,7 +316,7 @@ def fsm_sim(nlstfile, fsm_exec, delete_nlst_files=True):
 
 
 
-def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
+def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
     """
     Function to make single variable multi cluster files as preprocessing step before spatialisation. This is much more efficient than looping over individual simulation files per cluster.
     For V variables , C clusters and T timesteps this turns C individual files of dimensions V x T into V individual files of dimensions C x T.
@@ -332,19 +333,16 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
                 gt50 - ground temperature (50cm depth) degC
 
         fsm_path (str): location of simulation files
-    Returns: 
+        n_workers (int): number of parallel threads for file reading (default: 8)
+    Returns:
         dataframe
-
-
-
     """
 
     # find all simulation files and natural sort https://en.wikipedia.org/wiki/Natural_sort_order
     a = glob.glob(fsm_path+"/sim_*")
 
-    if len(a) == 0:                                                                                                                                                                                                                           
-        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")   
-
+    if len(a) == 0:
+        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -358,8 +356,6 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
                    'gst':-2,
                    'gt50':-1}
 
-
-
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
@@ -367,26 +363,31 @@ def agg_by_var_fsm( var='snd', fsm_path = "./fsm_sims"):
 
     file_list = natural_sort(a)
 
-    mydf = pd.read_csv(file_list[0], sep='\s+', parse_dates=[[0, 1, 2]], header=None)
-    mydates = mydf.iloc[:, 0]
-
-    # can do temp subset here
-    # startIndex = df[df.iloc[:,0]==str(daYear-1)+"-09-01"].index.values
-    # endIndex = df[df.iloc[:,0]==str(daYear)+"-09-01"].index.values
+    mydf = pd.read_csv(file_list[0], sep=r'\s+', header=None)
+    # Combine date columns (year, month, day) into datetime
+    mydates = pd.to_datetime(mydf.iloc[:, 0].astype(str) + '-' +
+                             mydf.iloc[:, 1].astype(str) + '-' +
+                             mydf.iloc[:, 2].astype(str))
 
     # all values
     startIndex = 0
     endIndex = mydf.shape[0]
 
-    # efficient way to parse multifile
-    data = []
-    for file_path in file_list:
+    # Read file helper for parallel execution
+    def read_fsm_file(file_path):
+        return np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)]
 
-        data.append(np.genfromtxt(file_path, usecols=ncol)[int(startIndex):int(endIndex)])
+    # Parallel file reading - much faster for large cluster counts
+    n_files = len(file_list)
+    if n_files > 50 and n_workers > 1:
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            data = list(executor.map(read_fsm_file, file_list))
+    else:
+        # Sequential for small cluster counts (thread overhead not worth it)
+        data = [read_fsm_file(f) for f in file_list]
 
     myarray = np.asarray(data)  # samples x days
     df = pd.DataFrame(myarray.transpose())
-
 
     # add timestamp
     df.insert(0, 'Datetime', mydates)
@@ -505,7 +506,7 @@ def timeseries_means_period(df, start_date, end_date):
     df_mean = df[start_date:end_date].mean()
     return df_mean
 
-    # filename = os.path.split(results_file)[1].split('.csv')[0]
+    # filename = os.pathsplit(results_file)[1].split('.csv')[0]
 
     # pd.Series(df_mean).to_csv(
     #     "./fsm_sims/av_" +
@@ -686,7 +687,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
         #     resampling=Resampling.nearest
         # )
 
-    # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out)) -FIXED!
+        # return coords of resampled grid here (this does not preserve dimensions perfectly (can be 1pix out)) -FIXED!
         array = src.read()
         min_E, min_N, max_E, max_N = src.bounds
         # lons = np.arange(min_E, max_E, src.res[0])
@@ -708,7 +709,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     # # plt.show()
     #
     # with rasterio.open('output_raster.tif', 'w', **profile) as dst:
-    #     # Write to disk
+    #     # Write to disk1
     #     dst.write(array.astype(rasterio.int16))
     #
     # src = rasterio.open("output_raster.tif")
@@ -748,23 +749,45 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     for i in range(0, nclust):
         lookup2D[:, i] = ds_var[i]
 
-    from osgeo import gdal
     inputFile = "outputs/landform.tif"
     outputFile = "outputs/landform_newres.tif"
 
     # check if new_res is declared - if so resample landform and therefore output
     if new_res is not None:
-        xres = new_res
-        yres = new_res
-        resample_alg = gdal.GRA_NearestNeighbour
-
-        ds = gdal.Warp(destNameOrDestDS=outputFile,
-                       srcDSOrSrcDSTab=inputFile,
-                       format='GTiff',
-                       xRes=xres,
-                       yRes=yres,
-                       resampleAlg=resample_alg)
-        del ds
+        # Use rasterio instead of GDAL for resampling
+        with rasterio.open(inputFile) as src:
+            # Calculate the scaling factor
+            scale_factor_x = src.res[0] / new_res
+            scale_factor_y = src.res[1] / new_res
+            
+            # Calculate new dimensions
+            new_width = int(src.width * scale_factor_x)
+            new_height = int(src.height * scale_factor_y)
+            
+            # Read and resample the data
+            data = src.read(
+                out_shape=(src.count, new_height, new_width),
+                resampling=Resampling.nearest
+            )
+            
+            # Calculate new transform
+            new_transform = src.transform * src.transform.scale(
+                (src.width / new_width),
+                (src.height / new_height)
+            )
+            
+            # Update profile for output
+            profile = src.profile.copy()
+            profile.update({
+                'height': new_height,
+                'width': new_width,
+                'transform': new_transform
+            })
+        
+        # Write resampled file
+        with rasterio.open(outputFile, 'w', **profile) as dst:
+            dst.write(data)
+        
         landformfile = "outputs/landform_newres.tif"
     else:
         landformfile = "outputs/landform.tif"
@@ -801,6 +824,62 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     return grid_stack, lats, lons
 
 
+def topo_map_sim_memsafe(ds_var, n_decimals=2, dtype='float32', new_res=None):
+    import numpy as np
+    import rasterio
+    from rasterio.enums import Resampling
+
+    ds_var = np.asarray(ds_var)
+
+    inputFile = "outputs/landform.tif"
+
+    with rasterio.open(inputFile) as src:
+        # Optional resampling of landform raster
+        if new_res is not None:
+            scale_factor = src.res[0] / new_res
+            new_height = int(src.height * scale_factor)
+            new_width = int(src.width * scale_factor)
+            array = src.read(1, out_shape=(new_height, new_width), resampling=Resampling.nearest)
+            # Recalculate bounds for new resolution
+            min_E, min_N, max_E, max_N = src.bounds
+            lons = np.linspace(min_E, max_E, new_width)
+            lats = np.linspace(min_N, max_N, new_height)[::-1]
+        else:
+            array = src.read(1)  # landform cluster IDs
+            min_E, min_N, max_E, max_N = src.bounds
+            lons = np.linspace(min_E, max_E, src.width)
+            lats = np.linspace(min_N, max_N, src.height)[::-1]
+        
+    # Initialize output
+    T, N = ds_var.shape  # time × clusters
+    H, W = array.shape
+
+    grid_stack = np.zeros((T, H, W), dtype=dtype)
+
+    # Memory-efficient loop over clusters
+    for clust_id in range(N):
+        print(clust_id)
+        mask = (array == clust_id)  # 2D boolean
+        if not np.any(mask):
+            continue  # skip if cluster not in landform
+
+        for t in range(T):
+            grid_stack[t][mask] = np.round(ds_var[t, clust_id], n_decimals)
+            #value = ds_var.iloc[t, clust_id]
+            #grid_stack[t][mask] = value
+
+
+    #grid_stack = np.round(grid_stack, n_decimals)
+    return grid_stack, lats, lons
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
 def write_ncdf(wdir, grid_stack, var, units,epsg,res,  mytime, lats, lons, mydtype,newfile, outname=None):
     # https://www.earthinversion.com/utilities/Writing-NetCDF4-Data-using-Python/
@@ -1058,4 +1137,242 @@ def concat_fsm(mydir):
             for fname in filenames2:
                 with open(fname) as infile:
                     outfile.write(infile.read())
+
+def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
+    """
+    Extract a specific day from a NetCDF file and write it as a GeoTIFF.
+    
+    Args:
+        netcdf_file (str): Path to the NetCDF file (e.g., '202409_HS.nc')
+        target_date (str): Date to extract in 'YYYY-MM-DD' format (e.g., '2024-09-01')
+        output_tiff (str): Output GeoTIFF filename (e.g., 'snow_depth_2024-09-01.tif')
+        variable (str): Variable name to extract. If None, uses the first data variable
+    
+    Returns:
+        None: Writes GeoTIFF file to disk
+
+    # Extract September 1st, 2024 from your snow depth file
+    sim.netcdf_day_to_geotiff(
+    '202409_HS.nc', 
+    '2024-09-01', 
+    'snow_depth_2024-09-01.tif'
+    )
+    """
+    import xarray as xr
+    import rasterio
+    from rasterio.transform import from_bounds
+    import numpy as np
+    
+    # Open the NetCDF file
+    ds = xr.open_dataset(netcdf_file)
+    
+    # Get the variable name if not specified
+    if variable is None:
+        # Get the first data variable (skip coordinate variables)
+        data_vars = [var for var in ds.data_vars if len(ds[var].dims) > 2]
+        if data_vars:
+            variable = data_vars[0]
+        else:
+            raise ValueError("No suitable data variable found in NetCDF file")
+    
+    print(f"Extracting variable: {variable}")
+    print(f"Available times: {ds.Time.values[0]} to {ds.Time.values[-1]}")
+    
+    # Select the specific date
+    try:
+        data_slice = ds[variable].sel(Time=target_date, method='nearest')
+        actual_date = ds.Time.sel(Time=target_date, method='nearest').values
+        print(f"Selected date: {actual_date}")
+    except KeyError:
+        print(f"Date {target_date} not found. Available dates:")
+        print(ds.Time.values)
+        return
+    
+    # Get spatial coordinates
+    if 'northing' in ds.coords and 'easting' in ds.coords:
+        lats = ds.northing.values
+        lons = ds.easting.values
+    elif 'lat' in ds.coords and 'lon' in ds.coords:
+        lats = ds.lat.values
+        lons = ds.lon.values
+    else:
+        raise ValueError("Could not find spatial coordinates in NetCDF file")
+    
+    # Get the data array
+    data = data_slice.values
+    
+    # Handle NaN values
+    data = np.where(np.isnan(data), -9999, data)
+    
+    # Calculate geotransform
+    # Assuming regular grid
+    pixel_width = (lons.max() - lons.min()) / (len(lons) - 1)
+    pixel_height = (lats.max() - lats.min()) / (len(lats) - 1)
+    
+    # Create transform (top-left corner)
+    transform = from_bounds(
+        lons.min() - pixel_width/2, 
+        lats.min() - pixel_height/2,
+        lons.max() + pixel_width/2, 
+        lats.max() + pixel_height/2,
+        data.shape[1], data.shape[0]
+    )
+    
+    # Get CRS from NetCDF attributes if available
+    crs = None
+    if hasattr(ds, 'epsg_code'):
+        crs = f"EPSG:{ds.epsg_code}"
+    elif hasattr(ds, 'crs'):
+        crs = ds.crs
+    else:
+        print("Warning: No CRS information found, assuming EPSG:4326")
+        crs = "EPSG:4326"
+    
+    # Determine data type
+    if data.dtype == np.float64:
+        dtype = rasterio.float32
+    elif data.dtype == np.float32:
+        dtype = rasterio.float32
+    else:
+        dtype = rasterio.float32
+    
+    # Write GeoTIFF
+    with rasterio.open(
+        output_tiff,
+        'w',
+        driver='GTiff',
+        height=data.shape[0],
+        width=data.shape[1],
+        count=1,
+        dtype=dtype,
+        crs=crs,
+        transform=transform,
+        nodata=-9999,
+        compress='lzw'
+    ) as dst:
+        dst.write(data.astype(dtype), 1)
+        
+        # Add metadata
+        if hasattr(ds[variable], 'units'):
+            dst.update_tags(units=ds[variable].units)
+        if hasattr(ds[variable], 'long_name'):
+            dst.update_tags(long_name=ds[variable].long_name)
+        dst.update_tags(date=str(actual_date), source_file=netcdf_file)
+    
+    print(f"GeoTIFF written to: {output_tiff}")
+    print(f"Data range: {data.min():.2f} to {data.max():.2f}")
+    
+    ds.close()
+
+def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=None, output_csv=None):
+    """
+    Extract a time series for a specific longitude/latitude location from a NetCDF file.
+    
+    Args:
+        netcdf_file (str): Path to the NetCDF file (e.g., '202409_HS.nc')
+        target_lon (float): Target longitude
+        target_lat (float): Target latitude  
+        variable (str): Variable name to extract. If None, uses the first data variable
+        output_csv (str): Optional CSV filename to save the time series
+    
+    Returns:
+        pandas.DataFrame: Time series data with datetime index and variable values
+    """
+    import xarray as xr
+    import pandas as pd
+    import numpy as np
+    
+    # Open the NetCDF file
+    ds = xr.open_dataset(netcdf_file)
+    
+    # Get the variable name if not specified
+    if variable is None:
+        # Get the first data variable (skip coordinate variables)
+        data_vars = [var for var in ds.data_vars if len(ds[var].dims) > 2]
+        if data_vars:
+            variable = data_vars[0]
+        else:
+            raise ValueError("No suitable data variable found in NetCDF file")
+    
+    print(f"Extracting variable: {variable}")
+    print(f"Target location: lon={target_lon}, lat={target_lat}")
+    
+    # Get spatial coordinates
+    if 'northing' in ds.coords and 'easting' in ds.coords:
+        lat_coord = 'northing'
+        lon_coord = 'easting'
+    elif 'lat' in ds.coords and 'lon' in ds.coords:
+        lat_coord = 'lat'
+        lon_coord = 'lon'
+    else:
+        raise ValueError("Could not find spatial coordinates in NetCDF file")
+    
+    # Select the nearest point to target coordinates
+    try:
+        point_data = ds[variable].sel({
+            lon_coord: target_lon,
+            lat_coord: target_lat
+        }, method='nearest')
+        
+        # Get the actual coordinates of the selected point
+        actual_lon = ds[lon_coord].sel({lon_coord: target_lon}, method='nearest').values
+        actual_lat = ds[lat_coord].sel({lat_coord: target_lat}, method='nearest').values
+        
+        print(f"Actual location: lon={actual_lon:.6f}, lat={actual_lat:.6f}")
+        
+        # Calculate distance from target
+        distance = np.sqrt((actual_lon - target_lon)**2 + (actual_lat - target_lat)**2)
+        print(f"Distance from target: {distance:.6f} degrees")
+        
+    except KeyError as e:
+        print(f"Error selecting coordinates: {e}")
+        print(f"Available {lon_coord} range: {ds[lon_coord].min().values:.6f} to {ds[lon_coord].max().values:.6f}")
+        print(f"Available {lat_coord} range: {ds[lat_coord].min().values:.6f} to {ds[lat_coord].max().values:.6f}")
+        ds.close()
+        return None
+    
+    # Convert to pandas DataFrame
+    df = point_data.to_dataframe().reset_index()
+    
+    # Keep only time and variable columns
+    time_col = 'Time' if 'Time' in df.columns else 'time'
+    df = df[[time_col, variable]].copy()
+    df = df.set_index(time_col)
+    
+    # Remove any NaN values
+    df = df.dropna()
+    
+    # Add metadata as attributes
+    df.attrs = {
+        'variable': variable,
+        'target_lon': target_lon,
+        'target_lat': target_lat,
+        'actual_lon': float(actual_lon),
+        'actual_lat': float(actual_lat),
+        'distance_degrees': float(distance),
+        'source_file': netcdf_file
+    }
+    
+    # Add variable attributes if available
+    if hasattr(ds[variable], 'units'):
+        df.attrs['units'] = ds[variable].units
+    if hasattr(ds[variable], 'long_name'):
+        df.attrs['long_name'] = ds[variable].long_name
+    
+    print(f"Extracted {len(df)} time steps")
+    print(f"Date range: {df.index[0]} to {df.index[-1]}")
+    print(f"Data range: {df[variable].min():.2f} to {df[variable].max():.2f}")
+    
+    # Save to CSV if requested
+    if output_csv:
+        df.to_csv(output_csv)
+        print(f"Time series saved to: {output_csv}")
+    
+    ds.close()
+    return df
+
+# Example usage:
+# df = netcdf_lonlat_to_timeseries('/home/joel/sim/sangvor_sim/outputs/202409_HS.nc', 
+#                                  74.123, 39.456, 
+#                                  output_csv='snow_depth_timeseries.csv')
 

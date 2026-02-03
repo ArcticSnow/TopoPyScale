@@ -190,7 +190,24 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     file_ds = pdir / output_folder / fname
     if file_ds.is_file():
         print(f'\n---> Dataset {fname} found.')
-        ds = xr.open_dataset(file_ds)
+        try:
+            ds = xr.open_dataset(file_ds)
+            # Test if we can actually read the elevation data
+            _ = ds.elevation.values
+        except (RuntimeError, OSError) as e:
+            if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
+                print(f'\n---> Dataset {fname} corrupted (HDF/compression error). Trying h5netcdf backend...')
+                try:
+                    ds = xr.open_dataset(file_ds, engine='h5netcdf')
+                    _ = ds.elevation.values
+                except Exception:
+                    print(f'\n---> h5netcdf backend failed. Regenerating dataset from DEM...')
+                    if Path(dem_file).is_file():
+                        ds = open_dem(dem_file)
+                    else:
+                        raise ValueError(f'ERROR: Dataset corrupted and no DEM available to regenerate')
+            else:
+                raise e
 
     else:
         if Path(dem_file).is_file():
@@ -204,7 +221,29 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
-    dem_arr = ds.elevation.values
+    
+    # Safely access elevation data with error handling
+    try:
+        dem_arr = ds.elevation.values
+    except (RuntimeError, OSError) as e:
+        if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
+            print(f'---> Error reading elevation data: {str(e)}')
+            print('---> Attempting to load elevation data with different method...')
+            try:
+                # Try loading the data chunk by chunk or using compute()
+                dem_arr = ds.elevation.load().values
+            except Exception:
+                # If all else fails, regenerate from DEM file
+                print('---> All methods failed. Regenerating from original DEM...')
+                if Path(dem_file).is_file():
+                    ds_new = open_dem(dem_file)
+                    dem_arr = ds_new.elevation.values
+                    ds = ds_new
+                    var_in = list(ds.variables.keys())
+                else:
+                    raise ValueError(f'ERROR: Cannot read elevation data and no DEM file available')
+        else:
+            raise e
 
     if ('slope' not in var_in) or ('aspect' not in var_in):
         print('Computing slope and aspect ...')
