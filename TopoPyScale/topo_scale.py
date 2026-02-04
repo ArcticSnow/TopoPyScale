@@ -268,9 +268,13 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
         down_pt['LW'] = row.svf * surf_interp['aef'] * sbc * down_pt.t ** 4
 
     kt = surf_interp.ssrd * 0
-    sunset = ds_solar.sunset.astype(bool).compute()
-    mu0 = ds_solar.mu0
+    sunset = ds_solar.sunset.astype(bool).compute()    
     SWtoa = ds_solar.SWtoa
+    mu0 = ds_solar.mu0
+    # prevent numerical instability with the mu0 (in denominator of formulas at lines 304 and 307) when sun is very close to horizon (cos(75) ~= 0.25)
+    mu0_stable = mu0.where(mu0 > 0.25, 0.25)
+
+
 
     # pdb.set_trace()
     kt[~sunset] = (surf_interp.ssrd[~sunset] / tstep_seconds) / SWtoa[~sunset]  # clearness index
@@ -284,12 +288,17 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     down_pt['SW_diffuse'] = row.svf * surf_interp.SW_diffuse
 
     surf_interp['SW_direct'] = surf_interp.SW - surf_interp.SW_diffuse
+    # prevent the case in which SWtoa < SW_direct, which would cause negative ka at line 292.
+    surf_interp['SW_direct'][surf_interp['SW_direct'] > SWtoa] = SWtoa[surf_interp['SW_direct'] > SWtoa] 
+
+
+    
     # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
     ka = surf_interp.ssrd * 0
     # pdb.set_trace()
     ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
     # Illumination angle
-    down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
+    down_pt['cos_illumination_tmp'] = mu0_stable * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
                                       np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
     down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (
             down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
@@ -303,10 +312,10 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     shade = (horizon > ds_solar.elevation)
     down_pt['SW_direct_tmp'] = down_pt.t * 0
     down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
-        -ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
+        -ka[~sunset] * down_pt.p[~sunset] / (g * mu0_stable[~sunset])) # avoid exploding denominator by using mu0_stable
     down_pt['SW_direct'] = down_pt.t * 0
     down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
-            down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
+            down_pt.cos_illumination[~sunset] / mu0_stable[~sunset]) * (1 - shade) # avoid exploding denominator by using mu0_stable
     down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
 
     # currently drop azimuth and level as they are coords. Could be passed to variables instead.
