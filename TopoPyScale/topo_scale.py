@@ -144,30 +144,14 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     else:
         # ========== Vertical interpolation at the DEM surface z  ===============
-        # Optimized: use numpy operations instead of xarray .where().argmax()
-        z_values = plev_interp.z.values  # Shape: (n_levels,) or (n_levels, n_time)
-        elev = row.elevation
+        ind_z_bot = (plev_interp.where(plev_interp.z < row.elevation).z - row.elevation).argmax('level')
 
-        # Find levels below and above point elevation
-        # z_values are typically in descending order (highest pressure = lowest elevation first)
-        if z_values.ndim == 1:
-            # Static z values
-            below_mask = z_values < elev
-            above_mask = z_values > elev
-            if not above_mask.any():
-                raise ValueError(
-                    f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {elev}')
-            # Find closest level below and above
-            ind_z_bot = np.where(below_mask)[0][np.argmax(z_values[below_mask])] if below_mask.any() else 0
-            ind_z_top = np.where(above_mask)[0][np.argmin(z_values[above_mask])]
-        else:
-            # Time-varying z values - fall back to xarray method
-            ind_z_bot = (plev_interp.where(plev_interp.z < elev).z - elev).argmax('level')
-            try:
-                ind_z_top = (plev_interp.where(plev_interp.z > elev).z - elev).argmin('level')
-            except:
-                raise ValueError(
-                    f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {elev} {plev_interp.z}')
+        # In case upper pressure level elevation is not high enough, stop process and print error
+        try:
+            ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
+        except:
+            raise ValueError(
+                f'ERROR: Upper pressure level {plev_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {row.elevation} {plev_interp.z}')
 
         top = plev_interp.isel(level=ind_z_top)
         bot = plev_interp.isel(level=ind_z_bot)
@@ -415,8 +399,8 @@ def downscale_climate(project_directory,
     # =========== Open dataset with Dask =================
     tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
 
-    flist_PLEV = glob.glob(f'{climate_directory}/PLEV*.nc')
-    flist_SURF = glob.glob(f'{climate_directory}/SURF*.nc')
+    flist_PLEV = sorted(glob.glob(f'{climate_directory}/PLEV*.nc'))
+    flist_SURF = sorted(glob.glob(f'{climate_directory}/SURF*.nc'))
 
     if 'object' in list(df_centroids.dtypes):
         pass
