@@ -1,7 +1,7 @@
 """
 Retrieve ecmwf data with cdsapi.
 
-- J. Fiddes, Origin implementation
+- J. Fiddes, Original implementation
 - S. Filhol adapted in 2021
 
 """
@@ -40,8 +40,6 @@ from cdo import *
 from munch import DefaultMunch
 
 
-# [ ] remove this dependencie era5_downloader bringing little value
-# [ ] create a class to execute download
 
 
 import warnings
@@ -73,7 +71,7 @@ class FetchERA5():
         varoi_surf (list): list of surface variables to download. Default is None which will fetch only necessary for TPS 
         varoi_plev (list): list of pressure level variables to download. Default is None which will fetch only necessary for TPS
     """
-    
+
     def __init__(self, config, varoi_surf=None, varoi_plev=None):
 
         if type(config) is DefaultMunch:
@@ -111,7 +109,7 @@ class FetchERA5():
         # else set realtime to False
         else:
             self.realtime = False
-                    
+
         self.realtime = False # always false now as redownload of current month handled elsewhere ? key required only to dynamically set config.project.end
 
     @staticmethod
@@ -232,7 +230,7 @@ class FetchERA5():
                 output_format=output_format
             )
 
-        if surf_plev == 'plev':            
+        if surf_plev == 'plev':
             # retrieve era5 plevels
             era5_request_plev_snowmapper(
                 lastday,
@@ -245,6 +243,9 @@ class FetchERA5():
     def to_zarr(self, from_daily=True):
         """
         Funtion to convert netcdf files into a Zarr store.
+
+        Args:
+            from_daily (bool): default, will use dask to directly convert daily netcdf into Zarr. If false, converts daily netcdf files with cdo, and then convert yearly files to zarr
         """
 
         # extract chunk size for time and pressure level

@@ -59,7 +59,7 @@ varout_default = ['t',
 
 class ClimateDownscaler:
     def __init__(self, 
-                 era5_zarr_path,
+                 climate_zarr_store,
                  output_path,
                  df_centroids,
                  da_horizon,
@@ -73,7 +73,7 @@ class ClimateDownscaler:
                  lw_terrain_flag=True,
                  precip_lapse_rate_flag=False,
                  file_pattern='down_pt*.nc',
-                 store_name=None):
+                 down_zarr_store=None):
         """
         Initialize the parallel processor for zarr datasets.
         
@@ -85,7 +85,7 @@ class ClimateDownscaler:
         self.output_path = Path(output_path)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.ERA = xr.open_zarr(str(era5_zarr_path))
+        self.ds_zarr = xr.open_zarr(str(climate_zarr_store))
         self.df_centroids = df_centroids
         self.ds_solar = ds_solar
         self.da_horizon = da_horizon
@@ -114,13 +114,13 @@ class ClimateDownscaler:
         
         # Logic to setup output name
         # Create output zarr store if specified output to be zarr store
-        if (store_name is not None):
-            if store_name[-5:] == '.zarr':
+        if (down_zarr_store is not None):
+            if down_zarr_store[-5:] == '.zarr':
                 self.output_format = 'zarr'
-                self.store_name = store_name
+                self.down_zarr_store = down_zarr_store
                 self.setup_output_store()
             else:
-                raise ValueError("Store_name must be xxx.zarr")
+                raise ValueError("down_zarr_store must be xxx.zarr")
 
             if file_pattern is not None:
                 raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
@@ -131,7 +131,7 @@ class ClimateDownscaler:
             else:
                 raise ValueError("file_pattern must finish with *.nc")
 
-            if store_name is not None:
+            if down_zarr_store is not None:
                 raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
 
 
@@ -157,15 +157,15 @@ class ClimateDownscaler:
         # Store dataset to Zarr
         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
         encoder = dict(zip(self.varout, [{'compressors': comp}]*len(self.varout)))
-        ds = ds.chunk({'time':self.ERA.chunks.get('time')[0], 'point_ind':1})
-        ds.to_zarr(self.output_path / self.store_name, mode='w', encoding=encoder, zarr_format=3)
+        ds = ds.chunk({'time':self.ds_zarr.chunks.get('time')[0], 'point_ind':1})
+        ds.to_zarr(self.output_path / self.down_zarr_store, mode='w', encoding=encoder, zarr_format=3)
 
 
     def create_subset_indices(self, row):
         """Create slice objects for subsetting."""
 
-        ind_lat = np.abs(self.ERA.latitude.values - row.lat).argmin()
-        ind_lon = np.abs(self.ERA.longitude.values - row.lon).argmin()
+        ind_lat = np.abs(self.ds_zarr.latitude.values - row.lat).argmin()
+        ind_lon = np.abs(self.ds_zarr.longitude.values - row.lon).argmin()
 
         ilatitude = np.array([ind_lat - 1, ind_lat, ind_lat + 1]).astype(int)
         ilongitude = np.array([ind_lon - 1, ind_lon, ind_lon + 1]).astype(int)
@@ -419,7 +419,7 @@ class ClimateDownscaler:
 
         try:
             # Get the subset
-            subset = self.ERA.sel(time=subset_indices.get('tvec')).isel(latitude=subset_indices.get('latitude'), 
+            subset = self.ds_zarr.sel(time=subset_indices.get('tvec')).isel(latitude=subset_indices.get('latitude'), 
                                 longitude=subset_indices.get('longitude'))
             result = self.downscale_atmo(row=subset_indices.get('centroid'), 
                                         subset=subset, 
@@ -435,8 +435,7 @@ class ClimateDownscaler:
                              'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             result = result.drop_vars(['point_name', 'reference_time'])
 
-            if self.output_format.lower() == 'netcdf':
-            
+            if self.output_format.lower() == 'netcdf': 
                 comp = dict(zlib=True, complevel=5)
                 encoding = {var: comp for var in result.data_vars}
                 result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_id'))),
@@ -447,17 +446,17 @@ class ClimateDownscaler:
                 comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
                 encoder = dict(zip(vars, [{'compressors': comp}]*len(vars)))
                 result = result.expand_dims(dim='point_ind', axis=0)
-                result = result.chunk({'time':self.ERA.chunks.get('time')[0], 'point_ind':1})
-                #if not (self.output_path / self.store_name).exists():
-                #    result.to_zarr(self.output_path / self.store_name, mode='w', encoding=encoder, zarr_format=3)
+                result = result.chunk({'time':self.ds_zarr.chunks.get('time')[0], 'point_ind':1})
+                #if not (self.output_path / self.down_zarr_store).exists():
+                #    result.to_zarr(self.output_path / self.down_zarr_store, mode='w', encoding=encoder, zarr_format=3)
 
                 #else:
-                result[self.varout].to_zarr(self.output_path / self.store_name, mode='a', zarr_format=3, region='auto')
+                result[self.varout].to_zarr(self.output_path / self.down_zarr_store, mode='a', zarr_format=3, region='auto')
             else:
                 raise ValueError('Only netcdf or zarr available')
             print(f"---> Point {subset_indices.get('point_id')} stored to {self.output_format.lower()}")
 
-            
+
         except Exception as e:
             raise ValueError(f"Error processing subset")
 
@@ -475,13 +474,12 @@ class ClimateDownscaler:
 
     def dask_parallel_process_multiple_subsets(self, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
         """Process multiple subsets in parallel and store results to disk."""
-        
+
         start_time = time.time()
         cluster = LocalCluster(processes=True, **dask_worker)
 
         with Client(cluster) as client:
             print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
-            
             futures = []
             for _, row in self.df_centroids.iterrows():
                 indices = self.create_subset_indices(row)
@@ -490,13 +488,12 @@ class ClimateDownscaler:
                     indices
                 )
                 futures.append(future)
-            
+
             print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
             return client.gather(futures)
-        
+
 
     def downscale_parallel(self, parallel_method='multicore', n_core=4, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
-        
         if parallel_method == 'multicore':
             self.multicore_parallel_process_multiple_subsets(n_core)
         elif parallel_method == 'dask':
