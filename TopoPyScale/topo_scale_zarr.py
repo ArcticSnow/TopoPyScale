@@ -7,6 +7,12 @@ WARNING: Dask worker parameters must be fine tune to your machine (local, cluste
 
 TODO:
 - [x] implement another method using multiprocessing
+
+simplify by using zarr format only:
+  0. remove all netcdf usage
+  1. First create empty zarr with dimension (time, point_ind), compressor, chunking 
+  2. open the input and output store
+  3. 
 - [ ] make Dask worker parameters flexible. 
 - [ ] try pushing data to a Zarr store for outputs. Currently going to individual netcdf files
 - [ ] See how to potentially automate setting Dask worker config based on the number of core, and the memory size of one job.
@@ -24,7 +30,6 @@ except ImportError:
         # Fallback for older versions or different structure
         from zarr import Blosc as BloscCodec
 from dask.distributed import LocalCluster, Client
-import numpy as np
 from datetime import datetime
 import os
 from pathlib import Path
@@ -59,8 +64,13 @@ varout_default = ['t',
 
 class ClimateDownscaler:
     def __init__(self, 
+<<<<<<< HEAD
                  climate_zarr_store,
                  output_path,
+=======
+                 climate_zarr_path,
+                 output_zarr_path,
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
                  df_centroids,
                  da_horizon,
                  ds_solar,
@@ -72,25 +82,42 @@ class ClimateDownscaler:
                  interp_method='idw',
                  lw_terrain_flag=True,
                  precip_lapse_rate_flag=False,
+<<<<<<< HEAD
                  file_pattern='down_pt*.nc',
                  down_zarr_store=None):
+=======
+                 store_name=None,
+                 dask_worker={'n_workers':4,
+                              'threads_per_worker':1,
+                              'memory_target_fraction':0.95,
+                              'memory_limit':'1.5GB'},
+                 compressor=None):
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
         """
         Initialize the parallel processor for zarr datasets.
-        
+
         Args:
             input_zarr_path (str): Path to the input zarr dataset
-            output_path (str): Path to store the computed results
+            output_zarr_path (str): Path to store the computed results
             array_path (str): Path to the specific array within the zarr group (if dataset is a group)
         """
-        self.output_path = Path(output_path)
-        self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
+<<<<<<< HEAD
         self.ds_zarr = xr.open_zarr(str(climate_zarr_store))
+=======
+        self.output_zarr_path = Path(output_zarr_path)
+        self.output_zarr_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            self.climate_data = xr.open_zarr(str(climate_zarr_path))
+        except:
+            raise ImportError(f"Path {climate_zarr_path} does not exist")
+
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
         self.df_centroids = df_centroids
         self.ds_solar = ds_solar
         self.da_horizon = da_horizon
         self.varout = varout
-
         self.start_time = time.time()
         self.n_digits = len(str(self.df_centroids.index.max()))
         self.ds_solar = ds_solar
@@ -105,13 +132,12 @@ class ClimateDownscaler:
                                   'lw_terrain_flag': lw_terrain_flag,
                                   'tstep': tstep_dict.get(tstep),
                                   'n_digits': self.n_digits,
-                                  'file_pattern': file_pattern,
                                   'target_epsg':target_EPSG,
                                   'precip_lapse_rate_flag':precip_lapse_rate_flag,
-                                  'output_directory':output_path,
+                                  'output_directory':output_zarr_path,
                                   'lw_terrain_flag':lw_terrain_flag}
 
-        
+
         # Logic to setup output name
         # Create output zarr store if specified output to be zarr store
         if (down_zarr_store is not None):
@@ -119,6 +145,7 @@ class ClimateDownscaler:
                 self.output_format = 'zarr'
                 self.down_zarr_store = down_zarr_store
                 self.setup_output_store()
+<<<<<<< HEAD
             else:
                 raise ValueError("down_zarr_store must be xxx.zarr")
 
@@ -134,13 +161,15 @@ class ClimateDownscaler:
             if down_zarr_store is not None:
                 raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
 
+=======
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
 
     def setup_output_store(self):
         """Setup the output Zarr store with proper structure"""
 
         # Create output directory if it doesn't exist
-        Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
-        
+        Path(self.output_zarr_path).parent.mkdir(parents=True, exist_ok=True)
+
         # Create dummy dataset
         shape=(self.df_centroids.shape[0],len(self.tvec))
         dv = {}
@@ -155,21 +184,36 @@ class ClimateDownscaler:
             })
 
         # Store dataset to Zarr
-        comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+        if compressor is None:
+            comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+        
         encoder = dict(zip(self.varout, [{'compressors': comp}]*len(self.varout)))
+<<<<<<< HEAD
         ds = ds.chunk({'time':self.ds_zarr.chunks.get('time')[0], 'point_ind':1})
         ds.to_zarr(self.output_path / self.down_zarr_store, mode='w', encoding=encoder, zarr_format=3)
+=======
+        ds = ds.chunk({'time':self.climate_data.chunks.get('time')[0], 'point_ind':1})
+        ds.to_zarr(self.output_zarr_path / self.store_name,
+                   mode='w',
+                   encoding=encoder, 
+                   zarr_format=3)
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
 
 
     def create_subset_indices(self, row):
         """Create slice objects for subsetting."""
 
+<<<<<<< HEAD
         ind_lat = np.abs(self.ds_zarr.latitude.values - row.lat).argmin()
         ind_lon = np.abs(self.ds_zarr.longitude.values - row.lon).argmin()
+=======
+        ind_lat = np.abs(self.climate_data.latitude.values - row.lat).argmin()
+        ind_lon = np.abs(self.climate_data.longitude.values - row.lon).argmin()
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
 
         ilatitude = np.array([ind_lat - 1, ind_lat, ind_lat + 1]).astype(int)
         ilongitude = np.array([ind_lon - 1, ind_lon, ind_lon + 1]).astype(int)
-                
+
         return (
             {'centroid': row,
             'point_id':row.point_ind,
@@ -250,7 +294,7 @@ class ClimateDownscaler:
             pt_elev_diff = np.round(np.min(row.elevation - subset_interp.z.isel(level=-1).values), 0)
             print(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {subset_interp.isel(level=-1).level.data} hPa geopotential\n=> "
                       "Values sampled from Psurf and lowest Plevel. No vertical interpolation")
-            
+
             ind_z_top = (subset_interp.where(subset_interp.z > row.elevation).z - row.elevation).argmin('level')
             top = subset_interp.isel(level=ind_z_top)
 
@@ -271,7 +315,7 @@ class ClimateDownscaler:
             except:
                 raise ValueError(
                     f'ERROR: Upper pressure level {subset_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {row.elevation} {subset_interp.z}')
-                   
+
 
             top = subset_interp.isel(level=ind_z_top)
             bot = subset_interp.isel(level=ind_z_bot)
@@ -350,7 +394,7 @@ class ClimateDownscaler:
         SWtoa = ds_solar.SWtoa
 
         kt[~sunset] = (subset_interp.ssrd[~sunset] / tstep_seconds) / SWtoa[~sunset]  # clearness index
-        
+
         kt[(kt < 0).values] = 0
         kt[(kt > 1).values] = 1
         kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index
@@ -385,7 +429,7 @@ class ClimateDownscaler:
         down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
                 down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
         down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
-        
+
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
         # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
         down_pt = down_pt.drop(['level'])
@@ -419,7 +463,11 @@ class ClimateDownscaler:
 
         try:
             # Get the subset
+<<<<<<< HEAD
             subset = self.ds_zarr.sel(time=subset_indices.get('tvec')).isel(latitude=subset_indices.get('latitude'), 
+=======
+            subset = self.climate_data.sel(time=subset_indices.get('tvec')).isel(latitude=subset_indices.get('latitude'), 
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
                                 longitude=subset_indices.get('longitude'))
             result = self.downscale_atmo(row=subset_indices.get('centroid'), 
                                         subset=subset, 
@@ -434,6 +482,7 @@ class ClimateDownscaler:
                              'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                              'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             result = result.drop_vars(['point_name', 'reference_time'])
+<<<<<<< HEAD
 
             if self.output_format.lower() == 'netcdf': 
                 comp = dict(zlib=True, complevel=5)
@@ -454,6 +503,20 @@ class ClimateDownscaler:
                 result[self.varout].to_zarr(self.output_path / self.down_zarr_store, mode='a', zarr_format=3, region='auto')
             else:
                 raise ValueError('Only netcdf or zarr available')
+=======
+            
+            vars = list(result.keys())
+
+            comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+            encoder = dict(zip(vars, [{'compressors': comp}]*len(vars)))
+            result = result.expand_dims(dim='point_ind', axis=0)
+            result = result.chunk({'time':self.climate_data.chunks.get('time')[0], 'point_ind':1})
+            #if not (self.output_zarr_path / self.store_name).exists():
+            #    result.to_zarr(self.output_zarr_path / self.store_name, mode='w', encoding=encoder, zarr_format=3)
+
+            #else:
+            result[self.varout].to_zarr(self.output_zarr_path / self.store_name, mode='a', zarr_format=3, region='auto')
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
             print(f"---> Point {subset_indices.get('point_id')} stored to {self.output_format.lower()}")
 
 
@@ -480,6 +543,10 @@ class ClimateDownscaler:
 
         with Client(cluster) as client:
             print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
+<<<<<<< HEAD
+=======
+
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
             futures = []
             for _, row in self.df_centroids.iterrows():
                 indices = self.create_subset_indices(row)
@@ -494,6 +561,10 @@ class ClimateDownscaler:
 
 
     def downscale_parallel(self, parallel_method='multicore', n_core=4, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
+<<<<<<< HEAD
+=======
+
+>>>>>>> 7b6ab7a0d7b2626a953afe7838a025db5f3d9caa
         if parallel_method == 'multicore':
             self.multicore_parallel_process_multiple_subsets(n_core)
         elif parallel_method == 'dask':
