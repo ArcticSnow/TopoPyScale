@@ -334,35 +334,35 @@ def convert_daily_nc_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     with Client(cluster) as client:
             print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
 
-        dwd = Path(path_to_netcdfs)
-        surface_files = sorted(dwd.glob(surf_name))
-        pressure_files = sorted(dwd.glob(plev_name))
+            dwd = Path(path_to_netcdfs)
+            surface_files = sorted(dwd.glob(surf_name))
+            pressure_files = sorted(dwd.glob(plev_name))
 
-        if compressor is None:
-            compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+            if compressor is None:
+                compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
 
-        surface_ds = xr.open_mfdataset(
-            surface_files,
-            combine="by_coords",
-            parallel=True,
-            chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
-        )
-     
-        pressure_ds = xr.open_mfdataset(
-            pressure_files,
-            combine="by_coords",
-            parallel=True,
-            chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
-        )
+            surface_ds = xr.open_mfdataset(
+                surface_files,
+                combine="by_coords",
+                parallel=True,
+                chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
+            )
+         
+            pressure_ds = xr.open_mfdataset(
+                pressure_files,
+                combine="by_coords",
+                parallel=True,
+                chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
+            )
 
-        # Rechunk spatial dimensions
-        surface_ds = surface_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
-        pressure_ds = pressure_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
-        
-        combined_ds = xr.merge([surface_ds, pressure_ds], compat='override')
-        encoding = {var: {"compressors": [compressor]} for var in combined_ds.data_vars}
-        combined_ds.to_zarr(zarr_store, mode="w", encoding=encoding, compute=True)
-        print(f"===> Combined NC files to Zarr store: {zarr_store}")
+            # Rechunk spatial dimensions
+            surface_ds = surface_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
+            pressure_ds = pressure_ds.chunk({"latitude": chunks.get("latitude"), "longitude": chunks.get("longitude")})
+            
+            combined_ds = xr.merge([surface_ds, pressure_ds], compat='override')
+            encoding = {var: {"compressors": [compressor]} for var in combined_ds.data_vars}
+            combined_ds.to_zarr(zarr_store, mode="w", encoding=encoding, compute=True)
+            print(f"===> Combined NC files to Zarr store: {zarr_store}")
 
 
 
