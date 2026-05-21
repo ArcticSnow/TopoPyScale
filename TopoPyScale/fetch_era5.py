@@ -10,7 +10,7 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 import dask
-from dask.distributed import Client
+from dask.distributed import Client, LocalCluster
 
 try:
     from zarr.codecs import BloscCodec
@@ -345,14 +345,14 @@ def convert_daily_nc_to_zarr(path_to_netcdfs='inputs/climate/yearly',
                 surface_files,
                 combine="by_coords",
                 parallel=True,
-                chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
+                chunks={"time": chunks.get("time")}  # Chunk time dimension to 1 year
             )
          
             pressure_ds = xr.open_mfdataset(
                 pressure_files,
                 combine="by_coords",
                 parallel=True,
-                chunks={"time": chuncks.get("time")}  # Chunk time dimension to 1 year
+                chunks={"time": chunks.get("time")}  # Chunk time dimension to 1 year
             )
 
             # Rechunk spatial dimensions
