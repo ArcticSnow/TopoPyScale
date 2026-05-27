@@ -121,9 +121,9 @@ sampling:
     n_clusters: 50                      # number of cluster to segment the DEM
     random_seed: 2                      # random seed for the K-mean clustering 
     clustering_features: { 'x': 1, 'y': 1, 'elevation': 1, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # dictionnary of the features of choice to use in clustering with their relative importance. Relative importance is a multiplier after scaling
-    clustering_mask: inputs/dem/catchment_mask.tif  # optional path to tif containing a mask (0/1)
-    clustering_groups: inputs/dem/groups.tif        # optional path to a tif containing cluster groups (int values), e.g. land cover
-    clustering_group_weights: gr_wgths.csv          # csv file in /inputs/dem/ containing the columns ['group', 'weights'] indicating the relative number of clusters per group. If this file does not exist, each group has a number of cluster proportional to its relative area. 
+    clustering_mask: inputs/dem/catchment_mask.tif      # optional relative path to a .tif containing a mask (0/1)
+    clustering_groups: inputs/dem/groups.tif            # optional relative path to a .tif containing cluster groups (int values), e.g. land cover
+    clustering_group_weights: inputs/dem/gr_wgths.csv   # optional relative path to a .csv file in /inputs/dem/ containing the columns ['group', 'weights'] indicating the relative number of clusters per group. If this file does not exist, each group has a number of cluster proportional to its relative area. 
 
 #.....................................................................................................
 toposcale:
