@@ -368,8 +368,10 @@ class Topoclass(object):
             gr = df_param[mask].groupby('cluster_group').slope.count()
             df_group = pd.DataFrame(gr).rename(columns={'slope':'nPix'})
 
-            if os.path.isfile(self.config.sampling.toposub.clustering_group_weights):
-                gw = pd.read_csv(self.config.sampling.toposub.clustering_group_weights)
+            group_weights_file = Path(self.config.project.directory, self.config.sampling.toposub.clustering_group_weights)
+
+            if group_weights_file.is_file():
+                gw = pd.read_csv(group_weights_file)
                 if gw.weight.sum() != 1:
                     raise ValueError(f'The sum of group weights within the mask must be equal to number of groups, n_group={gw.shape[0]}')
                 df_group['weights'] = gw.set_index('group').loc[df_group.index]
