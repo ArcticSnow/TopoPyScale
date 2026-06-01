@@ -296,7 +296,9 @@ def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     pz = Path(zarrout)
 
     # lazy load stack of PLEV netcdf to grab dimensions and attributes
-    ds = xr.open_mfdataset(str(pn / plev_name), parallel=True, chunks='auto')
+
+    ds = xr.open_mfdataset(str(pn / plev_name))
+    #ds = xr.open_mfdataset(str(pn / plev_name), parallel=True, chunks='auto')
     tvec = ds.time.values
     za1 = dask.array.empty((len(tvec), ds.level.shape[0], ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
     za2 = dask.array.empty((len(tvec), ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
