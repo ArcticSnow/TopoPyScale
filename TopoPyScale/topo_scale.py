@@ -372,7 +372,7 @@ def downscale_climate(project_directory,
         end_date:
         interp_method (str): interpolation method for horizontal interp. 'idw' or 'linear'
         lw_terrain_flag (bool): flag to compute contribution of surrounding terrain to LW or ignore
-        tstep (str): timestep of the input data, default = 1H
+        tstep (str): timestep of the input data, default = 1h
         file_pattern (str): filename pattern for storing downscaled points, default = 'down_pt_*.nc'
         n_core (int): number of core on which to distribute processing
 
@@ -393,7 +393,7 @@ def downscale_climate(project_directory,
     clear_files(output_directory / 'tmp')
 
     start_time = time.time()
-    tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
+    tstep_dict = {'1h': 1, '3h': 3, '6h': 6}
     n_digits = len(str(df_centroids.index.max()))
 
     # =========== Open dataset with Dask =================

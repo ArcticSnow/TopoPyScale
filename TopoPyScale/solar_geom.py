@@ -33,7 +33,7 @@ def get_solar_geom(df_position,
         df_position (dataframe): point_name as index, latitude, longitude
         start_date (str): start date  "2014-05-10"
         end_date (str: end date   "2015-05-10"
-        tstep (str): time step, ex: '6H'
+        tstep (str): time step, ex: '6h'
         sr_epsg (str): source EPSG code for the input coordinate
         num_threads (int): number of threads to parallelize computation on. default is number of core -2
         fname (str): name of netcdf file to store solar geometry
@@ -47,7 +47,7 @@ def get_solar_geom(df_position,
     if (int(sr_epsg) != "4326") or ('longitude' not in df_position.columns):
         trans = Transformer.from_crs("epsg:" + sr_epsg, "epsg:4326", always_xy=True)
         df_position['longitude'], df_position['latitude'] = trans.transform(df_position.x.values, df_position.y.values)
-    # tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
+    # tstep_dict = {'1h': 1, '3h': 3, '6h': 6}
 
     times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, tz='UTC', inclusive='left')
 

@@ -107,7 +107,7 @@ def FsmMetParser(file, freq="1h", resample=False):
     return (df)
 
 
-def FsmSnowParser(file, freq="1H", resample=False):
+def FsmSnowParser(file, freq="1h", resample=False):
     '''
     parses FSM output fuiles
     '''
@@ -157,11 +157,11 @@ def FsmPlot_ensemble(wdir, simvar, sampleN):
     plt.title("Sample="+str(sampleN) + " Elev="+str(np.round(lp.elevation[sampleN])))
     plt.show()
 
-def SmetParser(file, doresample=True, freq='1H', NA_val=-999):
+def SmetParser(file, doresample=True, freq='1h', NA_val=-999):
     '''
     val_file = full path to a smet
     resample = "TRUE" or "FALSE"
-    freq = '1D' '1H' etc
+    freq = '1D' '1h' etc
 
     '''
     resample_func = "mean"

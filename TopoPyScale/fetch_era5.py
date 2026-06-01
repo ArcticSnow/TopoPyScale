@@ -503,7 +503,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     print('\n')
     print('---> Loading ERA5 {} climate forcing'.format(surf_plev))
     bbox = [str(latN), str(lonW), str(latS), str(lonE)]
-    time_step_dict = {'1H': ['00:00', '01:00', '02:00',
+    time_step_dict = {'1h': ['00:00', '01:00', '02:00',
                              '03:00', '04:00', '05:00',
                              '06:00', '07:00', '08:00',
                              '09:00', '10:00', '11:00',
@@ -511,8 +511,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                              '15:00', '16:00', '17:00',
                              '18:00', '19:00', '20:00',
                              '21:00', '22:00', '23:00'],
-                    '3H': ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
-                    '6H': ['00:00', '06:00', '12:00', '18:00']}
+                    '3h': ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
+                    '6h': ['00:00', '06:00', '12:00', '18:00']}
 
     df = pd.DataFrame()
     # date_range will make sure to include the month of the latest date (endDate) provided
