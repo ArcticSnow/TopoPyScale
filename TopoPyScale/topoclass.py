@@ -459,11 +459,11 @@ class Topoclass(object):
 
         # Build the final cluster map
         shape = self.toposub.ds_param.slope.shape
-        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.values, shape,order='F'))
-        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.values, shape,order='F'))
-        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.values, shape,order='F'))
+        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.to_numpy(), shape,order='F'))
+        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.to_numpy(), shape,order='F'))
+        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.to_numpy(), shape,order='F'))
         if split_clustering:
-            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.values, shape,order='F'))
+            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.to_numpy(), shape,order='F'))
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
