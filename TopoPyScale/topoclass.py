@@ -307,9 +307,15 @@ class Topoclass(object):
         # read df param
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
 
+        # Auto-mask nodata pixels (e.g. from reprojected DEMs with non-rectangular valid regions)
+        valid_elev = ~df_param['elevation'].isna()
+        n_nodata = (~valid_elev).sum()
+        if n_nodata > 0:
+            print(f'---> Auto-masking {n_nodata} nodata pixels from DEM')
+
         # add mask and cluster feature
         if mask_file in [None, {}]:
-            mask = [True] * len(df_param)
+            mask = valid_elev
         else:
             if not os.path.isabs(mask_file):
                 mask_file = Path(self.config.project.directory, mask_file)
@@ -331,8 +337,8 @@ class Topoclass(object):
                     f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
-            # get mask
-            mask = ts.ds_to_indexed_dataframe(ds_mask)['mask'] == 1
+            # get mask (combine with nodata auto-mask)
+            mask = (ts.ds_to_indexed_dataframe(ds_mask)['mask'] == 1) & valid_elev
 
         # add cluster groups. Groups can be landcover classes for instance
         if groups_file in [None, {}]:
@@ -362,8 +368,10 @@ class Topoclass(object):
             gr = df_param[mask].groupby('cluster_group').slope.count()
             df_group = pd.DataFrame(gr).rename(columns={'slope':'nPix'})
 
-            if os.path.isfile(self.config.sampling.toposub.clustering_group_weights):
-                gw = pd.read_csv(self.config.sampling.toposub.clustering_group_weights)
+            group_weights_file = Path(self.config.project.directory, self.config.sampling.toposub.clustering_group_weights)
+
+            if group_weights_file.is_file():
+                gw = pd.read_csv(group_weights_file)
                 if gw.weight.sum() != 1:
                     raise ValueError(f'The sum of group weights within the mask must be equal to number of groups, n_group={gw.shape[0]}')
                 df_group['weights'] = gw.set_index('group').loc[df_group.index]

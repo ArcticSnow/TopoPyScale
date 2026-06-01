@@ -121,8 +121,9 @@ sampling:
     n_clusters: 50                      # number of cluster to segment the DEM
     random_seed: 2                      # random seed for the K-mean clustering 
     clustering_features: { 'x': 1, 'y': 1, 'elevation': 1, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # dictionnary of the features of choice to use in clustering with their relative importance. Relative importance is a multiplier after scaling
-    clustering_mask: inputs/dem/catchment_mask.tif  # optional path to tif containing a mask (0/1)
-    clustering_groups: inputs/dem/groups.tif        # optional path to a tif containing cluster groups (int values), e.g. land cover
+    clustering_mask: inputs/dem/catchment_mask.tif      # optional relative path to a .tif containing a mask (0/1)
+    clustering_groups: inputs/dem/groups.tif            # optional relative path to a .tif containing cluster groups (int values), e.g. land cover
+    clustering_group_weights: inputs/dem/gr_wgths.csv   # optional relative path to a .csv file in /inputs/dem/ containing the columns ['group', 'weights'] indicating the relative number of clusters per group. If this file does not exist, each group has a number of cluster proportional to its relative area. 
 
 #.....................................................................................................
 toposcale:
@@ -225,6 +226,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | clustering_features | {'x':1, 'y':1, 'elevation':4, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1} | only if method is `toposub`                 | python dict: {feature_name: importance} | Python dictionary that list which features the clustering must be done with. Importance value is a scaling factor applied to specific feature in case one feature may be more important for segmenting the DEM. Default should be 1. |
 | clustering_mask     | clustering/catchment_mask.tif                                                     | optional (only used if method is `toposub`) | '**/*.tif'                              | Path (or relative path) to a .tif file containing the mask (0/1 values) which pixels of the DEM are used. Needs to have the same grid/resolution as the input DEM.                                                                   |
 | clustering_groups   | clustering/VEG_CODE.tif                                                           | optional (only used if method is `toposub`) | '**/*.tif'                              | Path (or relative path) to a .tif file containing integer values of groups to split the clustering into (e.g. Vegetation codes 1-9). Needs to have the same grid/resolution as the input DEM.                                        |
+| clustering_group_weights   | clustering/gr_wweights.csv                                                 | optional (only used if method is `toposub`) | '**/*.csv'                              | Path (or relative path) to a .csv file. the file contains at least the two columns `group, weights`. sum(weights) must equal to 1                                      |
 
 ### Toposcale
 
