@@ -50,6 +50,10 @@ class Topoclass(object):
 
             if self.config.project.directory in [None, {}]:
                 self.config.project.directory = Path(os.getcwd())
+            
+            elif not isintance(self.config.project.directory, pathlib.Path):
+                self.config.project.directory = Path(self.config.project.directory)
+
             else:
                 self.config.project.directory = Path(self.config.project.directory)
 
@@ -105,7 +109,7 @@ class Topoclass(object):
         os.makedirs(self.config.outputs.downscaled, exist_ok=True)
 
         if not self.config.dem.path:
-            self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
+                        self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
         os.makedirs(str(self.config.dem.path), exist_ok=True)
 
         self.config.dem.filepath = self.config.dem.path / self.config.dem.file
