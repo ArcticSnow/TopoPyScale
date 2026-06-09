@@ -24,6 +24,7 @@ import pandas as pd
 import xarray as xr
 from munch import DefaultMunch
 from sklearn.preprocessing import StandardScaler
+from pathlib import Path
 
 from TopoPyScale import fetch_dem as fd
 from TopoPyScale import fetch_era5 as fe
@@ -51,7 +52,7 @@ class Topoclass(object):
             if self.config.project.directory in [None, {}]:
                 self.config.project.directory = Path(os.getcwd())
             
-            elif not isintance(self.config.project.directory, pathlib.Path):
+            elif not isinstance(self.config.project.directory, Path):
                 self.config.project.directory = Path(self.config.project.directory)
 
             else:
@@ -74,7 +75,7 @@ class Topoclass(object):
                 shutil.rmtree(self.config.outputs.path)
                 print('---> Output directory cleaned')
             except:
-                os.makedirs(self.config.outputs.path)
+                self.config.outputs.path.mkdir(parents=True, exist_ok=True)
 
         # remove output fsm directory
         if self.config.outputs.file.clean_FSM:
@@ -98,19 +99,19 @@ class Topoclass(object):
 
         else:
             #self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
-            self.config.climate.path = self.config.project.directory / Path(self.config.climate.era5.path) 
+            self.config.climate.path = self.config.project.directory / Path(self.config.climate.era5.path)
             self.config.climate.tmp_path = self.config.climate.path / 'tmp'
 
         # check if tree directory exists. If not create it
-        os.makedirs(self.config.climate.path, exist_ok=True)
-        os.makedirs(self.config.climate.tmp_path, exist_ok=True)
-        os.makedirs(self.config.outputs.path, exist_ok=True)
-        os.makedirs(self.config.outputs.tmp_path, exist_ok=True)
-        os.makedirs(self.config.outputs.downscaled, exist_ok=True)
+        self.config.climate.path.mkdir(parents=True, exist_ok=True)
+        self.config.climate.tmp_path.mkdir(parents=True, exist_ok=True)
+        self.config.outputs.path.mkdir(parents=True, exist_ok=True)
+        self.config.outputs.tmp_path.mkdir(parents=True, exist_ok=True)
+        self.config.outputs.downscaled.mkdir(parents=True, exist_ok=True)
 
         if not self.config.dem.path:
                         self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
-        os.makedirs(str(self.config.dem.path), exist_ok=True)
+        self.config.dem.path.mkdir(parents=True, exist_ok=True)
 
         self.config.dem.filepath = self.config.dem.path / self.config.dem.file
         if not self.config.dem.filepath.exists():
@@ -155,7 +156,7 @@ class Topoclass(object):
             print("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
 
         if self.config.project.climate.lower() == 'ifs_forecast':
-            self.get_ifs_forecast()        
+            self.get_ifs_forecast()
 
         if self.config.project.split.IO:
             self.time_splitter = self.TimeSplitter(self.config.project.start,
