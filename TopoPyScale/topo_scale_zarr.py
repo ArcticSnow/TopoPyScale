@@ -309,10 +309,10 @@ class ClimateDownscaler:
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
         down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
-        down_pt = down_pt.drop('theta')
+        down_pt = down_pt.drop_vars('theta')
         down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
         down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v ** 2)
-        down_pt = down_pt.drop(['theta_pos', 'theta_neg', 'month'])
+        down_pt = down_pt.drop_vars(['theta_pos', 'theta_neg', 'month'])
 
 
         #============================================================
@@ -370,7 +370,7 @@ class ClimateDownscaler:
                                           np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
         down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (
                 down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
-        down_pt = down_pt.drop(['cos_illumination_tmp'])
+        down_pt = down_pt.drop_vars(['cos_illumination_tmp'])
         illumination_mask = down_pt['cos_illumination'] < 0
         illumination_mask = illumination_mask.compute()
         down_pt['cos_illumination'][illumination_mask] = 0
@@ -388,8 +388,7 @@ class ClimateDownscaler:
         
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
         # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
-        down_pt = down_pt.drop(['level'])
-        down_pt = down_pt.drop(['precip_lapse_rate'])
+        down_pt = down_pt.drop_vars(['level', 'precip_lapse_rate'])
         # adding metadata
         down_pt.t.attrs = {'units': 'K', 'long_name': 'Temperature', 'standard_name': 'air_temperature'}
         down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
@@ -407,7 +406,7 @@ class ClimateDownscaler:
         down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
                             'standard_name': 'longwave_radiation_downward'}
         down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
-        down_pt = down_pt.drop(['SW_direct_tmp'])
+        down_pt = down_pt.drop_vars(['SW_direct_tmp'])
         down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
                             'standard_name': 'shortwave_radiation_downward'}
         down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
