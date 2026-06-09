@@ -83,7 +83,7 @@ climate:
   era5:
     path: inputs/climate/   # Can either be a absolute path or relative to the project directory
     product: reanalysis     # ensemble not available yet
-    timestep: 1H            # 1H, 3H 6H or else.
+    timestep: 1h            # 1h, 3h 6h or else.
 
     # Choose pressure levels relevant to your project and evailable in ERA5 Pressure Levels
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
