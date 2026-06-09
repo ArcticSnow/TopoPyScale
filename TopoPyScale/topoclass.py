@@ -101,10 +101,10 @@ class Topoclass(object):
             #self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
             self.config.climate.path = self.config.project.directory / Path(self.config.climate.era5.path)
             self.config.climate.tmp_path = self.config.climate.path / 'tmp'
+            # check if tree directory exists. If not create it
+            self.config.climate.path.mkdir(parents=True, exist_ok=True)
+            self.config.climate.tmp_path.mkdir(parents=True, exist_ok=True)
 
-        # check if tree directory exists. If not create it
-        self.config.climate.path.mkdir(parents=True, exist_ok=True)
-        self.config.climate.tmp_path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.tmp_path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.downscaled.mkdir(parents=True, exist_ok=True)
