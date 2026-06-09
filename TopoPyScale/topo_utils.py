@@ -12,6 +12,23 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import warnings
 
+
+
+def read_downscaled(path='outputs/down_pt*.nc'):
+    """
+    Function to read downscaled points saved into netcdf files into one single dataset using Dask
+
+    Args:
+        path (str): path and pattern to use into xr.open_mfdataset
+
+    Returns:
+        dataset: merged dataset readily to use and loaded in chuncks via Dask
+    """
+
+    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested')
+    return down_pts
+
+
 def ds_to_indexed_dataframe(ds):
     """
     Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
