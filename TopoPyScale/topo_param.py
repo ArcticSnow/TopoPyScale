@@ -84,7 +84,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     # delete columns in case they already exist
     df_pts = df_pts.drop(['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'], errors='ignore')
     # create columns, filled with 0
-    df_pts[['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = 0
+    df_pts[['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']] = 0.0
 
     if method == 'nearest':
         for row in df_pts.itertuples():
@@ -94,7 +94,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
                                                                                                    d_mini.aspect.values,
                                                                                                    d_mini.aspect_cos,
                                                                                                    d_mini.aspect_sin,
-                                                                                                   d_mini.svf.values))
+                                                                                                   d_mini.svf.values)).astype('float64')
     elif method == 'idw' or method == 'linear':
         for row in df_pts.itertuples():
             ind_lat = np.abs(ds_param.y-row.y).argmin()
