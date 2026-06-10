@@ -605,10 +605,10 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.target_file),
                                                 list(download.product_type),
                                                 list(download.time_steps),
+                                                list(download.verify_flag),
                                                 list(download.output_format),
                                                 list(download.download_format),
-                                                list(download.surf_varoi),
-                                                list(download.verify_flag)))
+                                                list(download.surf_varoi)))
             pool.close()
             pool.join()
         elif surf_plev == 'plev':
@@ -622,10 +622,10 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.product_type),
                                                 list(download.time_steps),
                                                 list(download.plevels),
+                                                list(download.verify_flag),
                                                 list(download.output_format),
                                                 list(download.download_format),
-                                                list(download.plev_varoi),
-                                                list(download.verify_flag)))
+                                                list(download.plev_varoi)))
             pool.close()
             pool.join()
         else:
