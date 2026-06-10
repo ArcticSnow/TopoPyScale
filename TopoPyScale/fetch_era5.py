@@ -19,17 +19,14 @@ except ImportError:
     except ImportError:
         # Fallback for older versions or different structure
         from zarr import Blosc as BloscCodec
-from datetime import datetime
 
 import cdsapi, os, sys
 from dateutil.relativedelta import *
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
-from TopoPyScale import topo_export as te
 from TopoPyScale import topo_utils as tu
 from pathlib import Path
-import cfgrib
 import zipfile
 import shutil
 import glob
@@ -941,7 +938,8 @@ def unzip_file(file_path):
                 #merged_ds = xr.merge(datasets, compat='override')  # Use override to handle conflicting metadata like 'expver'
                 merged_ds.to_netcdf(merged_file_path)
                 print(f"Merged .nc files into {merged_file_path}.")
-
+            except:
+                raise IOError("Unzipping failing.")
 
             # Step 6: Clean up
             os.remove(zip_file_path)
