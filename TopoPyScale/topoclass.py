@@ -205,7 +205,7 @@ class Topoclass(object):
             self.downscaled_pts = xr.open_mfdataset(
                 f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
                 concat_dim='point_name',
-                combine='nested',
+                combine='nested')
                     #parallel=True)
             print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
         else:
