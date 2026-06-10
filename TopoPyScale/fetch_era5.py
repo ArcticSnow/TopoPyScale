@@ -608,7 +608,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.verify_flag),
                                                 list(download.output_format),
                                                 list(download.download_format),
-                                                list(download.surf_varoi)))
+                                                list(download.surf_varoi),))
             pool.close()
             pool.join()
         elif surf_plev == 'plev':
@@ -715,6 +715,9 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ve
 
     Returns:
         Store to disk dataset as indicated
+
+    TODO: 
+    - [ ] change SURF request to the ZARR repository for timeseries retrieval.
 
     """
     if varoi is None:
@@ -933,15 +936,12 @@ def unzip_file(file_path):
             merged_file_path = os.path.join(os.path.dirname(zip_file_path), os.path.basename(zip_file_path).replace('.zip', '.nc'))
             try:
                 # Combine all `.nc` files
-                datasets = [xr.open_dataset(nc_file, engine='netcdf4') for nc_file in nc_files]
-                merged_ds = xr.merge(datasets, compat='override')  # Use override to handle conflicting metadata like 'expver'
+                merged_ds = xr.open_mfdataset(str(Path(unzip_dir) / "*.nc"))
+                #datasets = [xr.open_dataset(nc_file, engine='netcdf4') for nc_file in nc_files]
+                #merged_ds = xr.merge(datasets, compat='override')  # Use override to handle conflicting metadata like 'expver'
                 merged_ds.to_netcdf(merged_file_path)
                 print(f"Merged .nc files into {merged_file_path}.")
 
-            finally:
-                # Close datasets
-                for ds in datasets:
-                    ds.close()
 
             # Step 6: Clean up
             os.remove(zip_file_path)
