@@ -205,7 +205,7 @@ class Topoclass(object):
             self.downscaled_pts = xr.open_mfdataset(
                 f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
                 concat_dim='point_name',
-                combine='nested')
+                combine='nested',
                     #parallel=True)
             print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
         else:
@@ -733,8 +733,10 @@ class Topoclass(object):
                     raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
             else:
                 print('deadend')
+        print("debug 0")
 
-        self.downscaled_pts = ta.read_downscaled(f'{downscaled_dir}/{f_pattern}')
+        self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
+        print("debug 1")
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 

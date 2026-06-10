@@ -11,7 +11,7 @@ from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 import warnings
-
+import xarray as xr
 
 
 def read_downscaled(path='outputs/down_pt*.nc'):

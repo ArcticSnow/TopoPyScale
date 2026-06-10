@@ -69,9 +69,10 @@ class FetchERA5():
         config (str or DefaultMunch): point to a config object (inherited from Topoclass, or filepath to yml)
         varoi_surf (list): list of surface variables to download. Default is None which will fetch only necessary for TPS 
         varoi_plev (list): list of pressure level variables to download. Default is None which will fetch only necessary for TPS
+        verify_ssl (bool): boolean flag to stop ssl certificate. DO NOT USE!!! unless needed.  
     """
     
-    def __init__(self, config, varoi_surf=None, varoi_plev=None):
+    def __init__(self, config, varoi_surf=None, varoi_plev=None, verify_ssl=True):
 
         if type(config) is DefaultMunch:
             self.config = config
@@ -84,6 +85,7 @@ class FetchERA5():
 
         self.varoi_surf = varoi_surf
         self.varoi_plev = varoi_plev
+        self.verify_flag = verify_ssl
 
         os.makedirs(self.config.climate.path / 'yearly', exist_ok=True)
         os.makedirs(self.config.climate.path/ 'daily', exist_ok=True)
@@ -175,8 +177,9 @@ class FetchERA5():
                     download_format=download_format,
                     new_CDS_API=True,
                     rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                    surf_varoi=self.varoi_surf, 
-                    plev_varoi=self.varoi_plev
+                    surf_varoi=self.varoi_surf,
+                    plev_varoi=self.varoi_plev,
+                    verify_flag=self.verify_flag
                 )
             if self.get_plev:
                 # retrieve era5 plevels
@@ -195,8 +198,9 @@ class FetchERA5():
                     download_format=download_format,
                     new_CDS_API=True,
                     rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                    surf_varoi=self.varoi_surf, 
-                    plev_varoi=self.varoi_plev
+                    surf_varoi=self.varoi_surf,
+                    plev_varoi=self.varoi_plev,
+                    verify_flag=self.verify_flag
                 )
 
 
@@ -470,7 +474,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
                     num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
                     output_format='netcdf', download_format="unarchived", new_CDS_API=True, 
-                    rm_daily=False, surf_varoi=None, plev_varoi=None):
+                    rm_daily=False, surf_varoi=None, plev_varoi=None, verify_flag=True):
     """ Sets up era5 surface retrieval.
     * Creates list of year/month pairs to iterate through.
     * MARS retrievals are most efficient when subset by time.
@@ -495,6 +499,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
         surf_varoi: list of surface variable to download. Default is None, automatically assigning minimum required for topo_scale
         plev_varoi: list of pressure level variables to download. . Default is None, automatically assigning minimum required for topo_scale
+        verify_flag: bypass ssl certifcate flag. Default must be True
         
     Returns:
         Monthly era surface files stored in disk.
@@ -557,6 +562,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     df['product_type'] = product
     df['output_format'] = output_format
     df['download_format'] = download_format
+    df['verify_flag'] = verify_flag
 
     if surf_varoi is None:
         surf_varoi = ['geopotential', 
@@ -601,7 +607,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.time_steps),
                                                 list(download.output_format),
                                                 list(download.download_format),
-                                                list(download.surf_varoi),))
+                                                list(download.surf_varoi),
+                                                list(download.verify_flag)))
             pool.close()
             pool.join()
         elif surf_plev == 'plev':
@@ -617,7 +624,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
                                                 list(download.plevels),
                                                 list(download.output_format),
                                                 list(download.download_format),
-                                                list(download.plev_varoi)))
+                                                list(download.plev_varoi),
+                                                list(download.verify_flag)))
             pool.close()
             pool.join()
         else:
@@ -690,7 +698,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     print("===> ERA5 netcdf files ready")
 
 
-def era5_request_surf(dataset, year, month, day, bbox, target, product, time, output_format= "netcdf", download_format="unarchived", varoi=None):
+def era5_request_surf(dataset, year, month, day, bbox, target, product, time, verify_flag=True, output_format= "netcdf", download_format="unarchived", varoi=None):
     """CDS surface api call
 
     Args:
@@ -717,7 +725,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
                     'total_precipitation',
                     '2m_temperature']
     
-    c = cdsapi.Client()
+    c = cdsapi.Client(verify=verify_flag)
     c.retrieve(
         dataset,
         {'variable': varoi,
@@ -736,7 +744,7 @@ def era5_request_surf(dataset, year, month, day, bbox, target, product, time, ou
     unzip_file(str(target))
 
 
-def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, output_format= "netcdf", download_format="unarchived", varoi=None):
+def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, verify_flag=True, output_format= "netcdf", download_format="unarchived", varoi=None):
     """CDS plevel api call
 
     Args:
@@ -765,7 +773,7 @@ def era5_request_plev(dataset, year, month, day, bbox, target, product, time, pl
                  'relative_humidity']
 
 
-    c = cdsapi.Client()
+    c = cdsapi.Client(verify=verify_flag)
     c.retrieve(
         dataset,
         {
