@@ -26,7 +26,6 @@ except ImportError:
 from dask.distributed import LocalCluster, Client
 import numpy as np
 from datetime import datetime
-import os
 from pathlib import Path
 
 from pyproj import Transformer
@@ -463,7 +462,6 @@ class ClimateDownscaler:
     def multicore_parallel_process_multiple_subsets(self, n_core=4):
         start_time = time.time()
         indices_list = []
-        n = self.df_centroids.shape[0]
         for _, row in self.df_centroids.iterrows():
             indices_list.append(self.create_subset_indices(row))
 

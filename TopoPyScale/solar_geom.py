@@ -9,7 +9,6 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 from pyproj import Transformer
-from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
 from TopoPyScale import topo_export as te

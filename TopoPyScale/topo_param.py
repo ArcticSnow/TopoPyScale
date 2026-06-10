@@ -6,20 +6,17 @@ TODO:
 - an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
 """
 
-import sys
 import rasterio
 from pyproj import Transformer
-import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter, laplace
 import xarray as xr
 from topocalc import gradient
 from topocalc import viewf
 from topocalc import horizon
-import time
 from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing as mproc
-import os, shutil
+import shutil
 from TopoPyScale import topo_export as te
 from pathlib import Path
 

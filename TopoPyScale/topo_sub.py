@@ -9,11 +9,9 @@ TODO:
 """
 
 import rasterio
-from rasterio import plot
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
 from sklearn import cluster
-from sklearn.decomposition import PCA
 import pandas as pd
 from matplotlib.colors import LightSource
 from matplotlib import pyplot as plt

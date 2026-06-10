@@ -18,7 +18,6 @@ import xarray as xr
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_param as tp
-from TopoPyScale import topo_sub as ts
 
 from pathlib import Path
 

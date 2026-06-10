@@ -15,7 +15,6 @@ from pathlib import Path
 import requests
 from xml.dom.minidom import parse, parseString
 import pandas as pd
-import matplotlib.pyplot as plt
 from TopoPyScale import topo_utils as tu
 
 import warnings, os
