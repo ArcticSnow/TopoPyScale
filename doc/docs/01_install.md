@@ -8,7 +8,7 @@
 ```bash
 uv venv tps --python 3.13
 source tps/bin/activate
-uv pip install xarray matplotlib pandas rioxarray scikit-learn netcdf4 h5netcdf pyproj dask cdsapi
+uv pip install xarray matplotlib pandas scikit-learn netcdf4 h5netcdf pyproj dask cdsapi zarr
 uv pip install git+https://github.com/ArcticSnow/topocalc
 uv pip install TopoPyScale
 ```
