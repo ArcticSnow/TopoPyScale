@@ -3,8 +3,30 @@
 ## Python Environment Preparation
 `TopoPyScale` is tested for Python 3.13. You may create a new virtual environment using conda prior to installation.
 
-
 **Option 1 (recommended):**
+
+```bash
+uv venv tps --python 3.13
+source tps/bin/activate
+uv pip install xarray matplotlib pandas rioxarray scikit-learn netcdf4 h5netcdf pyproj dask cdsapi
+uv pip install git+https://github.com/ArcticSnow/topocalc
+uv pip install TopoPyScale
+```
+
+and if you you want to install it from the git repository in development mode:
+
+```bash
+# 1. Clone TopoPyScale on your local machine (here in a folder named github/)
+mkdir github
+cd github
+git clone https://github.com/ArcticSnow/TopoPyScale.git
+
+# 2. Install with `pip install -e` option for development setup
+uv pip install -e TopoPyScale/
+```
+
+**Option 2 using Conda:**
+
 ```bash
 conda create -n downscaling python=3.13 ipython
 conda activate downscaling
