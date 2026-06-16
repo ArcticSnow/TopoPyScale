@@ -3,7 +3,7 @@
 ## Python Environment Preparation
 `TopoPyScale` is tested for Python 3.13. You may create a new virtual environment using conda prior to installation.
 
-**Option 1 (recommended):**
+**Option 1, using `uv` (recommended):**
 
 ```bash
 uv venv tps --python 3.13
