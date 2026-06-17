@@ -469,7 +469,7 @@ class ClimateDownscaler:
         fun_param = zip(indices_list)  # construct here the tuple that goes into the pooling for arguments
         tu.multicore_pooling(self.process_and_store_subset, fun_param, n_core)
         elapsed = np.round(time.time() - start_time, 0)
-        print(f'---> Downscaling finished in {elapsed}s  -- or -- {elapse/self.df_centroids.shape[0]} s/pts')
+        print(f'---> Downscaling finished in {elapsed}s  -- or -- {elapsed/self.df_centroids.shape[0]} s/pts')
 
 
     def dask_parallel_process_multiple_subsets(self, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
