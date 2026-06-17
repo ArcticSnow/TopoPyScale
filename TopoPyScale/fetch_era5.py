@@ -22,7 +22,6 @@ except ImportError:
 
 import cdsapi, os, sys
 from dateutil.relativedelta import *
-import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from datetime import datetime, timedelta
 from TopoPyScale import topo_utils as tu
@@ -264,7 +263,7 @@ class FetchERA5():
 
 
 
-def append_nc_to_zarr_region(year, ncfile, zarrstore, surf=False):
+def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
     ncfile = str(ncfile)
     print(f"---> Appending {ncfile} to {zarrstore}")
     dp = xr.open_dataset(ncfile, chunks='auto')
@@ -651,7 +650,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
     # - [ ] write option earlier that checks also if monthly files already exist. improve logic that does not require to have both monthly and daily files
     cdo = Cdo()
     for year in df.year.unique():
-        print(f"---> Merging daily {surf_plev.upper()} files from {year}")
+        print(f"---> Merging daily {surf_plev.upper()} files from {year} to yearly file")
         
         if surf_plev == 'surf':
             fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
