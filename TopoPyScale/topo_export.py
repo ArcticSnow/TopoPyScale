@@ -908,7 +908,8 @@ def to_fsm2oshd(mp,
 
         # sampling forest parameters from ds_param
         df_forest[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']] = mp.toposub.ds_param.sel(x=xs, y=ys, method='nearest').to_dataframe()[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']]
-
+        pixel_area = mp.toposub.ds_param.x.diff().mean().values ** 2
+        df_forest['cluster_domain_size'] = pixel_area
 
     else:
         raise ValueError("Sampling method not yet supported. Avail: clusters, points")
