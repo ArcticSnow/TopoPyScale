@@ -647,16 +647,12 @@ cd ..
 
 
 
-def to_fsm2oshd(ds_down,
-                fsm_param,
+def to_fsm2oshd(mp,
                 ds_tvt,
                 simulation_path='fsm_sim',
                 fname_format='fsm_',
                 namelist_options=None,
-                n_digits=None,
                 snow_partition_method='continuous',
-                cluster_method=True,
-                epsg_ds_param=2056,
                 temperature_correction=0,
                 forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100}):
     """
@@ -668,8 +664,7 @@ def to_fsm2oshd(ds_down,
        - param.nam with canopy and model constants. See https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/runner.py#L10
 
     Args:
-        ds_down:  Downscaled weather variable dataset
-        fsm_param:  terrain and canopy parameter dataset
+        mp:  TopoClass object
         df_centroids:  cluster centroids statistics (terrain + canopy)
         ds_tvt (dataset, int, float, or str):  transmisivity. Can be a dataset, a constant or 'svf_for'
         simulation_path (str): 'fsm_sim'
@@ -681,7 +676,10 @@ def to_fsm2oshd(ds_down,
         epsg_ds_param (int): epsg code of ds_parma: example: 2056
 
     """
-
+    fsm_param = mp.toposub.ds_param
+    epsg_ds_param = mp.config.dem.epsg
+    sampling_method = mp.config.sampling.method
+    
 
     def write_fsm2oshd_namelist(row,
                                 pt_ind,
@@ -883,10 +881,9 @@ def to_fsm2oshd(ds_down,
     if namelist_options is not None:
         namelist_param.update(namelist_options)
 
-    if n_digits is None:
-        n_digits = len(str(len(ds_down.point_name))) + 1
+    n_digits = len(str(len(mp.downscaled_pts.point_name))) + 1
 
-    if cluster_method:
+    if sampling_method == 'clusters':
         # extract FSM forest parameters for each clusters
         # Aggregate forest parameters only to fores area
 
@@ -901,8 +898,24 @@ def to_fsm2oshd(ds_down,
         df_forest.forest_cover.loc[df_forest.proportion_with_forest<0.01] = 0
         df_forest['lon'], df_forest['lat'] = tp.convert_epsg_pts(df_forest.x, df_forest.y, epsg_ds_param, 4326)
 
+    elif sampling_method == 'points':
+        df_forest = mp.toposub.df_centroids.drop_vars([[
+           'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf', 
+           'longitude', 'latitude', 'hori_azi_-175.0', 'hori_azi_-165.0',
+           'hori_azi_-155.0', 'hori_azi_-145.0', 'hori_azi_-135.0',
+           'hori_azi_-125.0', 'hori_azi_-115.0', 'hori_azi_-105.0',
+           'hori_azi_-95.0', 'hori_azi_-85.0', 'hori_azi_-75.0', 'hori_azi_-65.0',
+           'hori_azi_-55.0', 'hori_azi_-45.0', 'hori_azi_-35.0', 'hori_azi_-25.0',
+           'hori_azi_-15.0', 'hori_azi_-5.0', 'hori_azi_5.0', 'hori_azi_15.0',
+           'hori_azi_25.0', 'hori_azi_35.0', 'hori_azi_45.0', 'hori_azi_55.0',
+           'hori_azi_65.0', 'hori_azi_75.0', 'hori_azi_85.0', 'hori_azi_95.0',
+           'hori_azi_105.0', 'hori_azi_115.0', 'hori_azi_125.0', 'hori_azi_135.0',
+           'hori_azi_145.0', 'hori_azi_155.0', 'hori_azi_165.0', 'hori_azi_175.0']]).copy()
+
+        
+
     else:
-        pass
+        raise ValueError("Sampling method not yet supported. Avail: clusters, points")
 
     p = Path(simulation_path)
     # rename variable columns to match namelist functino varnames
@@ -912,9 +925,9 @@ def to_fsm2oshd(ds_down,
  
     # ----- Loop through all points-------
     # NOTE: eventually this for loop could be parallelized to several cores -----
-    for pt_ind, pt_name in enumerate(ds_down.point_name.values):
+    for pt_ind, pt_name in enumerate(mp.downscaled_pts.point_name.values):
 
-        ds_pt = ds_down.sel(point_name=pt_name).copy()
+        ds_pt = mp.downscaled_pts.sel(point_name=pt_name).copy()
 
 
         # [ ] Add checking of NaNs in ds_tvt. If NaN present stop process and send ERROR message
@@ -943,7 +956,7 @@ def to_fsm2oshd(ds_down,
                                 namelist_param=namelist_param,
                                 scaler=forest_param_scaler) # write forest namelist
 
-        if cluster_method:
+        if sampling_method=='clusters':
             row_open = df_forest.iloc[pt_ind]
             write_fsm2oshd_namelist(row_open,
                                     pt_ind=pt_ind,
