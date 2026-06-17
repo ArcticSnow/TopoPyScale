@@ -901,21 +901,10 @@ def to_fsm2oshd(mp,
         df_forest['lon'], df_forest['lat'] = tp.convert_epsg_pts(df_forest.x, df_forest.y, epsg_ds_param, 4326)
 
     elif sampling_method == 'points':
-        df_forest = mp.toposub.df_centroids.drop([[
-           'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf', 
-           'longitude', 'latitude', 'hori_azi_-175.0', 'hori_azi_-165.0',
-           'hori_azi_-155.0', 'hori_azi_-145.0', 'hori_azi_-135.0',
-           'hori_azi_-125.0', 'hori_azi_-115.0', 'hori_azi_-105.0',
-           'hori_azi_-95.0', 'hori_azi_-85.0', 'hori_azi_-75.0', 'hori_azi_-65.0',
-           'hori_azi_-55.0', 'hori_azi_-45.0', 'hori_azi_-35.0', 'hori_azi_-25.0',
-           'hori_azi_-15.0', 'hori_azi_-5.0', 'hori_azi_5.0', 'hori_azi_15.0',
-           'hori_azi_25.0', 'hori_azi_35.0', 'hori_azi_45.0', 'hori_azi_55.0',
-           'hori_azi_65.0', 'hori_azi_75.0', 'hori_azi_85.0', 'hori_azi_95.0',
-           'hori_azi_105.0', 'hori_azi_115.0', 'hori_azi_125.0', 'hori_azi_135.0',
-           'hori_azi_145.0', 'hori_azi_155.0', 'hori_azi_165.0', 'hori_azi_175.0']]).copy()
+        df_forest = mp.toposub.df_centroids.copy()
 
-        xs = xr.DataArray(df_forest.x.values, dims=pts)
-        ys = xr.DataArray(df_forest.y.values, dims=pts)
+        xs = xr.DataArray(df_forest.x.values, dims='pts')
+        ys = xr.DataArray(df_forest.y.values, dims='pts')
 
         # sampling forest parameters from ds_param
         df_forest[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']] = mp.toposub.ds_param.sel(x=xs, y=ys, method='nearest').to_dataframe()[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']]
