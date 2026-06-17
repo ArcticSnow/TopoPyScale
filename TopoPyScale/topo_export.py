@@ -901,7 +901,7 @@ def to_fsm2oshd(mp,
         df_forest['lon'], df_forest['lat'] = tp.convert_epsg_pts(df_forest.x, df_forest.y, epsg_ds_param, 4326)
 
     elif sampling_method == 'points':
-        df_forest = mp.toposub.df_centroids.drop_vars([[
+        df_forest = mp.toposub.df_centroids.drop([[
            'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf', 
            'longitude', 'latitude', 'hori_azi_-175.0', 'hori_azi_-165.0',
            'hori_azi_-155.0', 'hori_azi_-145.0', 'hori_azi_-135.0',
