@@ -846,7 +846,7 @@ def to_fsm2oshd(mp,
         arr.loc[np.isnan(arr)] = 0
         df['sf24'] = np.round(arr,3)
         #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        if type(ds_tvt_pt) in [int, float, np.float64, np.float16, np.float32]:
+        if type(ds_tvt_pt) in [int, np.int32, np.int64, float, np.float64, np.float16, np.float32]:
             print('Warning: tvt is constant')
             if ds_tvt_pt>1:
                 scale_tvt = 100
