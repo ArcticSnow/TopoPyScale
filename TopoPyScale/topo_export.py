@@ -918,7 +918,7 @@ def to_fsm2oshd(mp,
         ys = xr.DataArray(df_forest.y.values, dims=pts)
 
         # sampling forest parameters from ds_param
-        df_forest[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']] = mp.toposub.ds_param.sel(x=xs, y=ys, method='nearest').to_dataframe()[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']]]
+        df_forest[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']] = mp.toposub.ds_param.sel(x=xs, y=ys, method='nearest').to_dataframe()[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']]
 
 
     else:
