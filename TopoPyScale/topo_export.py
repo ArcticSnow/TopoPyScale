@@ -673,13 +673,15 @@ def to_fsm2oshd(mp,
         n_digits (int): Number of digits (for filename system)
         snow_partition_method (str): method for snow partitioning. Default: 'continuous'
         cluster_method (bool): boolean to be True is using cluster appraoch
-        epsg_ds_param (int): epsg code of ds_parma: example: 2056
+        epsg_ds_param (int): epsg code of ds_param: example: 2056
 
     """
     fsm_param = mp.toposub.ds_param
     epsg_ds_param = mp.config.dem.epsg
-    sampling_method = mp.config.sampling.method
-    
+    if mp.config.sampling.method == 'toposub':
+        sampling_method = 'clusters'
+    else:
+        sampling_method = mp.config.sampling.method
 
     def write_fsm2oshd_namelist(row,
                                 pt_ind,
@@ -912,7 +914,12 @@ def to_fsm2oshd(mp,
            'hori_azi_105.0', 'hori_azi_115.0', 'hori_azi_125.0', 'hori_azi_135.0',
            'hori_azi_145.0', 'hori_azi_155.0', 'hori_azi_165.0', 'hori_azi_175.0']]).copy()
 
-        
+        xs = xr.DataArray(df_forest.x.values, dims=pts)
+        ys = xr.DataArray(df_forest.y.values, dims=pts)
+
+        # sampling forest parameters from ds_param
+        df_forest[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']] = mp.toposub.ds_param.sel(x=xs, y=ys, method='nearest').to_dataframe()[['isfor', 'forcov', 'svf_for', 'CC5', 'CC50', 'CH5', 'LAI5']]]
+
 
     else:
         raise ValueError("Sampling method not yet supported. Avail: clusters, points")
