@@ -16,7 +16,6 @@ import os
 import pdb
 import shutil
 import sys
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,8 +34,8 @@ from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_sub as ts
-from TopoPyScale import topo_scale_zarr as tz 
-
+from TopoPyScale import topo_scale_zarr as tz
+from TopoPyScale import topo_utils as tu
 
 class Topoclass(object):
     """

@@ -299,11 +299,12 @@ class ClimateDownscaler:
                 )
             down_pt['precip_lapse_rate'] = (1 + monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
                         row.elevation - subset_interp.z_surf) * 1e-3) / \
-                                               (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
+                {} (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
                                                        row.elevation - subset_interp.z_surf) * 1e-3)
         else:
             down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
-
+        
+        print(f"Downscaling SW, LW for point: {pt_id}")
         down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 / meta.get('tstep') * 10 ** 3  # Convert to mm/hr
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
@@ -457,7 +458,7 @@ class ClimateDownscaler:
 
             
         except Exception as e:
-            raise ValueError(f"Error processing subset")
+            raise ValueError("Error processing subset")
 
     def multicore_parallel_process_multiple_subsets(self, n_core=4):
         start_time = time.time()
@@ -467,7 +468,8 @@ class ClimateDownscaler:
 
         fun_param = zip(indices_list)  # construct here the tuple that goes into the pooling for arguments
         tu.multicore_pooling(self.process_and_store_subset, fun_param, n_core)
-        print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
+        elapsed = np.round(time.time() - start_time, 0)
+        print(f'---> Downscaling finished in {elapsed}s  -- or -- {elapse/self.df_centroids.shape[0]} s/pts')
 
 
     def dask_parallel_process_multiple_subsets(self, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):

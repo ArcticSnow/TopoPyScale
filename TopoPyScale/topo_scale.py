@@ -564,16 +564,4 @@ def downscale_climate(project_directory,
     print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
 
 
-def read_downscaled(path='outputs/down_pt*.nc'):
-    """
-    Function to read downscaled points saved into netcdf files into one single dataset using Dask
 
-    Args:
-        path (str): path and pattern to use into xr.open_mfdataset
-
-    Returns:
-        dataset: merged dataset readily to use and loaded in chuncks via Dask
-    """
-
-    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested', parallel=True)
-    return down_pts

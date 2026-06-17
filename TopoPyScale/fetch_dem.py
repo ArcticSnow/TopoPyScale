@@ -112,6 +112,7 @@ Further online Resources:
 
         self.df_tile_list = df
 
+
     def _check_file_downloaded(self):
         '''
         Function to check which files have been downloaded. It will update self.sub dataframe
@@ -132,6 +133,7 @@ Further online Resources:
 
         self.sub['downloaded'] = downloaded_list
         self.sub['tar_file'] = tar_list
+
 
     def download_tiles_in_extent(self, extent=[22,28,44,45]):
         """Function to download tiles falling into the extent requested
