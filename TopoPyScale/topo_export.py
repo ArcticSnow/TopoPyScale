@@ -646,6 +646,302 @@ cd ..
     return
 
 
+def to_fsm2oshd_parallel(
+    mp,
+    ds_tvt,
+    simulation_path='fsm_sim',
+    fname_format='fsm_',
+    namelist_options=None,
+    snow_partition_method='continuous',
+    temperature_correction=0,
+    forest_param_scaler={'vfhp': 100, 'fveg': 100, 'fves': 100, 'hcan': 100, 'lai5': 100}
+):
+    """
+    Parallelized version of to_fsm2oshd().
+    Generates FSM2oshd-compatible meteorological and namelist files for each point in parallel.
+    """
+    # --- Setup ---
+    fsm_param = mp.toposub.ds_param
+    epsg_ds_param = mp.config.dem.epsg
+    if mp.config.sampling.method == 'toposub':
+        sampling_method = 'clusters'
+    else:
+        sampling_method = mp.config.sampling.method
+
+    def write_fsm2oshd_namelist(row,
+                                pt_ind,
+                                n_digits,
+                                fname_format='fsm_sim/fsm_',
+                                mode='forest',
+                                namelist_param=None,
+                                modconf=None,
+                                scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100}):
+        # Function to write namelist file (.nam) for each point where to run FSM.
+
+        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'
+        file_met = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
+        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.txt'
+
+        if modconf is None:
+            modconf = {
+                'albedo':2,
+                'condct':1,
+                'density':3,
+                'hydrol':2
+            }
+
+        # populate namelist parameters
+        precip_multi = namelist_param.get('precip_multi')
+        max_sd = namelist_param.get('max_sd')
+        z_snow = namelist_param.get('z_snow')
+        z_soil = namelist_param.get('z_soil')
+        z_tair = namelist_param.get('z_tair')
+        z_wind = namelist_param.get('z_wind')
+        diag_var_outputs = namelist_param.get('diag_var_outputs')
+        state_var_outputs = namelist_param.get('state_var_outputs')
+
+
+        if mode == 'forest':
+            # Values compatible with 'forest' mode
+            canmod = 1
+            turbulent_exchange = 2
+            z_offset = 1
+            fveg = row.fveg/scaler.get('fveg')
+            hcan = row.hcan/scaler.get('hcan')
+            lai5 = row.lai5/scaler.get('lai5')
+            vfhp = row.vfhp/scaler.get('vfhp')
+            fves = row.fves/scaler.get('fves')
+
+        elif mode == 'open':
+            # default values for 'open' mode
+            canmod = 0
+            turbulent_exchange = 1
+            z_offset, fveg, fves, hcan, lai5, vfhp= 0, 0, 0, 0, 0, 1
+        else:
+            raise ValueError('mode is not available. Must be open or forest')
+        if os.path.exists(file_met):
+            nlst = f"""
+&nam_grid
+  NNx = 1,                          ! Grid x-indexing. Not relevant with this implementation
+  NNy = 1,                          ! Grid y-indexing. Not relevant with this implementation
+  NNsmax = {len(z_snow)},           ! Number snow layers. Default 3-layers
+  NNsoil = {len(z_soil)},           ! Number soil layers. Default 4-layers
+/
+&nam_layers
+  DDzsnow = {', '.join(str(i) for i in z_snow)},    ! Minimum thickness to define a new snow layer
+  DDzsoil = {', '.join(str(i) for i in z_soil)},    ! soil layer thickness
+/
+&nam_driving
+  zzT = {z_tair},                   ! Height of temperature forcing (2 or 10m)
+  zzU = {z_wind},                   ! Height of wind forcing (2 or 10m)
+  met_file = '{file_met}',            ! name of met file associatied to this namelist
+  out_file = '{file_output}',         ! name of output file for this FSM2oshd simulation
+/
+&nam_modconf
+  NALBEDO = {modconf.get('albedo')},           ! albedo parametrization (special one for oshd)
+  NCANMOD = {canmod},               ! canopy is switch ON/OFF. must sync to CTILE param (open vs. forest).
+  NCONDCT = {modconf.get('condct')},           ! thermal conductivity (from original FSM)
+  NDENSTY = {modconf.get('density')},          ! densification module 
+  NEXCHNG = {turbulent_exchange},   ! option for turbulent heat exchange (need in sync  with in forest or in open)
+  NHYDROL = {modconf.get('hydrol')},           ! water transport through snowpack
+  NSNFRAC = 3,                      ! fractional snow cover (consider pathciness during melt or not). relevant for large scale run
+  NRADSBG = 0,                      ! ignore
+  NZOFFST = {z_offset},             ! 0 for above ground, 1 for above canopy. Z-offset for temperature and wind forcing. in sync with 'open' or 'forest'
+  NOSHDTN = 0,                      ! switch if compensate for elevation precipitation lapse rate. Relevant for swiss operational model. Turn on if systematic bias of not enough snow in high elevation
+  LHN_ON  = .FALSE.,                ! irrelevant for none operational setup. keep to false
+  LFOR_HN = .FALSE.,                ! irrelevant for none operational setup. keep to false
+/
+&nam_modpert
+  LZ0PERT = .FALSE.,                ! switch for perturbation run. Not available, in development...
+/
+&nam_modtile
+  CTILE = '{mode}',               !  open or forest mode to run FSM
+  rtthresh = 0.1,                   ! threshold of forest cover fraction at which to run forest mode. relevant when run in a grid setup. Not relevant here.
+/
+&nam_results                        ! https://github.com/oshd-slf/FSM2oshd/blob/048e824fb1077b3a38cc24c0172ee3533475a868/src/core/MODULES.F90#L80
+   CLIST_DIAG_RESULTS = {', '.join(f"'{i}'" for i in diag_var_outputs)},   ! need all?   
+   CLIST_STATE_RESULTS = {', '.join(f"'{i}'" for i in state_var_outputs)}, ! try if can be deleted
+/
+&nam_location
+  fsky_terr = {np.round(row.svf,3)},            ! terrain svf 
+  slopemu = {np.round(row.slope,3)},            ! slope in rad
+  xi = 0,                           ! to be ignored. relevant coarse scale run. see Nora's paper
+  Ld = {np.round(row.cluster_domain_size,3)},              ! grid cell size in meters (used in snow fractional cover) linked to Nora's paper
+  lat = {np.round(row.lat,3)},             ! DD.DDD
+  lon = {np.round(row.lon,3)},            ! DD.DDD
+  dem = {np.round(row.elevation,0)},            ! elevation
+  pmultf = {precip_multi},          ! precip multiplier default 1
+  fveg = {np.round(fveg,3)},                    ! local canopy cover fraction (set to 0 in open)
+  hcan = {np.round(hcan,3)},                    ! canopy height (meters) (set to 0 in open)
+  lai = {np.round(lai5,2)},                      ! Leaf area index  (set to 0 in open)
+  vfhp = {np.round(vfhp,3)},                    ! sky view fraction of canopy and terrain(set to 1 in open case)
+  fves = {np.round(fves,3)},                ! canopy cover fraction (larger area)
+/
+  """
+
+            with open(file_namelist, "w") as nlst_file:
+                nlst_file.write(nlst)
+        else:
+            print(f'ERROR: met_file: {file_met} not found')
+            return
+
+
+    def write_fsm2oshd_met(ds_pt,
+                           ds_tvt_pt,
+                           pt_name,
+                           pt_ind,
+                           n_digits,
+                           fname_format='fsm_sim/fsm_',
+                           temperature_correction=0):
+        """
+        Function to write meteorological forcing for FSM
+
+        Format of the text file is:
+            2021 9 1 6 61 45.01 206.7 0 0 275.02 74.08 0.29 74829 0 0.5
+            2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
+
+        year month  day   hour  SWdir   SWdiff  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
+        (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
+
+        """
+        
+        # for storage optimization tvt is stored in percent.
+
+
+        foutput = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
+        df = pd.DataFrame()
+        df['year'] = pd.to_datetime(ds_pt.time.values).year
+        df['month']  = pd.to_datetime(ds_pt.time.values).month
+        df['day']  = pd.to_datetime(ds_pt.time.values).day
+        df['hr']  = pd.to_datetime(ds_pt.time.values).hour
+        df['SWdir'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
+        df['SWdif'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
+        df['LW'] = np.round(ds_pt.LW.values,2)
+
+        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)   #convert pressure Bar to Pascal
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)  #convert pressure Bar to Pascal
+        df['snowfall'] = np.round(snow, 5)
+        df['rainfall'] = np.round(rain, 5)
+        df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
+        df['RH'] = np.round(rh * 100,2)
+        df['speed'] = np.round(ds_pt.ws.values,2)
+        df['p'] = np.round(ds_pt.p.values,2)
+
+        arr = df.snowfall.rolling(24).sum()  # hardcoded sum over last 24h [mm]
+        arr.loc[np.isnan(arr)] = 0
+        df['sf24'] = np.round(arr,3)
+        #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
+        if type(ds_tvt_pt) in [int, np.int32, np.int64, float, np.float64, np.float16, np.float32]:
+            print('Warning: tvt is constant')
+            if ds_tvt_pt>1:
+                scale_tvt = 100
+            else:
+                scale_tvt = 1
+            df['tvt'] = ds_tvt_pt / scale_tvt
+        else:
+            if ds_tvt_pt.for_tau.max()>10:
+                scale_tvt = 100
+            else:
+                scale_tvt = 1
+            df['tvt'] = np.round(ds_tvt_pt.for_tau.values, 4)/scale_tvt
+
+        df.to_csv(foutput, index=False, header=False, sep=' ')
+        print(f'---> Met file {foutput} saved')
+
+
+    # Default namelist parameters
+    namelist_param = {
+        'precip_multi': 1,
+        'max_sd': 4,
+        'z_snow': [0.1, 0.2, 0.4],
+        'z_soil': [0.1, 0.2, 0.4, 0.8],
+        'z_tair': 2,
+        'z_wind': 10,
+        'diag_var_outputs': ['rotc', 'hsnt', 'swet', 'slqt', 'romc', 'sbsc'],
+        'state_var_outputs': ['Tsrf', 'Sveg', 'Ds']
+    }
+    if namelist_options is not None:
+        namelist_param.update(namelist_options)
+
+    n_digits = len(str(len(mp.downscaled_pts.point_name))) + 1
+    p = Path(simulation_path)
+    p.mkdir(parents=True, exist_ok=True)
+
+    # --- Prepare forest parameters ---
+    dx = np.abs(np.diff(fsm_param.x)[0])
+    dy = np.abs(np.diff(fsm_param.y)[0])
+    df_forest = tu.ds_to_indexed_dataframe(
+        fsm_param.drop(['point_name', 'cluster_labels'])
+    ).groupby('point_ind').mean()
+    df_forest['cluster_total_area'] = fsm_param.elevation.groupby(fsm_param.point_ind).count().values * dx * dy
+    df_forest['proportion_with_forest'] = fsm_param.isfor.groupby(fsm_param.point_ind).mean().values
+    df_forest['cluster_domain_size'] = np.sqrt(df_forest.cluster_total_area)
+    df_forest['forest_cover'] = fsm_param.forcov.groupby(fsm_param.point_ind).mean().values
+    df_forest.forest_cover.loc[df_forest.proportion_with_forest < 0.01] = 0
+    df_forest['lon'], df_forest['lat'] = tp.convert_epsg_pts(
+        df_forest.x, df_forest.y, epsg_ds_param, 4326
+    )
+    new_name = {'LAI5': 'lai', 'svf_for': 'vfhp', 'CH5': 'hcan'}
+    df_forest = df_forest.rename(columns=new_name)
+
+    # --- Helper function for parallel processing ---
+    def _process_point(args):
+        """
+        Process a single point: write met and namelist files.
+        """
+        pt_ind, pt_name, ds_down, fsm_param, n_digits, fname_format, namelist_param, ds_tvt_pt, temperature_correction, forest_param_scaler = args
+
+        # Extract subset for this point
+        ds_pt = ds_down.sel(point_name=pt_name).copy()
+        row_forest = df_forest.iloc[pt_ind]
+
+        # Write met file
+        write_fsm2oshd_met(
+            ds_pt, ds_tvt_pt, pt_name, pt_ind, n_digits,
+            fname_format=fname_format,
+            temperature_correction=temperature_correction
+        )
+
+        # Write namelist files for forest and open modes
+        write_fsm2oshd_namelist(
+            row_forest, pt_ind, n_digits,
+            fname_format=fname_format,
+            mode='forest',
+            namelist_param=namelist_param,
+            scaler=forest_param_scaler
+        )
+        write_fsm2oshd_namelist(
+            row_forest, pt_ind, n_digits,
+            fname_format=fname_format,
+            mode='open',
+            namelist_param=namelist_param
+        )
+        return pt_ind
+
+    # --- Prepare arguments for parallel processing ---
+    args_list = [
+        (
+            pt_ind,
+            pt_name,
+            mp.downscaled_pts,
+            fsm_param,
+            n_digits,
+            str(p / fname_format),
+            namelist_param,
+            ds_tvt.sel(point_name=pt_name),
+            temperature_correction,
+            forest_param_scaler
+        )
+        for pt_ind, pt_name in enumerate(mp.downscaled_pts.point_name.values)
+    ]
+
+    # --- Parallelize the loop ---
+    with Pool() as pool:
+        results = pool.map(_process_point, args_list)
+
+    # --- Save forest dataframe ---
+    df_forest.to_pickle(p / 'df_forest.pckl')
+    return
 
 def to_fsm2oshd(mp,
                 ds_tvt,
