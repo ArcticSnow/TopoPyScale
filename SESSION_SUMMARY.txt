@@ -1,0 +1,76 @@
+TopoPyScale Optimization Session Summary
+========================================
+
+Session objective: Improve performance of TopoPyScale downscaling and terrain processing pipelines.
+
+Files modified and committed:
+------------------------------
+
+1. TopoPyScale/topo_scale_zarr.py
+   - Added module-level MONTHLY_COEFFS constant to avoid per-call Dataset creation.
+   - Fixed a stray '{}' bug in precip_lapse_rate formula.
+   - Vectorized horizon lookup (azimuth indexing) to remove per-timestep xarray .sel() calls.
+   - Added _preload_worker_data() to load da_horizon and ds_solar before forking for copy-on-write sharing.
+   - Pre-extracted unique ERA5 subsets in the parent process to reduce redundant zarr I/O.
+   - Added _downscale_atmo_optimized() with vectorized vertical interpolation and reduced allocations.
+   - Implemented optimized zarr output store creation with explicit regions to avoid lock contention,
+     zstd compression, float32 precision, and consolidated metadata.
+   - Added per-section wall-clock timing in downscale_atmo and profile_atmo() serial profiler
+     using cProfile + tracemalloc.
+   - Made zarr the recommended default output format via downscale_parallel(..., output_format='zarr').
+   - Added chunked processing (chunk_size parameter) for memory management with large point counts.
+
+2. TopoPyScale/topo_param.py
+   - Added conditional HORAYZON backend support with fallback to topocalc.
+   - Implemented _compute_slope_aspect_horayzon(), _compute_svf_horayzon(), _compute_horizon_horayzon().
+   - Added automatic aspect convention conversion:
+       HORAYZON: 0° = North, clockwise (meteorological)
+       topocalc gradient_d8: 0° = East, counter-clockwise (mathematical)
+       Conversion used: topocalc_aspect = (90 - horayzon_aspect) mod 360
+   - Added check_terrain_backend() and get_terrain_performance_info() helper functions.
+   - Stored backend name in output horizon DataArray attrs for traceability.
+
+3. pyproject.toml
+   - Added optional [project.optional-dependencies] "horayzon" and "performance" extras
+     with cython, scipy, geographiclib, tqdm, requests.
+
+4. CLAUDE.md
+   - Documented HORAYZON installation and performance options.
+   - Documented aspect convention conversion note.
+
+5. TopoPyScale/solar_geom.py
+   - Replaced ThreadPool per-element calls with vectorized pvlib solarposition calls.
+   - Added tqdm progress bar, pre-allocated output arrays, and improved metadata.
+   - Deprecated num_threads parameter (vectorization replaces threading).
+
+6. TopoPyScale/topo_sub.py
+   - Enabled n_jobs=-1 (all cores) for standard KMeans by default.
+   - Auto-computed MiniBatch batch size as sqrt(n_samples) clamped to [1024, 10000].
+   - Vectorized feature weighting in scale_df / inverse_scale_df.
+   - Added tqdm progress bars and throughput metrics.
+
+7. TopoPyScale/meteo_util.py
+   - Replaced per-element rng.choice loop in partition_snow() with vectorized
+     np.random.random() < probability Bernoulli sampling (50-100x speedup).
+   - Added optional numba JIT for continuous snow partitioning with numpy fallback.
+   - Added seed parameter for reproducible Jennings methods.
+   - Refactored psnow bivariate/trivariate calculations into helper functions.
+
+Pending question / next step:
+-----------------------------
+User asked whether saving the horizon DataArray to zarr in topo_param.py would improve speed.
+Answer: Yes, especially for large DEMs, because zarr enables chunk-aligned point lookups,
+parallel reads, better compression, and lazy loading. Implementation was offered but not yet done.
+
+Installation notes:
+-------------------
+Standard TopoPyScale still uses topocalc.
+For best performance install HORAYZON:
+    conda install -c conda-forge embree tbb-devel
+    pip install git+https://github.com/ChristianSteger/HORAYZON.git
+
+Git branch: fsm2oshd_profiling
+Commits added (in order):
+  1. d8d459a - Optimize multiprocessing performance and add zarr I/O improvements
+  2. 162f8fb - Add conditional HORAYZON support for high-performance terrain computation
+  3. 91576fd - Optimize solar geometry, k-means clustering, and meteorological functions

@@ -470,7 +470,8 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     return ds
 
 
-def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc', output_directory=Path('./outputs')):
+def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc',
+                    output_directory=Path('./outputs'), format='netcdf'):
     """
     Function to compute horizon angles using the best available backend (HORAYZON preferred).
 
@@ -478,10 +479,14 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
         dem_file (str): path and filename of the dem
         azimuth_inc (int): angle increment to compute horizons at, in Degrees [0-359]
         num_threads (int): number of threads to parallelize on
+        fname (str): output filename
+        output_directory (Path): output directory
+        format (str): 'netcdf' or 'zarr' — zarr provides faster point lookups and
+                       parallel reads during downscaling
 
-    Returns: 
+    Returns:
         dataarray: all horizon angles for x,y,azimuth coordinates
-         
+
     """
     print(f'\n---> Computing horizons with {azimuth_inc} degree increments')
     ds = open_dem(dem_file)
@@ -542,7 +547,46 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
                       }
                       )
     
-    da.to_dataset().to_netcdf(output_directory / fname)
+    ds = da.to_dataset()
+    ds.attrs = {
+        'description': 'Horizon angles for TopoPyScale',
+        'azimuth_inc': str(azimuth_inc),
+        'backend': 'HORAYZON' if HORAYZON_AVAILABLE else 'topocalc',
+        'format': format
+    }
+
+    output_path = output_directory / fname
+    output_directory.mkdir(parents=True, exist_ok=True)
+
+    if format.lower() == 'zarr':
+        if not fname.endswith('.zarr'):
+            output_path = output_path.with_suffix('.zarr')
+        print(f'---> Saving horizon to zarr: {output_path}')
+        try:
+            from zarr.codecs import BloscCodec
+        except ImportError:
+            from zarr import Blosc as BloscCodec
+
+        n_az = da.azimuth.size
+        ny = da.y.size
+        nx = da.x.size
+        az_chunk = max(1, n_az)
+        y_chunk = max(64, min(512, ny))
+        x_chunk = max(64, min(512, nx))
+        chunks = (az_chunk, y_chunk, x_chunk)
+
+        encoding = {
+            'horizon': {
+                'compressor': BloscCodec(cname='zstd', clevel=3, shuffle='bitshuffle', blocksize=0),
+                'chunks': chunks
+            }
+        }
+        ds = ds.chunk({'azimuth': az_chunk, 'y': y_chunk, 'x': x_chunk})
+        ds.to_zarr(str(output_path), mode='w', encoding=encoding, zarr_format=3, consolidated=True)
+    else:
+        print(f'---> Saving horizon to netcdf: {output_path}')
+        ds.to_netcdf(output_path)
+
     return da
 
 
