@@ -16,16 +16,26 @@ import xarray as xr
 
 def read_downscaled(path='outputs/down_pt*.nc'):
     """
-    Function to read downscaled points saved into netcdf files into one single dataset using Dask
+    Function to read downscaled points saved into netCDF files or a zarr store
+    into one single dataset using Dask.
 
     Args:
-        path (str): path and pattern to use into xr.open_mfdataset
+        path (str): either a glob pattern for netCDF files (e.g. 'outputs/down_pt*.nc')
+                    or a path to a zarr store (e.g. 'outputs/downscaled.zarr')
 
     Returns:
-        dataset: merged dataset readily to use and loaded in chuncks via Dask
+        dataset: merged dataset ready to use, loaded in chunks via Dask
     """
+    path = Path(path)
 
-    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested')
+    # Single zarr store
+    if path.suffix == '.zarr' or path.is_dir():
+        print(f'---> Reading downscaled zarr store: {path}')
+        down_pts = xr.open_zarr(str(path), consolidated=True)
+    else:
+        print(f'---> Reading downscaled netCDF files: {path}')
+        down_pts = xr.open_mfdataset(str(path), concat_dim='point_name', combine='nested')
+
     return down_pts
 
 

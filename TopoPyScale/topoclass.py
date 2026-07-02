@@ -191,24 +191,33 @@ class Topoclass(object):
         else:
             print(f'-> WARNING: Solar file {self.config.outputs.file.ds_solar} not found')
 
-        if (self.config.outputs.path / self.config.outputs.file.da_horizon).is_file():
-            self.da_horizon = xr.open_dataarray(
-                self.config.outputs.path / self.config.outputs.file.da_horizon)
+        horizon_path = self.config.outputs.path / self.config.outputs.file.da_horizon
+        horizon_zarr_path = horizon_path.with_suffix('.zarr')
+        if horizon_path.is_file():
+            self.da_horizon = xr.open_dataarray(horizon_path, engine='h5netcdf')
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+        elif horizon_zarr_path.is_dir():
+            self.da_horizon = xr.open_dataarray(str(horizon_zarr_path), engine='zarr')
+            print(f'---> Horizon zarr store {horizon_zarr_path.name} exists and loaded')
         else:
             print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
 
-        flist = glob.glob(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
-        if len(flist) > 0:
-            print('---> Loading downscaled points \n ...')
-            self.downscaled_pts = xr.open_mfdataset(
-                f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
-                concat_dim='point_name',
-                combine='nested')
-                    #parallel=True)
-            print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
+        # Load downscaled points: support both netCDF file patterns and zarr store
+        zarr_store_path = self.config.outputs.downscaled / self.config.outputs.file.zarr_store
+        if zarr_store_path.is_dir():
+            print('---> Loading downscaled zarr store')
+            self.downscaled_pts = xr.open_zarr(str(zarr_store_path), consolidated=True)
+            print(f'---> Downscaled zarr store {self.config.outputs.file.zarr_store} exists and loaded')
         else:
-            print(f'-> WARNING: Downscale point files {self.config.outputs.file.downscaled_pt} not found')
+            flist = glob.glob(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
+            if len(flist) > 0:
+                print('---> Loading downscaled points \n ...')
+                self.downscaled_pts = tu.read_downscaled(
+                    f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}'
+                )
+                print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
+            else:
+                print(f'-> WARNING: Downscale point files {self.config.outputs.file.downscaled_pt} not found')
 
     class Toposub:
         """
@@ -616,17 +625,25 @@ class Topoclass(object):
 
         downscaled_dir = self.config.outputs.downscaled
         f_pattern = self.config.outputs.file.downscaled_pt
-        output_folder = self.config.outputs.path.name
+        zarr_store = self.config.outputs.file.zarr_store
 
-        if (f_pattern is not None) and ('*' not in f_pattern):
-            raise ValueError(
-                f'ERROR: The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
-
-            # clean directory from files with the same downscaled output file pattern (so they get replaced)
+        # Clean up existing outputs for replacement
+        if zarr_store is not None and len(str(zarr_store)) > 0:
+            zarr_store_path = downscaled_dir / zarr_store
+            if zarr_store_path.is_dir():
+                print(f'---> Removing existing zarr store: {zarr_store}')
+                shutil.rmtree(str(zarr_store_path))
+        elif (f_pattern is not None) and ('*' in f_pattern):
+            # clean directory from files with the same downscaled output file pattern
             existing_files = sorted(downscaled_dir.glob(f_pattern))
             for file in existing_files:
                 file.unlink()
                 print(f'existing file {file.name} removed.')
+        elif (f_pattern is not None) and ('*' not in f_pattern):
+            raise ValueError(
+                f'ERROR: The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
+
+        output_folder = self.config.outputs.path.name
 
         if self.config.project.split.IO:
             raise Warning("This section of the code has been tested for a while. It may be prone to bugs. Not compatible with Zarr system.")
@@ -745,7 +762,13 @@ class Topoclass(object):
             else:
                 print('deadend')
 
-        self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
+        zarr_store_path = downscaled_dir / self.config.outputs.file.zarr_store
+        if zarr_store_path.is_dir():
+            print('---> Reading downscaled zarr store')
+            self.downscaled_pts = xr.open_zarr(str(zarr_store_path), consolidated=True)
+        else:
+            print('---> Reading downscaled netCDF files')
+            self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 
