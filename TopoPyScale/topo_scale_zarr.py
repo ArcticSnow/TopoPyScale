@@ -188,7 +188,7 @@ class ClimateDownscaler:
         R = 287.05  # Gas constant for dry air [JK^-1kg^-1]
 
         pt_id = row.point_ind
-        print(f'Downscaling t,q,p,tp,ws, wd for point: {pt_id}')
+        print(f'Downscaling t,q,p,tp,ws,wd for point: {pt_id}')
 
         # ====== Horizontal interpolation ====================
         interp_method = meta.get('interp_method')
@@ -269,7 +269,7 @@ class ClimateDownscaler:
                 ind_z_top = (subset_interp.where(subset_interp.z > row.elevation).z - row.elevation).argmin('level')
             except:
                 raise ValueError(
-                    f'ERROR: Upper pressure level {subset_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {row.elevation} {subset_interp.z}')
+                    f'Upper pressure level {subset_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {row.elevation} {subset_interp.z}')
                    
 
             top = subset_interp.isel(level=ind_z_top)
@@ -304,7 +304,7 @@ class ClimateDownscaler:
         else:
             down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
         
-        print(f"Downscaling SW, LW for point: {pt_id}")
+        print(f"Downscaling SW,LW for point: {pt_id}")
         down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 / meta.get('tstep') * 10 ** 3  # Convert to mm/hr
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
@@ -348,9 +348,11 @@ class ClimateDownscaler:
         sunset = ds_solar.sunset.astype(bool).compute()
         mu0 = ds_solar.mu0
         SWtoa = ds_solar.SWtoa
-
-        kt[~sunset] = (subset_interp.ssrd[~sunset] / tstep_seconds) / SWtoa[~sunset]  # clearness index
         
+        try:
+            kt[~sunset] = (subset_interp.ssrd[~sunset] / tstep_seconds) / SWtoa[~sunset]  # clearness index
+        except:
+            ValueError("ds_solar is probably not mathcing the timerange of the downscaling job.")
         kt[(kt < 0).values] = 0
         kt[(kt > 1).values] = 1
         kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index

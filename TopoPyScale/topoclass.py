@@ -732,17 +732,15 @@ class Topoclass(object):
                     raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
             else:
                 print('deadend')
-        print("debug 0")
 
         self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
-        print("debug 1")
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 
         # remove tmp directories
         if self.config.clean_up.rm_tmp_dirs:
-            shutil.rmtree(self.config.outputs.tmp_path, ignore_errors=True)
-            shutil.rmtree(self.config.climate.tmp_path, ignore_errors=True)
+            shutil.rmtree(str(self.config.outputs.tmp_path), ignore_errors=True)
+            shutil.rmtree(str(self.config.climate.tmp_path), ignore_errors=True)
 
     def get_era5(self):
         # to maintain backward compatibility and simplicity of use.
