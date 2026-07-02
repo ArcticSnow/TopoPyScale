@@ -178,16 +178,26 @@ class Topoclass(object):
         else:
             print(f'-> WARNING: Centroid file {self.config.outputs.file.df_centroids} not found')
 
-        if (self.config.outputs.path / self.config.outputs.file.ds_param).is_file():
-            self.toposub.ds_param = xr.open_dataset(
-                self.config.outputs.path / self.config.outputs.file.ds_param)
+        # Load DEM parameters (zarr preferred, netCDF fallback)
+        ds_param_zarr = (self.config.outputs.path / self.config.outputs.file.ds_param).with_suffix('.zarr')
+        ds_param_nc = self.config.outputs.path / self.config.outputs.file.ds_param
+        if ds_param_zarr.is_dir():
+            self.toposub.ds_param = xr.open_zarr(str(ds_param_zarr), consolidated=True)
+            print(f'---> DEM parameter zarr store {ds_param_zarr.name} exists and loaded')
+        elif ds_param_nc.is_file():
+            self.toposub.ds_param = xr.open_dataset(ds_param_nc)
             print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
         else:
             print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
 
-        if (self.config.outputs.path / self.config.outputs.file.ds_solar).is_file():
-            self.ds_solar = xr.open_dataset(
-                self.config.outputs.path / self.config.outputs.file.ds_solar)
+        # Load solar geometry (zarr preferred, netCDF fallback)
+        ds_solar_zarr = (self.config.outputs.path / self.config.outputs.file.ds_solar).with_suffix('.zarr')
+        ds_solar_nc = self.config.outputs.path / self.config.outputs.file.ds_solar
+        if ds_solar_zarr.is_dir():
+            self.ds_solar = xr.open_zarr(str(ds_solar_zarr), consolidated=True)
+            print(f'---> Solar zarr store {ds_solar_zarr.name} exists and loaded')
+        elif ds_solar_nc.is_file():
+            self.ds_solar = xr.open_dataset(ds_solar_nc)
             print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
         else:
             print(f'-> WARNING: Solar file {self.config.outputs.file.ds_solar} not found')
@@ -240,11 +250,12 @@ class Topoclass(object):
         def write_landform(self):
             ts.write_landform(self.dem_path, self.ds_param, self.project_directory)
 
-    def compute_dem_param(self):
+    def compute_dem_param(self, format='zarr'):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                      fname=self.config.outputs.file.ds_param,
                                                      project_directory=self.config.project.directory,
-                                                     output_folder=self.config.outputs.path)
+                                                     output_folder=self.config.outputs.path,
+                                                     format=format)
 
     def search_optimum_number_of_clusters(self,
                                           cluster_range=np.arange(100, 1000, 200),
@@ -548,8 +559,12 @@ class Topoclass(object):
             for i, start in enumerate(self.time_splitter.start_list):
                 end = self.time_splitter.end_list[i]
                 fname = self.config.outputs.path / self.time_splitter.ds_solar_flist[i]
+                fname_zarr = fname.with_suffix('.zarr')
 
-                if fname.is_file():
+                if fname_zarr.is_dir():
+                    self.ds_solar = xr.open_zarr(str(fname_zarr), consolidated=True)
+                    print(f'---> Solar zarr store {self.time_splitter.ds_solar_flist[i]} exists and loaded')
+                elif fname.is_file():
                     self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
                     print(f'---> Solar file {self.time_splitter.ds_solar_flist[i]} exists and loaded')
                 else:
@@ -561,12 +576,17 @@ class Topoclass(object):
                                                       self.config.project.parallelization.setting.multicore.CPU_cores,
                                                       self.time_splitter.ds_solar_flist[i],
                                                       self.config.outputs.path,
-                                                      method_solar=self.config.solar_position_method)
+                                                      method_solar=self.config.solar_position_method,
+                                                      format='zarr')
 
         else:
-            fname = self.config.outputs.path / self.config.outputs.file.ds_solar
-            if fname.is_file():
-                self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
+            ds_solar_zarr = self.config.outputs.path / Path(self.config.outputs.file.ds_solar).with_suffix('.zarr')
+            ds_solar_nc = self.config.outputs.path / self.config.outputs.file.ds_solar
+            if ds_solar_zarr.is_dir():
+                self.ds_solar = xr.open_zarr(str(ds_solar_zarr), consolidated=True)
+                print(f'---> Solar zarr store {ds_solar_zarr.name} exists and loaded')
+            elif ds_solar_nc.is_file():
+                self.ds_solar = xr.open_dataset(ds_solar_nc, chunks='auto', engine='h5netcdf')
                 print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
             else:
                 self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
@@ -576,9 +596,11 @@ class Topoclass(object):
                                                   str(self.config.dem.epsg),
                                                   self.config.project.parallelization.setting.multicore.CPU_cores,
                                                   self.config.outputs.file.ds_solar,
-                                                  self.config.outputs.path)
+                                                  self.config.outputs.path,
+                                                  method_solar=self.config.solar_position_method,
+                                                  format='zarr')
 
-    def compute_horizon(self, format='netcdf'):
+    def compute_horizon(self, format='zarr'):
         """
         Function to compute horizon angle and sample values for list of points
 
@@ -627,6 +649,16 @@ class Topoclass(object):
         downscaled_dir = self.config.outputs.downscaled
         f_pattern = self.config.outputs.file.downscaled_pt
         zarr_store = self.config.outputs.file.zarr_store
+
+        # Default output format is zarr
+        if zarr_store and str(zarr_store).strip():
+            pass  # user explicitly configured zarr store
+        else:
+            if f_pattern and str(f_pattern).strip():
+                print(f'---> Defaulting downscaled output to zarr (ignoring configured netCDF file_pattern {f_pattern})')
+            zarr_store = 'downscaled.zarr'
+            self.config.outputs.file.zarr_store = 'downscaled.zarr'
+            f_pattern = None
 
         # Clean up existing outputs for replacement
         if zarr_store is not None and len(str(zarr_store)) > 0:

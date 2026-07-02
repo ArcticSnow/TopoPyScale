@@ -73,7 +73,7 @@ def _compute_slope_aspect_topocalc(dem_arr, dx, dy):
     """Compute slope and aspect using topocalc backend."""
     return gradient.gradient_d8(dem_arr, dx, dy)
 
-def _compute_svf_horayzon(dem_arr, dx, azimuth_inc=5):
+def _compute_svf_horayzon(dem_arr, dx, dy, azimuth_inc=5):
     """
     Compute sky view factor using HORAYZON backend with optimized parameters.
     
@@ -99,7 +99,7 @@ def _compute_svf_topocalc(dem_arr, dx):
     """Compute sky view factor using topocalc backend."""
     return viewf.viewf(np.double(dem_arr), dx)[0]
 
-def _compute_horizon_horayzon(dem_arr, dx, azimuth, num_threads=None):
+def _compute_horizon_horayzon(dem_arr, dx, dy, azimuth, num_threads=None):
     """
     Compute horizon angles using HORAYZON backend.
     
@@ -356,45 +356,63 @@ def open_dem(dem_file):
 
 
 
-def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'), output_folder='outputs'):
+def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'),
+                      output_folder='outputs', format='zarr'):
     """
-    Function to compute and derive DEM parameters: slope, aspect, sky view factor
+    Function to compute and derive DEM parameters: slope, aspect, sky view factor.
 
-    Args:
-        dem_file (str): path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
+    Parameters
+    ----------
+    dem_file : str or Path
+        Path to raster file (geotiff). Must be in a local cartesian coordinate system (e.g. UTM).
+    fname : str
+        Output filename (extension ignored when format='zarr'; .zarr is forced).
+    project_directory : Path
+        Project root directory.
+    output_folder : str
+        Subdirectory for outputs.
+    format : {'zarr', 'netcdf'}
+        Output format. Zarr is the default for faster reads and parallel access.
 
-    Returns:  
-        dataset: x, y, elev, slope, aspect, svf
-
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing elevation, slope, aspect, aspect_cos, aspect_sin, svf.
     """
-    pdir = project_directory
-    file_ds = pdir / output_folder / fname
-    if file_ds.is_file():
-        print(f'\n---> Dataset {fname} found.')
+    pdir = Path(project_directory)
+
+    # Force extension based on format
+    base_path = pdir / output_folder / Path(fname).with_suffix('')
+    zarr_path = base_path.with_suffix('.zarr')
+    nc_path = base_path.with_suffix('.nc')
+
+    file_ds = zarr_path if format.lower() == 'zarr' else nc_path
+
+    if file_ds.exists():
+        print(f'\n---> Dataset {file_ds.name} found.')
         try:
-            ds = xr.open_dataset(file_ds)
-            # Test if we can actually read the elevation data
-            _ = ds.elevation.values
-        except (RuntimeError, OSError) as e:
-            if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
-                print(f'\n---> Dataset {fname} corrupted (HDF/compression error). Trying h5netcdf backend...')
+            if format.lower() == 'zarr':
+                ds = xr.open_zarr(str(file_ds), consolidated=True)
+                ds = ds.compute() if hasattr(ds.elevation.data, 'compute') else ds
+            else:
+                ds = xr.open_dataset(file_ds)
+                # Also try h5netcdf in case of compression issues
                 try:
+                    _ = ds.elevation.values
+                except (RuntimeError, OSError):
                     ds = xr.open_dataset(file_ds, engine='h5netcdf')
                     _ = ds.elevation.values
-                except Exception:
-                    print(f'\n---> h5netcdf backend failed. Regenerating dataset from DEM...')
-                    if Path(dem_file).is_file():
-                        ds = open_dem(dem_file)
-                    else:
-                        raise ValueError(f'ERROR: Dataset corrupted and no DEM available to regenerate')
+        except Exception as e:
+            print(f'\n---> Dataset {file_ds.name} could not be read: {e}')
+            if Path(dem_file).is_file():
+                print(f'\n---> Regenerating dataset from DEM...')
+                ds = open_dem(dem_file)
             else:
-                raise e
-
+                raise ValueError(f'ERROR: Dataset corrupted/unreadable and no DEM available to regenerate')
     else:
         if Path(dem_file).is_file():
-            print(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
+            print(f'\n---> No {file_ds.name} dataset found. DEM {dem_file} available.')
             ds = open_dem(dem_file)
-
         else:
             raise ValueError(f'ERROR: No DEM or dataset available')
 
@@ -402,8 +420,8 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     print('\n---> Extracting DEM parameters (slope, aspect, svf)')
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
-    
-    # Safely access elevation data with error handling
+
+    # Safely access elevation data
     try:
         dem_arr = ds.elevation.values
     except (RuntimeError, OSError) as e:
@@ -411,10 +429,8 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
             print(f'---> Error reading elevation data: {str(e)}')
             print('---> Attempting to load elevation data with different method...')
             try:
-                # Try loading the data chunk by chunk or using compute()
                 dem_arr = ds.elevation.load().values
             except Exception:
-                # If all else fails, regenerate from DEM file
                 print('---> All methods failed. Regenerating from original DEM...')
                 if Path(dem_file).is_file():
                     ds_new = open_dem(dem_file)
@@ -432,7 +448,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
             slope, aspect = _compute_slope_aspect_horayzon(dem_arr, dx, dy)
         else:
             slope, aspect = _compute_slope_aspect_topocalc(dem_arr, dx, dy)
-        
+
         ds['slope'] = (["y", "x"], np.deg2rad(slope))
         ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
         if 'aspect_cos' not in var_in:
@@ -443,13 +459,14 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     if 'svf' not in var_in:
         print('Computing svf ...')
         if HORAYZON_AVAILABLE:
-            svf = _compute_svf_horayzon(dem_arr, dx, azimuth_inc=5)
+            svf = _compute_svf_horayzon(dem_arr, dx, dy, azimuth_inc=5)
         else:
             svf = _compute_svf_topocalc(dem_arr, dx)
         ds['svf'] = (["y", "x"], svf)
 
     ds.attrs = dict(description="DEM input parameters to TopoSub",
-                   author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale")
+                   author="TopoPyScale, https://github.com/ArcticSnow/TopoPyScale",
+                   format=format)
     ds.x.attrs = {'units': 'm'}
     ds.y.attrs = {'units': 'm'}
     ds.elevation.attrs = {'units': 'm'}
@@ -459,11 +476,18 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     ds.aspect_sin.attrs = {'units': 'sinus'}
     ds.svf.attrs = {'units': 'ratio', 'standard_name': 'svf', 'long_name': 'Sky view factor'}
 
-    if file_ds.is_file():
-        te.to_netcdf(ds, fname=pdir / output_folder / 'tmp' / fname)
-        ds = None
-        shutil.move(pdir / output_folder / 'tmp' /fname, file_ds)
-        ds = xr.open_dataset(file_ds)
+    print(f'---> Saving DEM parameters to {format}: {file_ds}')
+    if format.lower() == 'zarr':
+        try:
+            from zarr.codecs import BloscCodec
+        except ImportError:
+            from zarr import Blosc as BloscCodec
+        encoding = {v: {'compressor': BloscCodec(cname='zstd', clevel=3, shuffle='bitshuffle', blocksize=0)}
+                    for v in ds.data_vars}
+        # Use reasonable chunk sizes for spatial data
+        ds = ds.chunk({'y': min(512, ds.y.size), 'x': min(512, ds.x.size)})
+        ds.to_zarr(str(file_ds), mode='w', encoding=encoding, zarr_format=3, consolidated=True)
+        ds = xr.open_zarr(str(file_ds), consolidated=True)
     else:
         te.to_netcdf(ds, fname=file_ds)
 
@@ -471,7 +495,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
 
 
 def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc',
-                    output_directory=Path('./outputs'), format='netcdf'):
+                    output_directory=Path('./outputs'), format='zarr'):
     """
     Function to compute horizon angles using the best available backend (HORAYZON preferred).
 
@@ -500,7 +524,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
         
         # HORAYZON can compute all azimuths at once - much faster!
         horizon_cos_elev = _compute_horizon_horayzon(
-            ds.elevation.values, dx, azimuth, num_threads
+            ds.elevation.values, dx, dy, azimuth, num_threads
         )
         
         # Convert back to horizon elevation angles

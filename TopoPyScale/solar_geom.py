@@ -25,7 +25,8 @@ def get_solar_geom(df_position,
                    num_threads=None,
                    fname='ds_solar.nc',
                    project_ouput=Path('./'),
-                   method_solar='nrel_numpy'):
+                   method_solar='nrel_numpy',
+                   format='zarr'):
     """
     Optimized function to compute solar position using vectorized pvlib operations.
     
@@ -129,11 +130,27 @@ def get_solar_geom(df_position,
         'title': 'Solar geometry computed with TopoPyScale',
         'method': method_solar,
         'processing': 'vectorized_pvlib',
-        'performance_note': 'Optimized vectorized calculation'
+        'performance_note': 'Optimized vectorized calculation',
+        'format': format
     })
 
-    print(f'---> Saving to {project_ouput / fname}')
-    te.to_netcdf(ds, fname=project_ouput / fname)
+    output_path = Path(project_ouput)
+    output_path.mkdir(parents=True, exist_ok=True)
+    base_path = output_path / Path(fname).with_suffix('')
+    file_path = base_path.with_suffix('.zarr' if format.lower() == 'zarr' else Path(fname).suffix)
+
+    print(f'---> Saving to {file_path}')
+    if format.lower() == 'zarr':
+        try:
+            from zarr.codecs import BloscCodec
+        except ImportError:
+            from zarr import Blosc as BloscCodec
+        encoding = {v: {'compressor': BloscCodec(cname='zstd', clevel=3, shuffle='bitshuffle', blocksize=0)}
+                    for v in ds.data_vars}
+        ds = ds.chunk({'time': min(744, ds.time.size), 'point_name': min(50, ds.point_name.size)})
+        ds.to_zarr(str(file_path), mode='w', encoding=encoding, zarr_format=3, consolidated=True)
+    else:
+        te.to_netcdf(ds, fname=file_path)
 
     return ds
 
