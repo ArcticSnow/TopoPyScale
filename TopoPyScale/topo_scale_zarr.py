@@ -442,6 +442,7 @@ class ClimateDownscaler:
                 encoding = {var: comp for var in result.data_vars}
                 result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_id'))),
                           engine='h5netcdf', encoding=encoding, mode='a')
+                result = None
 
             elif self.output_format.lower() == 'zarr':
                 vars = list(result.keys())
@@ -454,6 +455,7 @@ class ClimateDownscaler:
 
                 #else:
                 result[self.varout].to_zarr(self.output_path / self.store_name, mode='a', zarr_format=3, region='auto')
+                result=None
             else:
                 raise ValueError('Only netcdf or zarr available')
             print(f"---> Point {subset_indices.get('point_id')} stored to {self.output_format.lower()}")
