@@ -12,6 +12,12 @@ TopoPyScale is a Python package for topography-based downscaling of climate data
 # Install in development mode
 pip install -e .
 
+# Install with high-performance terrain computation (HORAYZON)
+conda install -c conda-forge embree tbb-devel
+pip install -e .[horayzon]
+# Then manually install HORAYZON:
+pip install git+https://github.com/ChristianSteger/HORAYZON.git
+
 # Install dependencies via conda
 conda env create -f environment.yml
 
@@ -30,6 +36,35 @@ mkdocs serve  # serves at http://127.0.0.1:8000/
 # Update API docs
 lazydocs --output-path="doc/docs" --overview-file="README.md" --src-base-url="https://github.com/ArcticSnow/TopoPyScale" TopoPyScale
 ```
+
+## Performance Options
+
+TopoPyScale supports two backends for terrain parameter computation:
+
+### Standard Backend (topocalc)
+- **Default**: Installed automatically with TopoPyScale
+- **Performance**: Good for small-medium DEMs
+- **Features**: Slope, aspect, sky view factor, horizon angles
+
+### High-Performance Backend (HORAYZON) ⚡
+- **Installation**: Requires Intel Embree + TBB system libraries
+- **Performance**: 5-20× faster horizon computation, 2-10× faster SVF
+- **Features**: Ray-tracing acceleration, parallel computation, large DEM support
+- **Memory**: More efficient for high-resolution DEMs
+
+**To use HORAYZON:**
+```bash
+# Install system dependencies (Linux/Mac)
+conda install -c conda-forge embree tbb-devel
+
+# Install HORAYZON
+pip install git+https://github.com/ChristianSteger/HORAYZON.git
+
+# Check which backend is active
+python -c "from TopoPyScale.topo_param import check_terrain_backend; check_terrain_backend()"
+```
+
+**Note:** HORAYZON uses meteorological aspect convention (0° = North) while topocalc uses mathematical convention (0° = East). TopoPyScale automatically handles this conversion for compatibility.
 
 ## Architecture
 

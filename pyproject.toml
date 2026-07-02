@@ -35,7 +35,7 @@ dependencies = [
     "h5netcdf",
     "pvlib",
     "topocalc",
-    "cdsapi",
+    "cdsapi", 
     "rasterio",
     "pyproj",
     "dask",
@@ -46,6 +46,22 @@ dependencies = [
     "era5_downloader",
     "bs4",
     "cfgrib"
+]
+
+[project.optional-dependencies]
+horayzon = [
+    "cython",
+    "scipy",
+    "geographiclib", 
+    "tqdm",
+    "requests"
+]
+performance = [
+    "cython",
+    "scipy", 
+    "geographiclib",
+    "tqdm",
+    "requests"
 ]
 
 [project.urls]
