@@ -16,6 +16,7 @@ import os
 import pdb
 import shutil
 import sys
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -646,121 +647,85 @@ class Topoclass(object):
         output_folder = self.config.outputs.path.name
 
         if self.config.project.split.IO:
-            raise Warning("This section of the code has been tested for a while. It may be prone to bugs. Not compatible with Zarr system.")
-            for i, start in enumerate(self.time_splitter.start_list):
-                print()
-                end = self.time_splitter.end_list[i]
-                fname = self.time_splitter.downscaled_flist[i]
+            warnings.warn("split.IO has not been thoroughly tested and is not compatible with the Zarr output system. Skipping.")
+            return
 
-                self.ds_solar = None
-                self.ds_solar = xr.open_dataset(
-                    self.config.outputs.path / self.time_splitter.ds_solar_flist[i])
+        if self.config.climate.era5.zarr_store is None:
+            ta.downscale_climate(self.config.project.directory,
+                                 self.config.climate.path,
+                                 self.config.outputs.path,
+                                 self.toposub.df_centroids,
+                                 self.da_horizon,
+                                 self.ds_solar,
+                                 self.config.dem.epsg,
+                                 self.config.project.start,
+                                 self.config.project.end,
+                                 self.config.climate[self.config.project.climate].timestep,
+                                 self.config.toposcale.interpolation_method,
+                                 self.config.toposcale.LW_terrain_contribution,
+                                 self.config.climate.precip_lapse_rate,
+                                 self.config.outputs.file.downscaled_pt,
+                                 self.config.project.parallelization.setting.multicore.CPU_cores)
 
-                ta.downscale_climate(self.config.project.directory,
-                                     self.config.climate.path,
-                                     self.config.outputs.path,
-                                     self.toposub.df_centroids,
-                                     self.da_horizon,
-                                     self.ds_solar,
-                                     self.config.dem.epsg,
-                                     start,
-                                     end,
-                                     self.config.climate[self.config.project.climate].timestep,
-                                     self.config.toposcale.interpolation_method,
-                                     self.config.toposcale.LW_terrain_contribution,
-                                     self.config.climate.precip_lapse_rate,
-                                     fname,
-                                     self.config.project.parallelization.setting.multicore.CPU_cores)
+        elif self.config.climate.era5.zarr_store is not None:
 
-            for pt_id in self.toposub.df_centroids.point_name.values:
-                print(f'Concatenating point {pt_id}')
-                filename = Path(f_pattern.replace('*', pt_id))
-                flist = sorted([file for file in downscaled_dir.rglob(f'{filename.stem}_*')])
-                ds_list = [xr.open_dataset(file, engine='h5netcdf') for file in flist]
+            if (self.config.outputs.variables is None) or (self.config.outputs.variables=='all'):
+                self.config.outputs.variables = tz.varout_default
 
-                fout = Path(downscaled_dir, filename)
-                ds = xr.concat(ds_list, dim='time')
-                ds.to_netcdf(fout, engine='h5netcdf')
-                del ds
+            era5_zarr_path = self.config.climate.path / Path(self.config.climate.era5.zarr_store)
 
-            # Delete time slice files.
-            for fpat in self.time_splitter.downscaled_flist:
-                flist = glob.glob(f'{self.config.outputs.downscaled}/{fpat}')
-                for file in flist:
-                    os.remove(file)
-
-            # concatenate ds solar
-            print('concatenating solar files')
-            out_solar_name = Path(self.config.outputs.file.ds_solar)
-            solar_pattern = f'{out_solar_name.stem}_*{out_solar_name.suffix}'
-            solar_flist = sorted(self.config.outputs.path.glob(solar_pattern))
-            ds_solar_list = [xr.open_dataset(file, engine='h5netcdf') for file in solar_flist]
-            fout = Path(self.config.outputs.path, out_solar_name)
-            ds = xr.concat(ds_solar_list, dim='time')
-            ds.to_netcdf(fout, engine='h5netcdf')
-            [f.unlink() for f in solar_flist]  # delete tmp solar files
-            print('solar files concatenated')
-            del ds
-
-        else:
-            if self.config.climate.era5.zarr_store is None:
-                ta.downscale_climate(self.config.project.directory,
-                                     self.config.climate.path,
-                                     self.config.outputs.path,
-                                     self.toposub.df_centroids,
-                                     self.da_horizon,
-                                     self.ds_solar,
-                                     self.config.dem.epsg,
-                                     self.config.project.start,
-                                     self.config.project.end,
-                                     self.config.climate[self.config.project.climate].timestep,
-                                     self.config.toposcale.interpolation_method,
-                                     self.config.toposcale.LW_terrain_contribution,
-                                     self.config.climate.precip_lapse_rate,
-                                     self.config.outputs.file.downscaled_pt,
-                                     self.config.project.parallelization.setting.multicore.CPU_cores)
-            
-            elif self.config.climate.era5.zarr_store is not None:
-
-                if (self.config.outputs.variables is None) or (self.config.outputs.variables=='all'):
-                    self.config.outputs.variables = tz.varout_default
-
-
-                era5_zarr_path = self.config.climate.path / Path(self.config.climate.era5.zarr_store)
-                cda = tz.ClimateDownscaler(
-                            era5_zarr_path=era5_zarr_path,
-                            output_path=downscaled_dir,
-                            df_centroids=self.toposub.df_centroids,
-                            da_horizon=self.da_horizon,
-                            ds_solar=self.ds_solar,
-                            target_EPSG=self.config.dem.epsg,
-                            start_date=self.config.project.start,
-                            end_date=self.config.project.end,
-                            tstep=self.config.climate[self.config.project.climate].timestep,
-                            varout=self.config.outputs.variables,
-                            interp_method=self.config.toposcale.interpolation_method,
-                            lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
-                            precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
-                            file_pattern=self.config.outputs.file.downscaled_pt,
-                            store_name=self.config.outputs.file.zarr_store                            
+            # Decide output target: file_pattern (netCDF) or store_name (zarr).
+            # The ClimateDownscaler constructor rejects providing both.
+            file_pattern = self.config.outputs.file.downscaled_pt
+            store_name = self.config.outputs.file.zarr_store
+            if file_pattern and store_name:
+                store_str = str(store_name)
+                file_str = str(file_pattern)
+                if store_str.endswith('.zarr') and len(store_str) > 5:
+                    print(f'---> Both file_pattern and zarr_store configured; using zarr store ({store_name})')
+                    file_pattern = None
+                elif file_str and '*' in file_str:
+                    print(f'---> Both file_pattern and zarr_store configured; using netCDF pattern ({file_pattern})')
+                    store_name = None
+                else:
+                    raise ValueError(
+                        'ERROR: Both config.outputs.file.downscaled_pt and '
+                        'config.outputs.file.zarr_store are set but neither is usable. '
+                        'Set one of them to None or empty.'
                     )
 
-                if self.config.project.parallelization.downscaling_method.lower() == 'multicore':
-                    cda.multicore_parallel_process_multiple_subsets(n_core=self.config.project.parallelization.setting.multicore.CPU_cores)
-                
-                elif self.config.project.parallelization.downscaling_method.lower() == 'dask':
-                    dask_worker={
-                        'n_workers': self.config.project.parallelization.setting.dask.n_workers,
-                        'threads_per_worker': self.config.project.parallelization.setting.dask.threads_per_worker,
-                        'memory_target_fraction': self.config.project.parallelization.setting.dask.memory_target_fraction,
-                        'memory_limit': self.config.project.parallelization.setting.dask.memory_limit
-                    }
-                    cda.dask_parallel_process_multiple_subsets(dask_worker=self.config.project.dask_worker)
-                
-                else:
-                    raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
+            cda = tz.ClimateDownscaler(
+                era5_zarr_path=era5_zarr_path,
+                output_path=downscaled_dir,
+                df_centroids=self.toposub.df_centroids,
+                da_horizon=self.da_horizon,
+                ds_solar=self.ds_solar,
+                target_EPSG=self.config.dem.epsg,
+                start_date=self.config.project.start,
+                end_date=self.config.project.end,
+                tstep=self.config.climate[self.config.project.climate].timestep,
+                varout=self.config.outputs.variables,
+                interp_method=self.config.toposcale.interpolation_method,
+                lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
+                precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
+                file_pattern=file_pattern,
+                store_name=store_name
+            )
+
+            if self.config.project.parallelization.downscaling_method.lower() == 'multicore':
+                cda.multicore_parallel_process_multiple_subsets(n_core=self.config.project.parallelization.setting.multicore.CPU_cores)
+
+            elif self.config.project.parallelization.downscaling_method.lower() == 'dask':
+                dask_worker={
+                    'n_workers': self.config.project.parallelization.setting.dask.n_workers,
+                    'threads_per_worker': self.config.project.parallelization.setting.dask.threads_per_worker,
+                    'memory_target_fraction': self.config.project.parallelization.setting.dask.memory_target_fraction,
+                    'memory_limit': self.config.project.parallelization.setting.dask.memory_limit
+                }
+                cda.dask_parallel_process_multiple_subsets(dask_worker=dask_worker)
+
             else:
-                print('deadend')
+                raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
 
         zarr_store_path = downscaled_dir / self.config.outputs.file.zarr_store
         if zarr_store_path.is_dir():
