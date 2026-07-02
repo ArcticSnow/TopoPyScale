@@ -568,20 +568,32 @@ class Topoclass(object):
                                                   self.config.outputs.file.ds_solar,
                                                   self.config.outputs.path)
 
-    def compute_horizon(self):
+    def compute_horizon(self, format='netcdf'):
         """
         Function to compute horizon angle and sample values for list of points
+
+        Parameters
+        ----------
+        format : str
+            Output format: 'netcdf' or 'zarr'. Zarr enables faster point lookups
+            and parallel reads during downscaling.
         """
         fname = self.config.outputs.path / self.config.outputs.file.da_horizon
+        fname_zarr = fname.with_suffix('.zarr')
+
         if fname.is_file():
-            self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
             print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+            self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
+        elif fname_zarr.is_dir():
+            print(f'---> Horizon zarr store {fname_zarr.name} exists and loaded')
+            self.da_horizon = xr.open_dataarray(str(fname_zarr), engine='zarr')
         else:
             self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
                                                  self.config.dem.horizon_increments,
                                                  self.config.project.parallelization.setting.multicore.CPU_cores,
                                                  self.config.outputs.file.da_horizon,
-                                                 self.config.outputs.path)
+                                                 self.config.outputs.path,
+                                                 format=format)
         tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
         tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
 
