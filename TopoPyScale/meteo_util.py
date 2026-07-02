@@ -1,6 +1,11 @@
 import numpy as np
-from numpy.random import default_rng
-import pdb
+import warnings
+
+try:
+    from numba import jit, float64, boolean
+    _numba_available = True
+except ImportError:
+    _numba_available = False
 
 var_era_plevel = {
     'temp': 't',
@@ -55,65 +60,117 @@ def steep_snow_reduce_all(snow, slope):
     return (steepSnow)
 
 
-def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low_thresh=272.15, tair_high_thresh=274.15):
+def _sample_bernoulli_vect(probs):
     """
-    Function to partition precipitation in between rain vs snow based on temperature threshold and mixing around freezing.
-    The methods to partition snow/rain precipitation are:
-    - continuous: method implemented into Cryogrid.
-    - jennings2018 methods are from the publication Jennings et al (2018). DOI: https://doi.org/10.1038/s41467-018-03629-7
-
-    Args:
-        precip (array): 1D array, precipitation in mm/hr
-        temp (arrray): 1D array, air temperature in K
-        rh (array): 1D array, relative humidity in %
-        sp (array): 1D array, surface pressure in Pa
-        method (str): 'continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'.
-        tair_low_thresh (float): lower temperature threshold under which all precip is snow. degree K
-        tair_high_thresh (float): higher temperature threshold under which all precip is rain. degree K
-
-    Returns: 
-        array: 1D array rain
-        array: 1D array snow
+    Vectorized Bernoulli sampling — compares uniform random draws
+    against probabilities instead of calling rng.choice per element.
     """
-    #
-    def func(p):
-            '''
-            Function to choose if it snows or not randomly based on probability
-            '''
-            rng = default_rng()
-            return rng.choice([0,1], 1, p=[1-p, p])
+    return (np.random.random(len(probs)) < probs).astype(np.float64)
 
-    if method.lower() == 'continuous':
-        snow = precip * ((temp <= tair_low_thresh) +
-                         ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
-                         (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
 
-    elif method.lower() == 'jennings2018_bivariate':
-        if rh is None:
-            raise ValueError('ERROR: Relative humidity is required')
+def _psnow_bivariate(temp, rh):
+    """Compute snow probability (Jennings 2018, bivariate)."""
+    return 1.0 / (1.0 + np.exp(-10.04 + 1.41 * (temp - 273.15) + 0.09 * rh))
+
+
+def _psnow_trivariate(temp, rh, sp):
+    """Compute snow probability (Jennings 2018, trivariate)."""
+    return 1.0 / (1.0 + np.exp(-12.80 + 1.41 * (temp - 273.15) + 0.09 * rh + 0.03 * (sp / 1000.0)))
+
+
+if _numba_available:
+
+    @jit(float64[:](float64[:], float64[:], float64, float64), nopython=True, cache=True)
+    def _partition_continuous_numba(precip, temp, tair_low, tair_high):
+        """Numba-compiled continuous method for rain/snow partitioning."""
+        n = len(precip)
+        snow = np.empty(n, dtype=np.float64)
+        inv_range = 1.0 / max(1e-12, tair_high - tair_low)
+        for i in range(n):
+            if temp[i] <= tair_low:
+                snow[i] = precip[i]
+            elif temp[i] >= tair_high:
+                snow[i] = 0.0
+            else:
+                snow[i] = precip[i] * (temp[i] - tair_low) * inv_range
+        return snow
+
+
+def partition_snow(precip, temp, rh=None, sp=None, method='continuous',
+                   tair_low_thresh=272.15, tair_high_thresh=274.15, seed=None):
+    """
+    Partition precipitation into rain vs snow.
+
+    Methods:
+      - continuous: Cryogrid / linear mixing around freezing
+      - jennings2018_bivariate / jennings2018_trivariate: probabilistic
+        partition from Jennings et al (2018). DOI: 10.1038/s41467-018-03629-7
+
+    Parameters
+    ----------
+    precip : ndarray
+        1-D precipitation (mm hr⁻¹)
+    temp : ndarray
+        1-D air temperature (K)
+    rh : ndarray, optional
+        Relative humidity (%) — required for Jennings methods
+    sp : ndarray, optional
+        Surface pressure (Pa) — required for trivariate method
+    method : str
+        'continuous' | 'jennings2018_bivariate' | 'jennings2018_trivariate'
+    tair_low_thresh : float
+        Below this temperature all precip is snow (K)
+    tair_high_thresh : float
+        Above this temperature all precip is rain (K)
+    seed : int, optional
+        Seed for the random number generator (Jennings methods only)
+
+    Returns
+    -------
+    rain : ndarray
+    snow : ndarray
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    precip = np.asarray(precip, dtype=np.float64)
+    temp = np.asarray(temp, dtype=np.float64)
+    t_lo = np.float64(tair_low_thresh)
+    t_hi = np.float64(tair_high_thresh)
+
+    method_lc = method.lower()
+
+    if method_lc == 'continuous':
+        if _numba_available:
+            snow = _partition_continuous_numba(precip, temp, t_lo, t_hi)
         else:
-            # Compute probability of snowfall
-            psnow = 1/(1 + np.exp(-10.04 + 1.41 * (temp - 273.15) + 0.09 * rh))
+            ratio = np.clip((temp - t_lo) / max(1e-12, t_hi - t_lo), 0.0, 1.0)
+            snow = precip * (1.0 - ratio)
 
-            # sample random realization based on probability
-            snow_IO = np.array([func(xi) for xi in psnow]).flatten()
-            snow = precip * snow_IO
-
-    elif method.lower() == 'jennings2018_trivariate':
+    elif method_lc == 'jennings2018_bivariate':
         if rh is None:
-            raise ValueError('ERROR: Relative humidity is required')
-        elif sp is None:
-            raise ValueError('ERROR: Surface pressure is required')
-        else:
+            raise ValueError('Relative humidity is required for Jennings 2018 bivariate')
+        rh = np.asarray(rh, dtype=np.float64)
+        psnow = _psnow_bivariate(temp, rh)
+        snow_mask = _sample_bernoulli_vect(psnow)
+        snow = precip * snow_mask
 
-            # Compute probability of snowfall
-            psnow = 1/(1 + np.exp(-12.80 + 1.41 * (temp - 273.15) + 0.09 * rh + 0.03 * (sp / 1000)))
+    elif method_lc == 'jennings2018_trivariate':
+        if rh is None:
+            raise ValueError('Relative humidity is required for Jennings 2018 trivariate')
+        if sp is None:
+            raise ValueError('Surface pressure is required for Jennings 2018 trivariate')
+        rh = np.asarray(rh, dtype=np.float64)
+        sp = np.asarray(sp, dtype=np.float64)
+        psnow = _psnow_trivariate(temp, rh, sp)
+        snow_mask = _sample_bernoulli_vect(psnow)
+        snow = precip * snow_mask
 
-            # sample random realization based on probability
-            snow_IO = np.array([func(xi) for xi in psnow]).flatten()
-            snow = precip * snow_IO
     else:
-        raise ValueError(f"ERROR, {method} is not available. Choose from: ['continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'] ")
+        raise ValueError(
+            f"Method '{method}' not available. "
+            "Choose from: 'continuous', 'jennings2018_bivariate', 'jennings2018_trivariate'"
+        )
 
     rain = precip - snow
     return rain, snow
