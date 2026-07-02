@@ -46,7 +46,7 @@ def ds_to_indexed_dataframe(ds):
     n_levels = df.index.names.__len__()
     return df.reset_index(level=list(range(0, n_levels)))
 
-def multicore_pooling(fun, fun_param, n_cores):
+def multicore_pooling(fun, fun_param, n_cores, maxtasksperchild=20):
     '''
     Function to perform multiprocessing on n_cores
     Args:
@@ -65,7 +65,7 @@ def multicore_pooling(fun, fun_param, n_cores):
     if n_cores == 0:
         n_cores = 1
 
-    pool = Pool(n_cores)
+    pool = Pool(n_cores, maxtasksperchild=maxtasksperchild)
     pool.starmap(fun, fun_param)
     pool.close()
     pool.join()
