@@ -71,85 +71,222 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
     print(f'---> File {fname} saved')
 
 
+# MuSA forcing variables (TopoPyScale names) in the units MuSA expects, so that MuSA's
+# forcing_multiplier and forcing_offset can stay at their defaults (1 and 0)
+MUSA_VARS = {'SW': {'units': 'W m-2', 'long_name': 'Surface incoming shortwave radiation'},
+             'LW': {'units': 'W m-2', 'long_name': 'Surface incoming longwave radiation'},
+             'precip': {'units': 'kg m-2 s-1', 'long_name': 'Total precipitation rate'},
+             't': {'units': 'K', 'long_name': 'Near surface air temperature'},
+             'RH': {'units': '%', 'long_name': 'Near surface relative humidity'},
+             'ws': {'units': 'm s-1', 'long_name': 'Wind speed'},
+             'p': {'units': 'Pa', 'long_name': 'Surface air pressure'}}
+
+
+def _musa_write_day(fname, times, data, idx, dims, coords, attrs, chunk=32):
+    """
+    Write one daily MuSA forcing file. Output cell [i, j] gets the timeseries of point idx[i, j].
+
+    Args:
+        fname (Path): file to write
+        times (DatetimeIndex): timesteps of that day
+        data (dict): variable -> array (time, point), with one extra NaN column for cells without a point
+        idx (array): 2D index into the point axis of data
+        dims (tuple): names of the two spatial dimensions
+        coords (tuple): coordinate values of the two spatial dimensions
+        attrs (dict): global attributes
+        chunk (int): netcdf chunk size along the spatial dimensions
+    """
+    fo = xr.Dataset({var: (('time',) + dims, arr[:, idx], MUSA_VARS[var]) for var, arr in data.items()},
+                    coords={'time': times, dims[0]: coords[0], dims[1]: coords[1]},
+                    attrs=attrs)
+    chunks = (len(times), min(chunk, idx.shape[0]), min(chunk, idx.shape[1]))
+    encod_dict = {var: {'zlib': True, 'complevel': 4, 'dtype': 'float32', 'chunksizes': chunks} for var in data}
+    # write under another name first: MuSA reads every *.nc of the folder
+    fo.to_netcdf(f'{fname}.tmp', encoding=encod_dict)
+    os.replace(f'{fname}.tmp', fname)
+
+
 def to_musa(ds,
             df_pts,
-            da_label,
-            fname_met='musa_met.nc',
-            fname_labels='musa_labels.nc',
-            path='outputs',
+            ds_param=None,
+            path=None,
+            layout='grid',
+            bbox=None,
+            stride=1,
+            cell_mask=None,
+            start=None,
+            end=None,
+            n_cores=4,
             climate_dataset_name='ERA5',
             project_authors='S. Filhol'
             ):
     """
-    Function to export to MuSa standard.
+    Function to export downscaled timeseries as forcing for MuSA (https://github.com/ealonsogzl/MuSA).
+
+    TopoPyScale downscales to a set of points: the TopoSUB cluster centroids, or points given by the user, one
+    timeseries each (ds). MuSA reads its forcing from netcdf files on a 2D grid of cells, and runs one simulation
+    per cell where mask.nc is 1. This function writes the points onto such a grid, in one of two layouts.
+
+    Layouts:
+        - 'grid' (default): fully distributed, one MuSA cell per DEM cell. Variables var(time, northing, easting)
+          on the DEM grid of ds_param, where northing and easting are the DEM y and x coordinates (DEM CRS). Every
+          DEM cell gets the timeseries of its TopoSUB cluster (ds_param.point_name). Cells without a cluster
+          (point_name '-9999'), outside bbox or outside cell_mask get NaN forcing and a NaN mask, so MuSA skips
+          them. MuSA saves the results of the cell at northing[i], easting[j] of mask.nc in cell_<i>_<j>.pkl.blp.
+          Needs the toposub sampling method.
+        - 'points': one MuSA cell per point (e.g. per TopoSUB cluster). Variables var(time, y, x) with
+          y = point id and x = [0], i.e. a column of N cells. The point id is point_name as an integer: 0..N-1 for
+          toposub, 1..N for point sampling (0..N-1 in name order when the names are not numbers). MuSA saves the
+          results of the i-th point (0-based, sorted by point id) in cell_<i>_0.pkl.blp; with toposub, i is the
+          cluster number.
+
+    Both layouts hold the same values: a DEM cell in 'grid' has exactly the timeseries of its cluster in
+    'points'. With the same forcing and perturbations and without observations, MuSA therefore gives every cell
+    of a cluster the same result. Use 'points' for open-loop runs (N simulations; map the results back to the DEM
+    with ds_param.point_name), and 'grid' to assimilate observations that differ between DEM cells.
+
+    Saved in path:
+        - forcing/YYYY-MM-DD.nc: one file per day (MuSA nc_forcing_path). MuSA reads every *.nc in this folder, so
+          the function stops if other netcdf files are in it, including days left from a longer export.
+        - mask.nc: mask = 1 for the cells to simulate, NaN to skip them (MuSA nc_maks_path). MuSA needs NaN rather
+          than 0 for the cells to skip. Set cells to NaN to run a subset.
+        - DEM.nc ('grid'): DEM(northing, easting), elevation in m (MuSA dem_path, nc_dem_varname = "DEM")
+        - points_meta.csv ('points'): one row per point with musa_cell (the result file name), musa_y (point id),
+          musa_x (0), point_name, and x, y, lon, lat, elevation, slope, aspect, svf of the point from df_pts
+
+    Variables, in the units MuSA expects so that its forcing_multiplier and forcing_offset keep their defaults
+    (1 and 0); float32, zlib-compressed, NaN where a cell has no forcing:
+        - SW, LW: incoming shortwave and longwave radiation (W m-2), from SW and LW
+        - t: air temperature (K)
+        - RH: relative humidity (%), 100 * meteo_util.q_2_rh(t, p, q)
+        - ws: wind speed (m s-1)
+        - p: surface air pressure (Pa)
+        - precip: precipitation rate (kg m-2 s-1), tp (mm per timestep) divided by the timestep in seconds
+
+    MuSA config.py settings for these files:
+        nc_forcing_path = "<path>/forcing/"
+        nc_maks_path = "<path>/mask.nc"
+        dem_path = "<path>/DEM.nc" and nc_dem_varname = "DEM" (layout 'grid', if MuSA needs the DEM)
+        forcing_var_names = {"SW_var_name": "SW", "LW_var_name": "LW", "Precip_var_name": "precip",
+                             "Press_var_name": "p", "RH_var_name": "RH", "Temp_var_name": "t", "Wind_var_name": "ws"}
+        forcing_dim_names = {"lat_forz_var_name": "northing" ('grid') or "y" ('points'),
+                             "lon_forz_var_name": "easting" ('grid') or "x" ('points'), "time_forz_var_name": "time"}
+        date_ini, date_end, dt: the values returned by this function
+    MuSA also needs observation files on the same grid as mask.nc (nc_obs_path, obs_var_names, dates_obs), even
+    for an open-loop run. They are not written here.
+
     Args:
-        ds:
-        df_pts:
-        da_labels:
-        fname:
-        path:
+        ds (dataset): downscaled points with dims (point_name, time)
+        df_pts (dataframe): points or cluster centroids (df_centroids)
+        ds_param (dataset): DEM parameters with the TopoSUB map point_name. Required for layout 'grid'
+        path (str or Path): output folder. Default: outputs/musa_<layout>
+        layout (str): 'grid' (default) or 'points', see above
+        bbox (list): [xmin, xmax, ymin, ymax] in DEM coordinates, to crop the DEM for layout 'grid'
+        stride (int): keep every stride-th DEM cell for layout 'grid'
+        cell_mask (array): boolean (y, x) array on the DEM grid of the cells to simulate for layout 'grid'
+        start (str): first timestep to export. Default: first timestep of ds
+        end (str): last timestep to export. Default: last timestep of ds
+        n_cores (int): number of cores to write the daily files
+        climate_dataset_name (str): name of the original climate dataset
+        project_authors (str): authors of the dataset
 
     Returns:
-        Save downscaled timeseries and toposub cluster mapping
+        dict: layout, dims, grid shape, number of cells to simulate (n_cells), number of daily files, and
+            date_ini, date_end and dt for MuSA's config.py
     """
+    if layout not in ['grid', 'points']:
+        raise ValueError(f"layout must be 'grid' or 'points', not {layout}")
+    path = Path(f'outputs/musa_{layout}' if path is None else path)
     ver_dict = tu.get_versionning()
 
-    if da_label is not None:
-        da_label.to_netcdf(str(path / fname_labels))
+    ds = ds[['SW', 'LW', 't', 'ws', 'p', 'tp', 'q']].sel(time=slice(start, end)).transpose('time', 'point_name').load()
+    point_names = ds.point_name.values.astype(str)
+    numeric = all(name.isdigit() for name in point_names)
+    # sort by point id, so that y increases with the MuSA cell index
+    ds = ds.isel(point_name=np.argsort([int(name) for name in point_names] if numeric else point_names, kind='stable'))
+    point_names = ds.point_name.values.astype(str)
+    n_pts = point_names.size
+    times = pd.DatetimeIndex(ds.time.values)
+    tstep = (times[1] - times[0]).total_seconds()
+    fo = {var: ds[var].values for var in ['SW', 'LW', 't', 'ws', 'p']}
+    fo['precip'] = ds.tp.values / tstep  # mm per timestep -> kg m-2 s-1
+    fo['RH'] = mu.q_2_rh(ds.t.values, ds.p.values, ds.q.values) * 100
+    # one extra NaN column for the DEM cells without a point (index n_pts)
+    data = {var: np.concatenate([fo[var], np.full((times.size, 1), np.nan)], axis=1).astype(np.float32)
+            for var in MUSA_VARS}
 
-    da_label.to_netcdf(str(path / fname_labels))
+    # MuSA reads every *.nc in nc_forcing_path, so stop if other files are in the way
+    days = times.normalize()
+    fnames = [day.strftime('%Y-%m-%d.nc') for day in days.unique()]
+    (path / 'forcing').mkdir(parents=True, exist_ok=True)
+    foreign = sorted(f.name for f in (path / 'forcing').glob('*.nc') if f.name not in fnames)
+    if foreign:
+        raise ValueError(f'MuSA would also read {foreign} from {path / "forcing"}. Remove them or use another path')
 
-    fo = xr.Dataset()
-    fo['tair'] = ds['t'].T
-    fo['q'] = ds['q'].T
-    fo['p'] = ds['p'].T
-    fo['lw'] = ds['LW'].T
-    fo['sw'] = ds['SW'].T
-    fo['ws'] = ds['ws'].T
-    fo['tp'] = ds['tp'].T
-    fo['rh'] = (('time', 'point_name'), mu.q_2_rh(fo.tair.values, fo.p.values, fo.q.values))
-    fo['precip'] = (('time', 'point_name'), fo.tp.values / 3600)  # convert from mm/hr to mm/s
-    fo = fo.drop_vars(['q', 'tp'])
-    fo = fo[['tair', 'rh', 'p', 'lw', 'sw', 'ws', 'precip']].expand_dims({'dummy': 1}, axis=2)
+    if layout == 'points':
+        dims = ('y', 'x')
+        idx = np.arange(n_pts)[:, None]
+        point_ids = np.array([int(name) for name in point_names]) if numeric else np.arange(n_pts)
+        coords = (point_ids, np.array([0]))
+        df_meta = pd.DataFrame({'musa_cell': [f'cell_{i}_0' for i in range(n_pts)], 'musa_y': point_ids,
+                                'musa_x': 0, 'point_name': point_names})
+        if df_pts is not None:
+            cols = [col for col in ['x', 'y', 'lon', 'lat', 'elevation', 'slope', 'aspect', 'svf'] if col in df_pts]
+            df_meta = df_meta.merge(df_pts[cols].assign(point_name=df_pts.point_name.astype(str)),
+                                    on='point_name', how='left')
+        df_meta.to_csv(path / 'points_meta.csv', index=False)
+    else:
+        if ds_param is None or 'point_name' not in ds_param:
+            raise ValueError("layout 'grid' needs ds_param with the TopoSUB map point_name (sampling method "
+                             "toposub). Use layout='points' otherwise")
+        # TopoSUB map as index into the points of ds (-1 for cells without a cluster, point_name '-9999')
+        lut = {name: i for i, name in enumerate(point_names)}
+        names = ds_param.point_name.values.astype(str)
+        dom = xr.Dataset({'idx': (('y', 'x'), pd.Series(names.ravel()).map(lut).fillna(-1).astype(int)
+                                  .to_numpy().reshape(names.shape)),
+                          'elevation': (('y', 'x'), ds_param.elevation.values)},
+                         coords={'y': ds_param.y.values, 'x': ds_param.x.values})
+        if cell_mask is not None:
+            dom['idx'] = dom.idx.where(np.asarray(cell_mask, bool), -1)
+        if bbox is not None:
+            xmin, xmax, ymin, ymax = bbox
+            dom = dom.sel(x=slice(xmin, xmax), y=slice(ymax, ymin) if dom.y[0] > dom.y[-1] else slice(ymin, ymax))
+        dom = dom.isel(y=slice(None, None, stride), x=slice(None, None, stride))
 
-    fo.tair.attrs = {'units': 'C', 'standard_name': 'tair', 'long_name': 'Near Surface Air Temperature',
-                     '_FillValue': -9999999.0}
-    fo.rh.attrs = {'units': 'kg/kg', 'standard_name': 'rh', 'long_name': 'Near Surface Relative Humidity',
-                   '_FillValue': -9999999.0}
-    fo.ws.attrs = {'units': 'm/s', 'standard_name': 'ws', 'long_name': 'Wind Speed', '_FillValue': -9999999.0}
-    fo.precip.attrs = {'units': 'mm/s', 'standard_name': 'precip', 'long_name': 'Precipitation',
-                       '_FillValue': -9999999.0}
-    fo.sw.attrs = {'units': 'W/m^2', 'standard_name': 'sw', 'long_name': 'Surface Incident Direct Shortwave Radiation',
-                   '_FillValue': -9999999.0}
-    fo.lw.attrs = {'units': 'W/m^2', 'standard_name': 'lw', 'long_name': 'Surface Incident Longtwave Radiation',
-                   '_FillValue': -9999999.0}
-    fo.p.attrs = {'units': 'Pa', 'standard_name': 'p', 'long_name': 'Surface Pressure', '_FillValue': -9999999.0}
+        dims = ('northing', 'easting')
+        idx = dom.idx.values
+        coords = (dom.y.values, dom.x.values)
+        xr.Dataset({'DEM': (dims, dom.elevation.values.astype(np.float32), {'units': 'm'})},
+                   coords={dims[0]: coords[0], dims[1]: coords[1]}).to_netcdf(
+            path / 'DEM.nc', encoding={'DEM': {'_FillValue': None}})
+    if not (idx >= 0).any():
+        raise ValueError('No cell to simulate in the selected domain')
 
-    fo.attrs = {'title': 'Forcing for MuSa assimilation scheme',
-                'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
-                'creator_name': 'Dataset created by {}'.format(project_authors),
-                'package_version': ver_dict.get('package_version'),
-                'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
-                'git_commit': ver_dict.get('git_commit'),
-                'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
-    encod_dict = {}
-    for var in list(fo.keys()):
-        scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
-        encod_dict.update({var: {"zlib": True,
-                                 "complevel": 9,
-                                 'dtype': 'int16',
-                                 'scale_factor': scale_factor,
-                                 'add_offset': add_offset}})
+    # MuSA skips cells where the mask is NaN and simulates cells where it is 1
+    mask = np.where(idx >= 0, 1, np.nan).astype(np.float32)
+    xr.Dataset({'mask': (dims, mask, {'long_name': 'MuSA mask: 1 = simulate, NaN = skip'})},
+               coords={dims[0]: coords[0], dims[1]: coords[1]}).to_netcdf(
+        path / 'mask.nc', encoding={'mask': {'_FillValue': None}})
 
-    fo['latitude'] = (('point_name'), df_pts.latitude.values)
-    fo['longitude'] = (('point_name'), df_pts.longitude.values)
-    fo['elevation'] = (('point_name'), df_pts.elevation.values)
-    fo.latitude.attrs = {'units': 'deg', 'standard_name': 'latitude', 'long_name': 'Cluster latitude'}
-    fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude', 'long_name': 'Cluster longitude'}
-    fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation', 'long_name': 'Cluster elevation'}
+    attrs = {'title': 'Forcing for the MuSA assimilation toolbox',
+             'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
+             'creator_name': 'Dataset created by {}'.format(project_authors),
+             'package_version': ver_dict.get('package_version'),
+             'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+             'git_commit': ver_dict.get('git_commit'),
+             'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S'),
+             'musa_layout': layout}
+    gidx = np.where(idx >= 0, idx, n_pts)
+    fun_param = [(path / 'forcing' / fname, times[days == day], {var: arr[days == day] for var, arr in data.items()},
+                  gidx, dims, coords, attrs) for fname, day in zip(fnames, days.unique())]
+    tu.multicore_pooling(_musa_write_day, fun_param, n_cores)
 
-    fo.to_netcdf(str(path / fname_met), encoding=encod_dict)
-    print('---> File {} saved'.format(fname_met))
+    meta = {'layout': layout, 'dims': dims, 'shape': idx.shape, 'n_cells': int((idx >= 0).sum()),
+            'n_files': len(fnames), 'date_ini': times[0].strftime('%Y-%m-%d %H:%M'),
+            'date_end': times[-1].strftime('%Y-%m-%d %H:%M'), 'dt': int(tstep)}
+    print(f'---> MuSA forcing saved in {path}: {len(fnames)} daily files, grid {idx.shape} {dims}, '
+          f'{meta["n_cells"]} cells to simulate, {meta["date_ini"]} to {meta["date_end"]}, dt = {meta["dt"]} s')
+    return meta
 
 
 def to_cryogrid(ds,
