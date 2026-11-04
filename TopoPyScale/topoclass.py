@@ -940,30 +940,51 @@ class Topoclass(object):
         te.to_geotop(self.downscaled_pts, self.config.outputs.path / fname_format)
 
     def to_musa(self,
-                fname_met='musa_met.nc',
-                fname_labels='musa_labels.nc'):
+                layout='grid',
+                path=None,
+                bbox=None,
+                stride=1,
+                cell_mask=None,
+                start=None,
+                end=None):
         """
-        function to export TopoPyScale output in a format compatible with MuSa
-        MuSa: https://github.com/ealonsogzl/MuSA
+        function to export TopoPyScale output as forcing for MuSA
+        MuSA: https://github.com/ealonsogzl/MuSA
+
+        Writes daily forcing files, mask.nc, and DEM.nc ('grid') or points_meta.csv ('points') to path. See
+        topo_export.to_musa() for the layouts, files, units and the matching MuSA config.py settings.
 
         Args:
-            fname: filename of the netcdf 
-        """
-        try:
-            labels = self.toposub.ds_param.cluster_labels
-        except Exception:
-            labels = None
+            layout (str): 'grid' (default): one MuSA cell per DEM cell, var(time, northing, easting) on the DEM grid,
+                each cell with the forcing of its TopoSUB cluster. Needs the toposub sampling method.
+                'points': one MuSA cell per point or cluster, var(time, y, x) with y = point id and x = [0].
+            path (str): output folder. Default: outputs/musa_<layout>
+            bbox (list): [xmin, xmax, ymin, ymax] in DEM coordinates, to crop the DEM for layout 'grid'
+            stride (int): keep every stride-th DEM cell for layout 'grid'
+            cell_mask (array): boolean (y, x) array of the DEM cells to simulate for layout 'grid'
+            start (str): first timestep to export. Default: first downscaled timestep
+            end (str): last timestep to export. Default: last downscaled timestep
 
-        te.to_musa(ds=self.downscaled_pts,
-                   df_pts=self.toposub.df_centroids,
-                   da_label=labels,
-                   fname_met=fname_met,
-                   fname_labels=fname_labels,
-                   path=self.config.outputs.path,
-                   climate_dataset_name=self.config.project.climate,
-                   project_authors=self.config.project.authors
-                   )
-        print('---> File ready for MuSa {} saved'.format(fname_met))
+        Returns:
+            dict: grid shape, number of cells to simulate, and date_ini, date_end and dt for MuSA's config.py
+        """
+        if path is None:
+            path = self.config.outputs.path / f'musa_{layout}'
+
+        return te.to_musa(ds=self.downscaled_pts,
+                          df_pts=self.toposub.df_centroids,
+                          ds_param=self.toposub.ds_param,
+                          path=path,
+                          layout=layout,
+                          bbox=bbox,
+                          stride=stride,
+                          cell_mask=cell_mask,
+                          start=start,
+                          end=end,
+                          n_cores=self.config.project.parallelization.setting.multicore.CPU_cores,
+                          climate_dataset_name=self.config.project.climate,
+                          project_authors=self.config.project.authors
+                          )
 
 
 class Plotting:
