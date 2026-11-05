@@ -361,6 +361,10 @@ class ClimateDownscaler:
         down_pt['SW_diffuse'] = row.svf * subset_interp.SW_diffuse
 
         subset_interp['SW_direct'] = subset_interp.SW - subset_interp.SW_diffuse
+        # ERA5 ssrd is an accumulation over the previous hour while SWtoa is evaluated at the time stamp, so around
+        # sunrise/sunset SW_direct can exceed SWtoa. This gives a negative ka and, once scaled by
+        # cos_illumination / mu0 on steep slopes, SW_direct spikes above the solar constant. Cap it at SWtoa.
+        subset_interp['SW_direct'] = subset_interp['SW_direct'].clip(max=SWtoa)
         # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
         ka = subset_interp.ssrd * 0
         # pdb.set_trace()
