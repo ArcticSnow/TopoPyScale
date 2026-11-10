@@ -412,10 +412,13 @@ class ClimateDownscaler:
 
         down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
         down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
-        down_pt.tp.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation', 'standard_name': 'precipitation'}
-        #down_pt.precip_lapse_rate.attrs = {'units': 'mm hr**-1',
-        #                                       'long_name': 'Precipitation after lapse-rate correction',
-        #                                       'standard_name': 'precipitation_after_lapse-rate_correction'}
+        tstep_h = meta.get('tstep')
+        down_pt.tp.attrs = {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
+                            'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
+                            'standard_name': 'precipitation'}
+        down_pt.precip_lapse_rate.attrs = {'units': '1',
+                                           'long_name': 'Precipitation elevation adjustment factor (already applied to tp)',
+                                           'standard_name': 'precipitation_lapse_rate_factor'}
 
         down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
                             'standard_name': 'longwave_radiation_downward'}

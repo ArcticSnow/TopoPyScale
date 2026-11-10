@@ -187,7 +187,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     else:
         down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
 
-    down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp * 1 * meta.get('tstep') * 10 ** 3  # Convert to mm/hr
+    down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp * 1 * meta.get('tstep') * 10 ** 3  # mm per time step (mm/hr for 1h data)
     down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
     down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
     down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
@@ -204,10 +204,13 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
     down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
-    down_pt.tp.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation', 'standard_name': 'precipitation'}
-    down_pt.precip_lapse_rate.attrs = {'units': 'mm hr**-1',
-                                           'long_name': 'Precipitation after lapse-rate correction',
-                                           'standard_name': 'precipitation_after_lapse-rate_correction'}
+    tstep_h = meta.get('tstep')
+    down_pt.tp.attrs = {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
+                        'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
+                        'standard_name': 'precipitation'}
+    down_pt.precip_lapse_rate.attrs = {'units': '1',
+                                       'long_name': 'Precipitation elevation adjustment factor (already applied to tp)',
+                                       'standard_name': 'precipitation_lapse_rate_factor'}
 
     down_pt.attrs = {'title':'Downscale point using TopoPyScale',
                           'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
