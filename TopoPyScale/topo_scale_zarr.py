@@ -39,6 +39,11 @@ import dask.array as da
 import pdb
 import time
 
+# Surface variables in the combined (PLEV + SURF) zarr dataset: the 2 m specific humidity and mixing ratio get
+# their own names, otherwise mu.dewT_2_q_magnus() overwrites the pressure-level specific humidity 'q'
+# (used for the vertical interpolation) with the surface value.
+var_era_surf_zarr = dict(mu.var_era_surf, spec_h='q_surf', mix_ratio='w_surf')
+
 
 varout_default = ['t',
          'u',
@@ -233,7 +238,7 @@ class ClimateDownscaler:
                                  keep_attrs=True)  # compute horizontal inverse weighted horizontal interpolation
 
         # ============ Extract specific humidity (q) for both dataset ============
-        subset_interp = mu.dewT_2_q_magnus(subset_interp, mu.var_era_surf)
+        subset_interp = mu.dewT_2_q_magnus(subset_interp, var_era_surf_zarr)
 
 
         #subset_interp['rh'] = mu.q_2_rh(subset_interp.t, subset_interp.tp, subset_interp.q)
@@ -326,8 +331,8 @@ class ClimateDownscaler:
 
         down_pt = mu.mixing_ratio(down_pt, mu.var_era_plevel)
         down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
-        subset_interp = mu.mixing_ratio(subset_interp, mu.var_era_surf)
-        subset_interp = mu.vapor_pressure(subset_interp, mu.var_era_surf)
+        subset_interp = mu.mixing_ratio(subset_interp, var_era_surf_zarr)
+        subset_interp = mu.vapor_pressure(subset_interp, var_era_surf_zarr)
 
         # ========= Compute clear sky emissivity ===============
         down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
