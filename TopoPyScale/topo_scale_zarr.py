@@ -401,7 +401,8 @@ class ClimateDownscaler:
         
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
         # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
-        down_pt = down_pt.drop_vars(['level', 'precip_lapse_rate'])
+        # keep precip_lapse_rate (as in topo_scale.py): it allows recovering precipitation without the lapse rate
+        down_pt = down_pt.drop_vars(['level'], errors='ignore')
         # adding metadata
         down_pt.t.attrs = {'units': 'K', 'long_name': 'Temperature', 'standard_name': 'air_temperature'}
         down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
@@ -445,16 +446,19 @@ class ClimateDownscaler:
                               'git_commit': ver_dict.get('git_commit'),
                              'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                              'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            result = result.drop_vars(['point_name', 'reference_time'])
-
             if self.output_format.lower() == 'netcdf':
-            
+                # same layout as topo_scale.py: point_name kept as coordinate and used in the file name, so that
+                # tu.read_downscaled() returns points indexed by point_name (integer ids sorted as strings would
+                # otherwise scramble the point order)
+                result = result.drop_vars(['reference_time'], errors='ignore')
+                result = result.assign_coords(point_name=str(subset_indices.get('point_name')))
                 comp = dict(zlib=True, complevel=5)
                 encoding = {var: comp for var in result.data_vars}
-                result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_id'))),
+                result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_name'))),
                           engine='h5netcdf', encoding=encoding, mode='a')
 
             elif self.output_format.lower() == 'zarr':
+                result = result.drop_vars(['point_name', 'reference_time'], errors='ignore')
                 vars = list(result.keys())
                 comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
                 encoder = dict(zip(vars, [{'compressors': comp}]*len(vars)))
