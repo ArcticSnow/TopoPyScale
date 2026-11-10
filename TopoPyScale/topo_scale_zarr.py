@@ -39,6 +39,11 @@ import dask.array as da
 import pdb
 import time
 
+# Surface variables in the combined (PLEV + SURF) zarr dataset: the 2 m specific humidity and mixing ratio get
+# their own names, otherwise mu.dewT_2_q_magnus() overwrites the pressure-level specific humidity 'q'
+# (used for the vertical interpolation) with the surface value.
+var_era_surf_zarr = dict(mu.var_era_surf, spec_h='q_surf', mix_ratio='w_surf')
+
 
 varout_default = ['t',
          'u',
@@ -233,7 +238,7 @@ class ClimateDownscaler:
                                  keep_attrs=True)  # compute horizontal inverse weighted horizontal interpolation
 
         # ============ Extract specific humidity (q) for both dataset ============
-        subset_interp = mu.dewT_2_q_magnus(subset_interp, mu.var_era_surf)
+        subset_interp = mu.dewT_2_q_magnus(subset_interp, var_era_surf_zarr)
 
 
         #subset_interp['rh'] = mu.q_2_rh(subset_interp.t, subset_interp.tp, subset_interp.q)
@@ -305,7 +310,9 @@ class ClimateDownscaler:
             down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
         
         print(f"Downscaling SW, LW for point: {pt_id}")
-        down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 / meta.get('tstep') * 10 ** 3  # Convert to mm/hr
+        # ERA5 tp is the 1-hour accumulation ending at the time stamp: scale it to mm per time step
+        # (same convention as topo_scale.py; for 1h data this is mm/hr)
+        down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 * meta.get('tstep') * 10 ** 3
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
         down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
@@ -324,15 +331,17 @@ class ClimateDownscaler:
 
         down_pt = mu.mixing_ratio(down_pt, mu.var_era_plevel)
         down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
-        subset_interp = mu.mixing_ratio(subset_interp, mu.var_era_surf)
-        subset_interp = mu.vapor_pressure(subset_interp, mu.var_era_surf)
+        subset_interp = mu.mixing_ratio(subset_interp, var_era_surf_zarr)
+        subset_interp = mu.vapor_pressure(subset_interp, var_era_surf_zarr)
 
         # ========= Compute clear sky emissivity ===============
         down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
         subset_interp['cse'] = 0.23 + x1 * (subset_interp.vp / subset_interp.t2m) ** (1 / x2)
         # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
 
-        tstep_seconds = pd.Timedelta(f"{meta.get('tstep')}h").seconds
+        # ERA5 ssrd/strd are 1-hour accumulations (J m-2) whatever the sampling timestep (1h, 3h, 6h):
+        # convert to W m-2 with 3600 s (same convention as topo_scale.py)
+        tstep_seconds = 3600
 
         subset_interp['cle'] = (subset_interp.strd / tstep_seconds) / (sbc * subset_interp.t2m ** 4) - \
                              subset_interp['cse']
@@ -392,7 +401,8 @@ class ClimateDownscaler:
         
         # currently drop azimuth and level as they are coords. Could be passed to variables instead.
         # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
-        down_pt = down_pt.drop_vars(['level', 'precip_lapse_rate'])
+        # keep precip_lapse_rate (as in topo_scale.py): it allows recovering precipitation without the lapse rate
+        down_pt = down_pt.drop_vars(['level'], errors='ignore')
         # adding metadata
         down_pt.t.attrs = {'units': 'K', 'long_name': 'Temperature', 'standard_name': 'air_temperature'}
         down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
@@ -402,10 +412,13 @@ class ClimateDownscaler:
 
         down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
         down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
-        down_pt.tp.attrs = {'units': 'mm hr**-1', 'long_name': 'Precipitation', 'standard_name': 'precipitation'}
-        #down_pt.precip_lapse_rate.attrs = {'units': 'mm hr**-1',
-        #                                       'long_name': 'Precipitation after lapse-rate correction',
-        #                                       'standard_name': 'precipitation_after_lapse-rate_correction'}
+        tstep_h = meta.get('tstep')
+        down_pt.tp.attrs = {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
+                            'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
+                            'standard_name': 'precipitation'}
+        down_pt.precip_lapse_rate.attrs = {'units': '1',
+                                           'long_name': 'Precipitation elevation adjustment factor (already applied to tp)',
+                                           'standard_name': 'precipitation_lapse_rate_factor'}
 
         down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
                             'standard_name': 'longwave_radiation_downward'}
@@ -436,16 +449,19 @@ class ClimateDownscaler:
                               'git_commit': ver_dict.get('git_commit'),
                              'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                              'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            result = result.drop_vars(['point_name', 'reference_time'])
-
             if self.output_format.lower() == 'netcdf':
-            
+                # same layout as topo_scale.py: point_name kept as coordinate and used in the file name, so that
+                # tu.read_downscaled() returns points indexed by point_name (integer ids sorted as strings would
+                # otherwise scramble the point order)
+                result = result.drop_vars(['reference_time'], errors='ignore')
+                result = result.assign_coords(point_name=str(subset_indices.get('point_name')))
                 comp = dict(zlib=True, complevel=5)
                 encoding = {var: comp for var in result.data_vars}
-                result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_id'))),
+                result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_name'))),
                           engine='h5netcdf', encoding=encoding, mode='a')
 
             elif self.output_format.lower() == 'zarr':
+                result = result.drop_vars(['point_name', 'reference_time'], errors='ignore')
                 vars = list(result.keys())
                 comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
                 encoder = dict(zip(vars, [{'compressors': comp}]*len(vars)))
