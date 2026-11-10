@@ -305,7 +305,9 @@ class ClimateDownscaler:
             down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
         
         print(f"Downscaling SW, LW for point: {pt_id}")
-        down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 / meta.get('tstep') * 10 ** 3  # Convert to mm/hr
+        # ERA5 tp is the 1-hour accumulation ending at the time stamp: scale it to mm per time step
+        # (same convention as topo_scale.py; for 1h data this is mm/hr)
+        down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 * meta.get('tstep') * 10 ** 3
         down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
         down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
         down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
@@ -332,7 +334,9 @@ class ClimateDownscaler:
         subset_interp['cse'] = 0.23 + x1 * (subset_interp.vp / subset_interp.t2m) ** (1 / x2)
         # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
 
-        tstep_seconds = pd.Timedelta(f"{meta.get('tstep')}h").seconds
+        # ERA5 ssrd/strd are 1-hour accumulations (J m-2) whatever the sampling timestep (1h, 3h, 6h):
+        # convert to W m-2 with 3600 s (same convention as topo_scale.py)
+        tstep_seconds = 3600
 
         subset_interp['cle'] = (subset_interp.strd / tstep_seconds) / (sbc * subset_interp.t2m ** 4) - \
                              subset_interp['cse']
