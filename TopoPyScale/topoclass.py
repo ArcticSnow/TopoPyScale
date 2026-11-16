@@ -99,24 +99,32 @@ class Topoclass(object):
 
         else:
             #self.config.climate.path = self.config.project.directory / 'inputs' / 'climate'
-            self.config.climate.path = self.config.project.directory / Path(self.config.climate.era5.path)
+            self.config.climate.path = self.config.project.directory / Path(self.config.climate[self.config.project.climate].path)
             self.config.climate.tmp_path = self.config.climate.path / 'tmp'
             # check if tree directory exists. If not create it
             self.config.climate.path.mkdir(parents=True, exist_ok=True)
             self.config.climate.tmp_path.mkdir(parents=True, exist_ok=True)
+
+        # pandas and the ERA5 request use lower-case frequencies ('1h', not '1H')
+        climate_source = self.config.climate[self.config.project.climate]
+        if isinstance(climate_source.timestep, str):
+            climate_source.timestep = climate_source.timestep.lower()
 
         self.config.outputs.path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.tmp_path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.downscaled.mkdir(parents=True, exist_ok=True)
 
         if not self.config.dem.path:
-                        self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
+            self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
+        else:
+            # relative to the project directory, absolute paths are kept as they are
+            self.config.dem.path = Path(self.config.project.directory, self.config.dem.path)
         self.config.dem.path.mkdir(parents=True, exist_ok=True)
 
         self.config.dem.filepath = self.config.dem.path / self.config.dem.file
         if not self.config.dem.filepath.exists():
 
-            if self.config.project.extent is not None:
+            if self.config.project.extent:
                 self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))
             else:
                 print('ERROR: no extent provided. Must follow this format: [latN, latS, lonW, lonE]')
@@ -126,7 +134,7 @@ class Topoclass(object):
         else:
             print('\n---> DEM file found')
 
-        if self.config.project.extent is not None:
+        if self.config.project.extent:
             extent_NSWE = self.config.project.extent
             self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], extent_NSWE))
         else:
@@ -164,7 +172,7 @@ class Topoclass(object):
                                                    self.config.project.split.time,
                                                    self.config.outputs.file.ds_solar,
                                                    self.config.outputs.file.downscaled_pt)
-        if self.config.dem.solar_position_method is None:
+        if not self.config.dem.solar_position_method:
             self.config.dem.solar_position_method = 'nrel_numpy'
 
     def load_project(self):
@@ -374,13 +382,19 @@ class Topoclass(object):
             gr = df_param[mask].groupby('cluster_group').slope.count()
             df_group = pd.DataFrame(gr).rename(columns={'slope':'nPix'})
 
-            group_weights_file = Path(self.config.project.directory, self.config.sampling.toposub.clustering_group_weights)
+            group_weights_file = self.config.sampling.toposub.clustering_group_weights
+            if group_weights_file not in [None, {}]:
+                group_weights_file = Path(self.config.project.directory, group_weights_file)
 
-            if group_weights_file.is_file():
+            if group_weights_file not in [None, {}] and group_weights_file.is_file():
                 gw = pd.read_csv(group_weights_file)
-                if gw.weight.sum() != 1:
-                    raise ValueError(f'The sum of group weights within the mask must be equal to number of groups, n_group={gw.shape[0]}')
-                df_group['weights'] = gw.set_index('group').loc[df_group.index]
+                wcol = 'weight' if 'weight' in gw.columns else 'weights'
+                if not np.isclose(gw[wcol].sum(), 1):
+                    raise ValueError(f'The group weights in {group_weights_file.name} must sum to 1 (sum={gw[wcol].sum()})')
+                missing = set(df_group.index) - set(gw.group)
+                if missing:
+                    raise ValueError(f'Groups {sorted(missing)} have no weight in {group_weights_file.name}')
+                df_group['weights'] = gw.set_index('group')[wcol].loc[df_group.index].values
             else:
                 df_group['weights'] = df_group.nPix / df_group.nPix.sum()
             df_group['n_clusters'] = np.ceil(self.config.sampling.toposub.n_clusters * df_group.weights).astype(int)
@@ -706,13 +720,18 @@ class Topoclass(object):
 
         # remove tmp directories
         if self.config.clean_up.rm_tmp_dirs:
-            shutil.rmtree(self.config.outputs.tmp_path, ignore_errors=True)
-            shutil.rmtree(self.config.climate.tmp_path, ignore_errors=True)
+            self._remove_tmp_dirs()
 
         # optional physics-consistency checks (config: toposcale.physics_checks: true | 'warning' | 'error')
         checks = self.config.toposcale.physics_checks
         if checks:
             self.check_physics(strict=checks if checks in ['warning', 'error'] else False)
+
+    def _remove_tmp_dirs(self):
+        # an absolute climate path (shared archive) has no tmp directory of the project
+        for tmp in [self.config.outputs.tmp_path, self.config.climate.tmp_path]:
+            if tmp not in [None, {}]:
+                shutil.rmtree(tmp, ignore_errors=True)
 
     def _downscaled_store_name(self):
         return self.config.outputs.file.zarr_store or 'down.zarr'
@@ -750,7 +769,7 @@ class Topoclass(object):
             start_date=self.config.project.start,
             end_date=self.config.project.end,
             tstep=self.config.climate[self.config.project.climate].timestep,
-            varout=None if variables in (None, 'all') else variables,
+            varout=list(variables) if isinstance(variables, (list, tuple)) and len(variables) else None,
             interp_method=self.config.toposcale.interpolation_method,
             lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
             precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
