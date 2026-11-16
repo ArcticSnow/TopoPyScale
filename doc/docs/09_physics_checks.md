@@ -44,7 +44,7 @@ import xarray as xr
 from TopoPyScale import topo_checks as tc
 from TopoPyScale import topo_utils as tu
 
-ds_down = tu.read_downscaled('outputs/downscaled/down_pt_*.nc')
+ds_down = tu.read_downscaled('outputs/downscaled/down.zarr')
 report = tc.run_all_checks(ds_down,
                            ds_solar=xr.open_dataset('outputs/ds_solar.nc'),
                            df_centroids=pd.read_pickle('outputs/df_centroids.pck'),
@@ -53,7 +53,7 @@ print(tc.summarize(report))
 tc.raise_on_failure(report, level='error')
 ```
 
-The optional inputs widen the set of checks: `ds_solar` enables the shortwave geometry and timing checks, `df_centroids` the checks across points and on the clusters, and `ds_param` the DEM orientation check and the area weights of the precipitation budget. A check whose inputs are missing is reported with status `info` and a note starting with `skipped:`. Zarr outputs (dimension `point_ind`) are supported when `df_centroids` is given.
+The optional inputs widen the set of checks: `ds_solar` enables the shortwave geometry and timing checks, `df_centroids` the checks across points and on the clusters, and `ds_param` the DEM orientation check and the area weights of the precipitation budget. A check whose inputs are missing is reported with status `info` and a note starting with `skipped:`. Per-point netcdf files of the deprecated netcdf backend can be checked the same way, and older zarr outputs with a `point_ind` dimension are supported when `df_centroids` is given.
 
 ### Reading the report
 
@@ -186,7 +186,7 @@ The exporters convert precipitation to rates with the actual time step of the da
 
 ## Test suite
 
-The folder `tests/` runs the actual downscaling functions of both backends, `topo_scale.py` (netcdf) and `topo_scale_zarr.py` (zarr), on synthetic ERA5 fields built in `tests/synthetic_era5.py`. The synthetic atmosphere is hydrostatic with a constant lapse rate, a diurnal cycle and a known relative humidity. Accumulated fluxes are integrated minute by minute over the hour preceding each time stamp, as in ERA5. The correct downscaled values are therefore known analytically.
+The folder `tests/` runs the actual downscaling code on synthetic ERA5 fields built in `tests/synthetic_era5.py`: the zarr engine (`topo_scale_zarr.py` with the array functions of `toposcale_core.py`) and, as an independent reference, the deprecated point-by-point netcdf backend (`topo_scale.py`). The synthetic atmosphere is hydrostatic with a constant lapse rate, a diurnal cycle and a known relative humidity. Accumulated fluxes are integrated minute by minute over the hour preceding each time stamp, as in ERA5. The correct downscaled values are therefore known analytically.
 
 ```bash
 pip install pytest
@@ -201,6 +201,7 @@ The suite covers:
 - **Precipitation**: the elevation factor is bounded, monotonic and symmetric (`f(−Δz) = 1/f(Δz)`); the rain/snow partition is closed and monotonic.
 - **DEM and clusters**: `topocalc` aspect and horizon conventions match the solar azimuth; cluster aspects are circular means (on a synthetic cone DEM).
 - **Exports**: FSM conserves precipitation with 3 h data and receives RH in % for the Jennings methods; SNOWPACK gets wind direction in degrees and ISO time stamps.
-- **Backends and report**: the netcdf and zarr backends agree, and `run_all_checks` reports no failure on a consistent multi-point run.
+- **Zarr pipeline** (`tests/test_zarr_pipeline.py`): the netcdf-to-zarr conversion (including the new CDS naming and the ERA5/ERA5T `expver` dimension), identical results whatever the block sizes and number of threads, agreement with the netcdf backend, the layout of the output store, an error for points at the edge of the ERA5 domain, and the `Topoclass` workflow from yearly netcdf files to `down.zarr`.
+- **Report**: `run_all_checks` reports no failure on a consistent multi-point run.
 
 To document a constraint that the code is known to violate, decorate its test with `known_violation('reason')` (a strict `xfail`). The suite then passes while the issue is open and fails as soon as the issue is fixed, as a reminder to remove the marker.

@@ -12,13 +12,14 @@ my_project/
             └── pts_list.csv        (OPTIONAL: to downscale to specific points)
         └── climate/
             ├── daily/
-            ├── ERA5.zarr           (OPTIONAL: to downscale with zarr optimization)
+            ├── ERA5.zarr           (created from yearly/ at the first downscaling, see Zarr below)
             └── yearly/
                 ├── PLEV*.nc
                 └── SURF*.nc
     ├── outputs/
             ├── tmp/
             └── downscaled/
+                └── down.zarr       (downscaled timeseries of all points)
     ├── pipeline.py (OPTIONAL: script for the downscaling instructions)
     └── config.yml
 
@@ -95,7 +96,7 @@ climate:
     cds_output_format: netcdf         # netcdt or grib. Grib is not supported by topoclass
     cds_download_format: unarchived   # unarchived or zip
     rm_daily: False                   # remove 
-    zarr_store: ERA5.zarr             # name of the zarr store containing the ERA5 data (local store. currently not yet compatible with remote store)
+    zarr_store: ERA5.zarr             # (optional) name of the ERA5 zarr store in the climate folder, built from yearly/*.nc when missing. Default ERA5.zarr
 
 #.....................................................................................................
 dem:
@@ -132,6 +133,8 @@ toposcale:
   interpolation_method: idw               # interpolation methods available: linear or idw
   LW_terrain_contribution: True           # (bool)    Turn ON/OFF terrain contribution to longwave
   physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'error' or 'warning' (raise)
+  point_block: 100                        # (optional) number of points downscaled together. Default 100
+  time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
 
 #.....................................................................................................
 outputs:
@@ -145,8 +148,8 @@ outputs:
     ds_solar: ds_solar.nc               # (netcdf)  solar geometry
     da_horizon: da_horizon.nc           # (netcdf)  horizon angles
     landform: landform.tif              # (geotiff) rasters of of cluster labels, [TopoSub]
-    downscaled_pt: down_pt_*.nc         # (netcdf)  filename of the downscaled timeseries
-    zarr_store: down.zarr               # (zarr)    name of the zarr store for the downscaled timeseries (optional, only working with Dask)
+    zarr_store: down.zarr               # (zarr)    store of the downscaled timeseries in outputs/downscaled/. Default down.zarr
+    downscaled_pt: down_pt_*.nc         # (netcdf)  only for outputs of the deprecated netcdf backend
 
 clean_up:
   rm_tmp_dirs: True                   # (optional: bool) remove the created tmp directories after downscaling?
@@ -203,7 +206,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | cds_download_format  | unarchived | n       | string         | indicate download format CDS will deliver. unarchived or zip|  
 | rm_daily  | False | n       | string         | remove or not daily downloads. To save storage after download|
 | realtime          | False              | n        | True, False     | Upon each new run of code redownloads latest month (ERA5T) to obtain daily updates of partial months.              |
-| zarr_store  | ERA5.zarr    | no    | string    | name of the zarr store containing the ERA5 data (local store. currently not yet compatible with remote store)   |
+| zarr_store  | ERA5.zarr    | no    | string    | name of the ERA5 zarr store in the climate folder. Built from the yearly netcdf files when missing, or rebuilt when it does not cover the project period |
 
 ### dem
 
@@ -239,6 +242,8 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 |-------------------------|---------------|----------|-----------------|-----------------------------------------------------------------------|
 | interpolation_method    | idw           | y        | idw, linear     | interpolation method: inverse distance weight or linear interpolation |
 | LW_terrain_contribution | True          | y        | True, False     | Use longwave terrain contribution correction or not                   |
+| point_block             | 100           | n        | int             | Number of points downscaled together (also the shard size of the output store) |
+| time_block              | 8760          | n        | int             | Number of time steps downscaled together (also the chunk size of the output store). Default: one year |
 | physics_checks          | True          | n        | True, False, 'warning', 'error' | Run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. See [Physics Checks](09_physics_checks.md) |
 
 ### Outputs
@@ -256,7 +261,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | da_horizon    | da_horizon.nc      | yes      | `*.nc`              | filename to store DataArray of the DEM horizons. File is saved in `outputs/`                                                                                                                                                                                  |
 | landform      | landform.tif       | no       | `*.tif`             | filename to store raster of the points/centroids downscaling map. File is saved in `outputs/`                                                                                                                                                                 |
 | downscaled_pt | down_pt_*.nc       | yes      | `*.nc`              | filename to store dataset of the dowsncaled points/centroids. File is saved in `outputs/`                                                                                                                                                                     |
-| zarr_store  | down.zarr    | no    | string    | name of the zarr store for the downscaled timeseries (optional, only working with Dask)   |
+| zarr_store  | down.zarr    | no    | string    | name of the zarr store of the downscaled timeseries, in `outputs/downscaled/` |
 ### clean_up
 
 | Field           | Example Value | Required | Possible Values | Description                                                                         |
@@ -284,11 +289,17 @@ This file will loaded in `mp.toposub.df_centroids` dataframe.
 
 ## Parallelization
 
-TopoPyScale uses parallelization for a number of steps. For most, the Python library multiprocessing is used to either handle multithreads (management of downloading request from cds server), or multicore (clustering, solar geometry, downscaling). An optional method using [Dask](https://docs.dask.org/en/stable/) is available to perform the dowscaling step. 
+TopoPyScale uses parallelization for a number of steps: threads to manage the download requests to the CDS server, and multiple cores for clustering and solar geometry. Downscaling processes blocks of points in parallel threads, `project.parallelization.setting.multicore.CPU_cores` of them.
 
-Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).  
+Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).
 
 
 ## Zarr
 
-As of now, we are starting using the file format Zarr to improve IO methods. Zarr is a recent archival format for multidimensional datasets. It behaves like a database, from whic only the data of interest are being loaded into memory. There exist a number of Zarr repository of the ERA5 dataset (Google, AWS, etc.) for which we do not have yet well establisehed  method to pull data from. However, when downloading data from CDS, it is now possible to download these data as `netcdf` as before, but then convert them localy into a zarr archive. This improves significantly the downscaling speed (x1.4). Example code will soon be available to demonstrate using these newly added options.
+Downscaling reads ERA5 from a zarr store, `inputs/climate/ERA5.zarr`, and writes all downscaled points to one zarr store, `outputs/downscaled/down.zarr`. Zarr stores data in compressed chunks, so that only the chunks needed are read.
+
+- The ERA5 store is built automatically from the yearly netcdf files (`inputs/climate/yearly/PLEV_*.nc` and `SURF_*.nc`) the first time `mp.downscale_climate()` runs, and rebuilt when it does not cover the project period. The files are converted one pair at a time, without `xr.open_mfdataset`. It can also be built explicitly with `mp.era5_obj.to_zarr()` or `fetch_era5.netcdf_to_zarr()`.
+- Downscaling processes blocks of points (`toposcale.point_block`) and of time steps (`toposcale.time_block`) at once. The ERA5 nodes around the points are read once per time block, and all points of a block are downscaled together as arrays.
+- The output store has dimensions `(point_name, time)`. See [Output Formats](05_outputs.md).
+
+The former netcdf backend, `topo_scale.downscale_climate()`, still works but is deprecated.

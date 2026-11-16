@@ -6,8 +6,20 @@
 
 With `toposcale.physics_checks: True`, or after `mp.check_physics()`, the file `outputs/physics_checks.csv` reports the physics-consistency checks of the downscaled timeseries. See [Physics Checks](09_physics_checks.md).
 
+### Zarr store
+All downscaled timeseries are written to one zarr store, `outputs/downscaled/down.zarr` (name set by `outputs.file.zarr_store`). It has the dimensions `(point_name, time)` and carries the point attributes (`elevation`, `slope`, `aspect`, `svf`, `lat`, `lon`, `x`, `y`) as coordinates. Data are stored as float32, in chunks of up to 10 points × one time block, grouped in shards of `toposcale.point_block` points.
+
+```python
+from TopoPyScale import topo_utils as tu
+
+ds = tu.read_downscaled('outputs/downscaled/down.zarr')   # lazy, with Dask
+ds.t.sel(point_name='12').plot()
+```
+
+`Topoclass` loads the store into `mp.downscaled_pts`, which all export functions below use.
+
 ### Netcdf files
-It is possible to export netcdf files for a list of given variables. Otherwise, by default all downscaled timeseries are available in `outputs/`
+It is possible to export netcdf files for a list of given variables with `mp.to_netcdf()`. Per-point netcdf files written by the deprecated netcdf backend can still be read with `tu.read_downscaled('outputs/downscaled/down_pt_*.nc')`.
 
 ### FSM Format
 `TopoPyScale` includes tools to interact and work with [FSM](https://github.com/RichardEssery/FSM). Those are available in the file `topo_sim.py`.

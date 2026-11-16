@@ -63,38 +63,24 @@ As explained in the (Datasets)[04_datasetSources.md], TPS relies on ERA5 data. I
 - 'instantaneous_surface_sensible_heat_flux'
 ```
 
-Currently, TPS will request daily files from the ERA5 Pressure levels and Surface level. These files are then concatenated using `cdo` into yearly files. As of now it is possible to convert these yearly netcdf to a Zarr store archive. This has the advantage to speed up the downscaling step as IO processes are lowered. For this you need to specify in the configuration file a name for a zarr store in the section `climate/era5` with the following: `zarr_store: ERA5.zarr`. The Zarr store will be created locally in the `inputs/climate/` folder. It is also possible to convert a stack of netcdf to a Zarr using the command:
+TPS requests daily files of the ERA5 pressure levels and surface level, and concatenates them with `cdo` into yearly files (`inputs/climate/yearly/`). Downscaling then reads ERA5 from a zarr store, `inputs/climate/ERA5.zarr`, built from the yearly files the first time `mp.downscale_climate()` runs (and rebuilt if it does not cover the project period). The conversion opens one pair of PLEV/SURF files at a time and appends it to the store. It can also be run explicitly:
 
 ```python
-import xarray as xr 
-from TopoPyScale import fetch_era5 as fe 
+from TopoPyScale import fetch_era5 as fe
 
-
-ds_plev = xr.open_mfdataset('inputs/climate/PLE*.nc')
-ds_surf = xr.open_mfdataset('inputs/climate/SUR*.nc')
-
-fe.convert_to_zarr(ds_plev, 
-					'inputs/climate/ERA5.zarr', 
-					chuncks={'latitude':3, 'longitude':3, 'time':1000, 'level':7},
-					compressor=None, 
-					mode='w')
-
-fe.convert_to_zarr(ds_surf, 
-					'inputs/climate/ERA5.zarr', 
-					chuncks={'latitude':3, 'longitude':3, 'time':1000},
-					compressor=None, 
-					mode='a')
+fe.netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+                  zarrout='inputs/climate/ERA5.zarr',
+                  plev_name='PLEV_*.nc',
+                  surf_name='SURF_*.nc',
+                  time_chunk=720)
 ```
 
-This will first create the Zarr store filled with the data from `ds_plev` (notice the `mode='w'`), and append the `ds_surf` data to the same zarr store (notice `mode='a'`). The default compression is using Blosc (when compressor is set to `None`. It is possible to use any other compression options supported by the Zarr library. 
-
-While this step improves significantly computation afterwards, converting the stack of netcdf to zarr can be long.
+The store holds `z, t, q, u, v, r` on pressure levels and `z_surf, sp, t2m, d2m, tp, ssrd, strd` at the surface, as float32 compressed with Blosc. The function also harmonizes files downloaded from the new CDS (`valid_time`, `pressure_level`, `expver`).
 
 ## Parallelization
 
-TPS uses parallelization for a number of steps. For most, the Python library multiprocessing is used to either handle multithreads (management of downloading request from cds server), or multicore (clustering, solar geometry, downscaling). An optional method using [Dask](https://docs.dask.org/en/stable/) is available to perform the dowscaling step. 
+TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, multiple cores for clustering and solar geometry, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
 
-Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).
 
 ## Clustering
 
