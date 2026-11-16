@@ -239,7 +239,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 |-------------------------|---------------|----------|-----------------|-----------------------------------------------------------------------|
 | interpolation_method    | idw           | y        | idw, linear     | interpolation method: inverse distance weight or linear interpolation |
 | LW_terrain_contribution | True          | y        | True, False     | Use longwave terrain contribution correction or not                   |
-| physics_checks          | True          | n        | True, False, 'warning', 'error' | Run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level |
+| physics_checks          | True          | n        | True, False, 'warning', 'error' | Run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. See [Physics Checks](09_physics_checks.md) |
 
 ### Outputs
 

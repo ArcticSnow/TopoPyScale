@@ -4,6 +4,8 @@
 
 ## Downscaled Timeseries
 
+With `toposcale.physics_checks: True`, or after `mp.check_physics()`, the file `outputs/physics_checks.csv` reports the physics-consistency checks of the downscaled timeseries. See [Physics Checks](09_physics_checks.md).
+
 ### Netcdf files
 It is possible to export netcdf files for a list of given variables. Otherwise, by default all downscaled timeseries are available in `outputs/`
 

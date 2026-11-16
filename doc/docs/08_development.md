@@ -26,24 +26,16 @@ We keep track of all issues, bugs and ideas in the Github Issue [page](https://g
 More elaborated discussion are taking place in the Github Discussion [page](https://github.com/ArcticSnow/TopoPyScale/discussions). This works like a forum.
 
 
-## Physics-consistency checks and tests
+## Tests
 
-`TopoPyScale/topo_checks.py` checks downscaled outputs against physical constraints (ranges, units attributes,
-saturation, hypsometric consistency between points, lapse rate, SW closure and geometry, direct beam in terrain
-shadow, SW timing vs. solar geometry, LW emissivity bounds, precipitation factor bounds and domain water budget,
-cluster aspect, DEM orientation). Run it from a project with `mp.check_physics()` or set
-`toposcale.physics_checks: True` in the config file.
-
-`tests/` runs the real downscaling functions of both backends (`topo_scale.py`, `topo_scale_zarr.py`) on synthetic
-ERA5 fields with a known answer (`tests/synthetic_era5.py`):
+`tests/` runs the downscaling functions of both backends on synthetic ERA5 fields with a known answer, and checks the exports. Run it before submitting changes:
 
 ```bash
 pip install pytest
 pytest tests -q
 ```
 
-Tests marked `known_violation` are strict xfails documenting constraints the current code breaks. When an issue is
-fixed, the test XPASSes and the suite fails, as a reminder to remove the marker.
+See [Physics Checks](09_physics_checks.md) for what the tests cover and for the `known_violation` marker.
 
 ## Documentation
 ### Function and Class Docstrings

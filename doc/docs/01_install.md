@@ -72,7 +72,7 @@ In order to use the routine to download ERA5 data from the [Google Cloud Storage
 
 ## Development version Installation
 
-Go to [Development page](./08_Development.md)
+Go to [Development page](./08_development.md)
 
 ### Step 1. Clone the repository
 

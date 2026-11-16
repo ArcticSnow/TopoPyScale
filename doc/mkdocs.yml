@@ -12,6 +12,7 @@ nav:
     - Outputs: 05_outputs.md
     - Examples: 06_examples.md
     - Features: 07_features.md
+    - Physics Checks: 09_physics_checks.md
     - Development: 08_development.md
     - FAQ: 20_FAQ.md
     - API:
@@ -26,6 +27,7 @@ nav:
         - sim_fsm: TopoPyScale.sim_fsm.md
         - sim_fsm2oshd: TopoPyScale.sim_fsm2oshd.md
         - topo_export: TopoPyScale.topo_export.md
+        - topo_checks: TopoPyScale.topo_checks.md
         - topo_da: TopoPyScale.topo_da.md
         - topo_obs: TopoPyScale.topo_obs.md
         - topo_utils: TopoPyScale.topo_utils.md
