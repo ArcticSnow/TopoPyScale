@@ -549,6 +549,22 @@ class Topoclass(object):
         if 'solar_geometry_time_offset' not in ds_solar.attrs:
             print(f'-> WARNING: {fname} was computed at the time stamps, not at the centre of the radiation '
                   'accumulation window (SW then lags the sun by ~30 min). Delete it to recompute it.')
+        elif 'solar_constant' not in ds_solar.attrs:
+            print(f'-> WARNING: {fname} was computed by an older version (SWtoa at the window centre, without the '
+                  'Earth-Sun distance, angles quantized to 10 bits). Delete it to recompute it.')
+
+    def _solar_geometry(self, start, end, fname):
+        return sg.get_solar_geom(self.toposub.df_centroids,
+                                 start,
+                                 end,
+                                 self.config.climate[self.config.project.climate].timestep,
+                                 sr_epsg=str(self.config.dem.epsg),
+                                 fname=fname,
+                                 project_ouput=self.config.outputs.path,
+                                 method_solar=self.config.dem.solar_position_method or 'nrel_numpy',
+                                 accumulation_window=self._accumulation_window(),
+                                 solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
+                                 n_substeps=self.config.toposcale.solar_substeps or 6)
 
     def compute_solar_geometry(self):
 
@@ -562,16 +578,7 @@ class Topoclass(object):
                     print(f'---> Solar file {self.time_splitter.ds_solar_flist[i]} exists and loaded')
                     self._warn_old_solar_file(self.ds_solar, fname.name)
                 else:
-                    self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
-                                                      start,
-                                                      end,
-                                                      self.config.climate[self.config.project.climate].timestep,
-                                                      str(self.config.dem.epsg),
-                                                      self.config.project.parallelization.setting.multicore.CPU_cores,
-                                                      self.time_splitter.ds_solar_flist[i],
-                                                      self.config.outputs.path,
-                                                      method_solar=self.config.solar_position_method,
-                                                      accumulation_window=self._accumulation_window())
+                    self.ds_solar = self._solar_geometry(start, end, self.time_splitter.ds_solar_flist[i])
 
         else:
             fname = self.config.outputs.path / self.config.outputs.file.ds_solar
@@ -580,15 +587,8 @@ class Topoclass(object):
                 print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
                 self._warn_old_solar_file(self.ds_solar, fname.name)
             else:
-                self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
-                                                  self.config.project.start,
-                                                  self.config.project.end,
-                                                  self.config.climate[self.config.project.climate].timestep,
-                                                  str(self.config.dem.epsg),
-                                                  self.config.project.parallelization.setting.multicore.CPU_cores,
-                                                  self.config.outputs.file.ds_solar,
-                                                  self.config.outputs.path,
-                                                  accumulation_window=self._accumulation_window())
+                self.ds_solar = self._solar_geometry(self.config.project.start, self.config.project.end,
+                                                     self.config.outputs.file.ds_solar)
 
     def compute_horizon(self):
         """

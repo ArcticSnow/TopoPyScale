@@ -79,7 +79,16 @@ The store holds `z, t, q, u, v, r` on pressure levels and `z_surf, sp, t2m, d2m,
 
 ## Parallelization
 
-TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, multiple cores for clustering and solar geometry, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
+TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
+
+## Solar geometry
+
+`solar_geom.get_solar_geom()` computes, for every point and time step:
+
+- the solar zenith, azimuth and elevation angles at the centre of the radiation accumulation window (`t − 30 min` for ERA5), with the NREL Solar Position Algorithm of pvlib (`nrel_numpy`, about 0.0003° accuracy). The time-dependent part of the algorithm is computed once for all points; only the location-dependent part is evaluated per point, as arrays. For 2400 points and one year of hourly data this takes about 12 s, instead of about 65 s point by point;
+- the top-of-atmosphere irradiance on a horizontal surface `SWtoa`, averaged over the accumulation window with `toposcale.solar_substeps` sub-steps (default 6). It uses the solar constant `toposcale.solar_constant` (default 1361 W m⁻²) scaled by the Earth–Sun distance, consistently with the accumulated ERA5 fluxes it is compared to (clearness index). Averaging over the window matters at sunrise and sunset, where the value at the window centre differs from the hourly mean by up to about 35 W m⁻².
+
+`ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it.
 
 
 ## Clustering

@@ -128,7 +128,7 @@ Default bounds of the `range` check, in the units written by `TopoPyScale`. They
 | `direct_in_terrain_shadow` | error | no direct beam when the sun is below the local horizon (`hori_azi_*` columns of `df_centroids`) |
 | `sw_timing` | warning | the daily centroid of SW (in local solar time, for points with slope < 10°) matches the one of the top-of-atmosphere irradiance within 15 min. `worst` is the median offset in minutes; positive means SW lags the sun |
 
-ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`, whatever the time step of the downloaded data. The solar geometry is therefore computed at the centre of this window (`t − 30 min`). The length of the window is set by `climate.<source>.accumulation_window` (default `1h`). A solar file `ds_solar.nc` computed by an older version of `TopoPyScale` uses the time stamps; `sw_timing` then reports a lag of about +30 min, and `compute_solar_geometry()` prints a warning. Delete the file to recompute it.
+ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`, whatever the time step of the downloaded data. The solar geometry is therefore computed at the centre of this window (`t − 30 min`). The length of the window is set by `climate.<source>.accumulation_window` (default `1h`). The top-of-atmosphere irradiance `SWtoa`, used for the clearness index, is the mean over the same window, including the Earth–Sun distance (see [Features](07_features.md)). A solar file `ds_solar.nc` computed by an older version of `TopoPyScale` uses the time stamps; `sw_timing` then reports a lag of about +30 min, and `compute_solar_geometry()` prints a warning. Delete the file to recompute it.
 
 ### Longwave radiation
 

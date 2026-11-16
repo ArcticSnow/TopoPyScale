@@ -135,6 +135,8 @@ toposcale:
   physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'error' or 'warning' (raise)
   point_block: 100                        # (optional) number of points downscaled together. Default 100
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
+  solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
+  solar_substeps: 6                       # (optional) sub-steps used to average the top-of-atmosphere irradiance over the accumulation window. Default 6
 
 #.....................................................................................................
 outputs:
@@ -244,6 +246,8 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | LW_terrain_contribution | True          | y        | True, False     | Use longwave terrain contribution correction or not                   |
 | point_block             | 100           | n        | int             | Number of points downscaled together (also the shard size of the output store) |
 | time_block              | 8760          | n        | int             | Number of time steps downscaled together (also the chunk size of the output store). Default: one year |
+| solar_constant          | 1361          | n        | float           | Total solar irradiance at 1 AU [W m-2], scaled by the Earth-Sun distance to compute the top-of-atmosphere irradiance |
+| solar_substeps          | 6             | n        | int             | Number of sub-steps used to average the top-of-atmosphere irradiance over the radiation accumulation window |
 | physics_checks          | True          | n        | True, False, 'warning', 'error' | Run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. See [Physics Checks](09_physics_checks.md) |
 
 ### Outputs
@@ -289,7 +293,7 @@ This file will loaded in `mp.toposub.df_centroids` dataframe.
 
 ## Parallelization
 
-TopoPyScale uses parallelization for a number of steps: threads to manage the download requests to the CDS server, and multiple cores for clustering and solar geometry. Downscaling processes blocks of points in parallel threads, `project.parallelization.setting.multicore.CPU_cores` of them.
+TopoPyScale uses parallelization for a number of steps: threads to manage the download requests to the CDS server, and multiple cores for clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `project.parallelization.setting.multicore.CPU_cores` of them.
 
 Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).
 

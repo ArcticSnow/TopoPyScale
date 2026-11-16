@@ -31,8 +31,8 @@ G = 9.81            # gravity [m s-2]
 R_D = 287.05        # gas constant dry air [J K-1 kg-1]
 EPS = 0.622         # Mw / Md [-]
 SIGMA = 5.67e-8     # Stefan-Boltzmann [W m-2 K-4]
-S0 = 1370.          # TOA irradiance used in solar_geom.py [W m-2]
-S0_MAX = S0 * 1.035 # upper bound including Earth-Sun distance (perihelion)
+S0 = 1361.          # solar constant used in solar_geom.py [W m-2]
+S0_MAX = 1370 * 1.035  # upper bound: perihelion (1/0.983**2 = 1.035), with margin for older S0 = 1370
 T_TERRAIN = 273.15  # temperature of surrounding terrain used in the LW terrain term
 
 STATUS_ORDER = {'pass': 0, 'info': 1, 'warning': 2, 'error': 3}
