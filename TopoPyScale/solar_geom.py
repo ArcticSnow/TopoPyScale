@@ -23,7 +23,8 @@ def get_solar_geom(df_position,
                    num_threads=None,
                    fname='ds_solar.nc',
                    project_ouput=Path('./'),
-                   method_solar='nrel_numpy'):
+                   method_solar='nrel_numpy',
+                   accumulation_window='1h'):
     """
     Function to compute solar position for each location given in the dataframe
     azimuth is define with 0 towards South, negative in W-dir, and posiive towards E-dir
@@ -37,6 +38,10 @@ def get_solar_geom(df_position,
         num_threads (int): number of threads to parallelize computation on. default is number of core -2
         fname (str): name of netcdf file to store solar geometry
         project_ouput (str): path to project root directory
+        method_solar (str): pvlib solar position method
+        accumulation_window (str): length of the window over which the radiation fluxes are accumulated, ending at
+            the time stamp (ERA5: '1h' whatever the sampling time step). The solar geometry is evaluated at the centre
+            of this window so that it matches the accumulated fluxes. Use '0h' for instantaneous fluxes.
 
     Returns: 
         dataset: solar angles in degrees
@@ -49,6 +54,9 @@ def get_solar_geom(df_position,
     # tstep_dict = {'1h': 1, '3h': 3, '6h': 6}
 
     times = pd.date_range(start_date, pd.to_datetime(end_date)+pd.to_timedelta('1D'), freq=tstep, tz='UTC', inclusive='left')
+    # ERA5 ssrd/strd at time t are accumulated over (t - window, t]: evaluate the sun at the centre of the window
+    eval_offset = pd.Timedelta(accumulation_window) / 2
+    times = times - eval_offset
 
 
     df_pool = pd.DataFrame()
@@ -92,6 +100,9 @@ def get_solar_geom(df_position,
     S0 = 1370 # Solar constat (total TOA solar irradiance) [Wm^-2] used in ECMWF's IFS
     ds['SWtoa'] = S0 * ds.mu0
     ds['sunset'] = ds.mu0 < np.cos(89 * np.pi/180)
+    ds.attrs['solar_geometry_time_offset'] = f'-{eval_offset}'
+    ds.attrs['solar_geometry_note'] = ('solar angles evaluated at time - offset, the centre of the '
+                                       f'{accumulation_window} radiation accumulation window ending at time')
     ds.SWtoa.attrs = {'units': 'W/m**2', 'standard_name': 'Shortwave radiations downward top of the atmosphere'}
     ds.sunset.attrs = {'units': 'bool', 'standard_name': 'Sunset'}
 

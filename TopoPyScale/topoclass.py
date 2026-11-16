@@ -448,6 +448,12 @@ class Topoclass(object):
         flist.append('cluster_labels')
         if len(df_param.columns) > len(flist):
             tmp = df_param.groupby('cluster_labels').mean()
+            if 'aspect' in tmp.columns:
+                # aspect is an angle in [0, 2pi) with 0 = south: use the circular mean. An arithmetic mean gives ~pi
+                # (north-facing) for south-facing clusters made of pixels on both sides of due south.
+                circ = pd.DataFrame({'s': np.sin(df_param.aspect), 'c': np.cos(df_param.aspect),
+                                     'cluster_labels': df_param.cluster_labels}).groupby('cluster_labels').mean()
+                tmp['aspect'] = np.mod(np.arctan2(circ.s, circ.c), 2 * np.pi)
             for var in df_param.drop(flist, axis=1).columns:
                 self.toposub.df_centroids[var] = tmp[var]
         self.toposub.df_centroids['cluster_labels'] = tmp.index.values.astype(int)
@@ -533,6 +539,16 @@ class Topoclass(object):
                 flist.append(f'{fcom[0]}_{start}_{self.end_list[i]}.{fcom[1]}')
             return flist
 
+    def _accumulation_window(self):
+        # radiation accumulation window of the climate forcing (ERA5: 1 h, whatever the sampling time step)
+        return self.config.climate[self.config.project.climate].accumulation_window or '1h'
+
+    @staticmethod
+    def _warn_old_solar_file(ds_solar, fname):
+        if 'solar_geometry_time_offset' not in ds_solar.attrs:
+            print(f'-> WARNING: {fname} was computed at the time stamps, not at the centre of the radiation '
+                  'accumulation window (SW then lags the sun by ~30 min). Delete it to recompute it.')
+
     def compute_solar_geometry(self):
 
         if self.config.project.split.IO:
@@ -543,6 +559,7 @@ class Topoclass(object):
                 if fname.is_file():
                     self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
                     print(f'---> Solar file {self.time_splitter.ds_solar_flist[i]} exists and loaded')
+                    self._warn_old_solar_file(self.ds_solar, fname.name)
                 else:
                     self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
                                                       start,
@@ -552,13 +569,15 @@ class Topoclass(object):
                                                       self.config.project.parallelization.setting.multicore.CPU_cores,
                                                       self.time_splitter.ds_solar_flist[i],
                                                       self.config.outputs.path,
-                                                      method_solar=self.config.solar_position_method)
+                                                      method_solar=self.config.solar_position_method,
+                                                      accumulation_window=self._accumulation_window())
 
         else:
             fname = self.config.outputs.path / self.config.outputs.file.ds_solar
             if fname.is_file():
                 self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
                 print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+                self._warn_old_solar_file(self.ds_solar, fname.name)
             else:
                 self.ds_solar = sg.get_solar_geom(self.toposub.df_centroids,
                                                   self.config.project.start,
@@ -567,7 +586,8 @@ class Topoclass(object):
                                                   str(self.config.dem.epsg),
                                                   self.config.project.parallelization.setting.multicore.CPU_cores,
                                                   self.config.outputs.file.ds_solar,
-                                                  self.config.outputs.path)
+                                                  self.config.outputs.path,
+                                                  accumulation_window=self._accumulation_window())
 
     def compute_horizon(self):
         """

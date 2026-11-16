@@ -85,6 +85,7 @@ climate:
     path: inputs/climate/   # Can either be a absolute path or relative to the project directory
     product: reanalysis     # ensemble not available yet
     timestep: 1h            # 1h, 3h 6h or else.
+    accumulation_window: 1h # (optional) window of the accumulated radiation ending at the time stamp. ERA5: 1h (default) whatever the timestep
 
     # Choose pressure levels relevant to your project and evailable in ERA5 Pressure Levels
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
@@ -194,6 +195,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | path              | inputs/climate/    | y        | string          | path to store climate data (either relative to the project directory or absolute path possible)                    |
 | product           | reanalysis         | y        | reanalysis      | no other product available at the moment.                                                                          |
 | timestep          | 1H                 | y        | 1H              | timestep to run TopoPyScale. Currently only 1H available                                                           |
+| accumulation_window | 1h | n | 1h, 3h, 0h | Window over which radiation is accumulated, ending at the time stamp (ERA5: 1h). The solar geometry is computed at its centre |
 | plevels           | [700,800,900,1000] | y        | array           | Indicate ERA5 pressure level to use. The lower pressure level must be higher than the highest elevation of the DEM |
 | download_threads  | 12                 | y        | integer         | Number of downloading threads to use                                                                    |
 | data_repository  | google_cloud_storage | y        | string         | Indicate which data repositoryt to download data from: 'cds or google_cloud_storage                  |

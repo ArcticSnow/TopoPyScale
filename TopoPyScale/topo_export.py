@@ -22,6 +22,12 @@ from TopoPyScale import topo_param as tp
 from pathlib import Path
 
 
+def _tstep_seconds(ds):
+    """Time step of a dataset in seconds (tp is in mm per time step)."""
+    times = pd.DatetimeIndex(ds.time.values)
+    return (times[1] - times[0]).total_seconds()
+
+
 def compute_scaling_and_offset(da, n=16):
     """
     Compute offset and scale factor for int conversion
@@ -334,9 +340,10 @@ def to_cryogrid(ds,
         fo['Lin'] = ('time', ds_pt.LW.values)
         fo['p'] = ('time', ds_pt.p.values)
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values,
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values,
                                        method=snow_partition_method)
-        fo['rainfall'], fo['snowfall'] = ('time', rain * 24), ('time', snow * 24)  # convert from mm/hr to mm/day
+        steps_per_day = 86400 / _tstep_seconds(ds)
+        fo['rainfall'], fo['snowfall'] = ('time', rain * steps_per_day), ('time', snow * steps_per_day)  # mm per time step to mm/day
 
         fo.Tair.attrs = {'units': '°C', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
                          '_FillValue': -9999.0}
@@ -636,7 +643,7 @@ cd ..
         df['SWdif'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
         df['LW'] = np.round(ds_pt.LW.values,2)
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values, method=snow_partition_method)
         df['snowfall'] = np.round(snow, 5)
         df['rainfall'] = np.round(rain, 5)
         df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
@@ -971,7 +978,7 @@ def to_fsm2oshd(mp,
         df['LW'] = np.round(ds_pt.LW.values,2)
 
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)   #convert pressure Bar to Pascal
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values, method=snow_partition_method)  #convert pressure Bar to Pascal
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values, method=snow_partition_method)
         df['snowfall'] = np.round(snow, 5)
         df['rainfall'] = np.round(rain, 5)
         df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
@@ -1141,10 +1148,10 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n
         df['SW'] = ds_pt.SW.values
         df['LW'] = ds_pt.LW.values
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh, ds_pt.p.values,
+        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values,
                                        method=snow_partition_method)
-        df['snowfall'] = snow / 3600
-        df['rainfall'] = rain / 3600
+        df['snowfall'] = snow / _tstep_seconds(ds)  # mm per time step to kg m-2 s-1
+        df['rainfall'] = rain / _tstep_seconds(ds)
         df['Tair'] = np.round(ds_pt.t.values, 2)
         df['RH'] = rh * 100
         df['speed'] = ds_pt.ws.values
@@ -1288,9 +1295,9 @@ def to_crocus(ds,
         df['HUMREL'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
         df['xwind'] = ds_pt.u.values
         df['ywind'] = ds_pt.v.values
-        df['precip'] = ds_pt.tp.values / 3600 * scale_precip  # convert from mm/hr to mm/s
+        df['precip'] = ds_pt.tp.values / _tstep_seconds(ds) * scale_precip  # mm per time step to mm/s
         rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values, rh, ds_pt.p.values,
+        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values, rh * 100, ds_pt.p.values,
                                                      method=snow_partition_method)
 
         # Derive variables: Q- humidity, WD - wind direction (deg), and WS
@@ -1442,9 +1449,9 @@ def to_surfex(ds,
                               'ws':'Wind'})
         fo['Wind_DIR'] = fo.wd * 180 / np.pi
         fo['HUMREL'] = (('Number_of_points','time'), mu.q_2_rh(fo.Tair.values, fo.PSurf.values, fo.Qair.values) * 100)
-        fo['precip'] = (('Number_of_points','time'), fo.tp.values / 3600 * scale_precip)  # convert from mm/hr to mm/s
+        fo['precip'] = (('Number_of_points','time'), fo.tp.values / _tstep_seconds(ds) * scale_precip)  # mm per time step to mm/s
         rh = mu.q_2_rh(fo.Tair.values, fo.PSurf.values, fo.Qair.values)
-        Rainf, Snowf = mu.partition_snow(fo.precip.values, fo.Tair.values, rh, fo.PSurf.values,
+        Rainf, Snowf = mu.partition_snow(fo.precip.values, fo.Tair.values, rh * 100, fo.PSurf.values,
                                                      method=snow_partition_method)
         fo['Rainf'] = (('Number_of_points','time'), Rainf)
         fo['Snowf'] = (('Number_of_points','time'), Snowf)
@@ -1604,11 +1611,11 @@ def to_snowpack(ds, fname_format='smet_pt_*.tx'):
         foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
         ds_pt = ds.sel(point_name=pt_name).copy()
         df = pd.DataFrame()
-        df['timestamp'] = ds_pt.time
+        df['timestamp'] = pd.DatetimeIndex(ds_pt.time.values).strftime('%Y-%m-%dT%H:%M:%S')  # SMET ISO format
         df['Tair'] = np.round(ds_pt.t.values, 2)
         df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
         df['VW'] = ds_pt.ws.values
-        df['DW'] = ds_pt.wd.values
+        df['DW'] = np.rad2deg(ds_pt.wd.values)  # SMET expects degrees
         df['SW'] = ds_pt.SW.values
         df['LW'] = ds_pt.LW.values
         df['PSUM'] = ds_pt.tp.values

@@ -478,18 +478,18 @@ def check_snow_partition(method='continuous', n_draws=2000):
         rows.append(_row('partition_monotonic', method, inc.sum(), inc.size, 'error',
                          worst=np.max(np.diff(snow)), note='snow fraction must not increase with temperature'))
         return rows
-    # Jennings et al. (2018): stochastic, probe with many draws at +4 degC, RH 95 %, using the exporters' convention
-    t = np.full(n_draws, 277.15)
+    # Jennings et al. (2018): stochastic, probe with many draws, RH in % as passed by the exporters (100 * q_2_rh)
     p = np.full(n_draws, 80000.)
-    e = 0.95 * esat_water(t)
-    q = EPS * e / (p - (1 - EPS) * e)
-    rh = mu.q_2_rh(t.copy(), p, q)  # exporters pass this (fraction 0-1) to partition_snow
-    rain, snow = mu.partition_snow(np.ones_like(t), t, rh, p, method=method)
-    rows.append(_row('partition_closure', method, (np.abs(rain + snow - 1) > 1e-9).sum(), t.size, 'error'))
-    frac = snow.mean()
-    rows.append(_row('partition_rh_units', method, int(frac > 0.5), 1, 'error', worst=frac,
-                     note='snow fraction at +4 degC, RH 95 % with rh as passed by exporters (q_2_rh, 0-1); '
-                          'Jennings coefficients expect RH in %'))
+    for name, t_air, expect_snow in [('partition_warm_humid', 277.15, False), ('partition_cold_humid', 269.15, True)]:
+        t = np.full(n_draws, t_air)
+        e = 0.95 * esat_water(t)
+        q = EPS * e / (p - (1 - EPS) * e)
+        rh = 100 * mu.q_2_rh(t.copy(), p, q)
+        rain, snow = mu.partition_snow(np.ones_like(t), t, rh, p, method=method)
+        rows.append(_row('partition_closure', method, (np.abs(rain + snow - 1) > 1e-9).sum(), t.size, 'error'))
+        frac = snow.mean()
+        rows.append(_row(name, method, int((frac > 0.5) != expect_snow), 1, 'error', worst=frac,
+                         note=f'snow fraction at {t_air - 273.15:+.0f} degC, RH 95 % (RH passed in %)'))
     return rows
 
 

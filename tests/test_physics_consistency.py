@@ -92,17 +92,35 @@ def test_partition_snow_closure_and_bounds(method):
     assert (snow >= -1e-12).all() and (rain >= -1e-12).all()
 
 
-@known_violation('continuous: snow fraction (T - T_low)/(T_high - T_low) increases with T inside the mixing range')
 def test_partition_snow_continuous_monotonic():
     report = statuses(tc.check_snow_partition('continuous'))
     assert report[('partition_monotonic', 'continuous')] == 'pass'
 
 
 @pytest.mark.parametrize('method', ['jennings2018_bivariate', 'jennings2018_trivariate'])
-@known_violation('exporters pass rh = q_2_rh(...) in [0-1] to partition_snow, Jennings coefficients expect RH in %')
-def test_jennings_rh_convention_used_by_exporters(method):
+def test_jennings_partition_warm_and_cold(method):
     report = statuses(tc.check_snow_partition(method))
-    assert report[('partition_rh_units', method)] == 'pass'
+    assert report[('partition_warm_humid', method)] == 'pass'
+    assert report[('partition_cold_humid', method)] == 'pass'
+
+
+@pytest.mark.parametrize('method', ['jennings2018_bivariate', 'jennings2018_trivariate'])
+def test_fsm_export_passes_rh_in_percent_to_jennings(method, tmp_path):
+    """+5 degC and RH 95 %: Jennings gives < 1 % snow with RH in %, ~95 % snow if RH is passed as a fraction."""
+    from TopoPyScale import topo_export as te
+    n = 2000
+    t = np.full(n, 278.15)
+    p = np.full(n, 8e4)
+    e = 0.95 * tc.esat_water(t)
+    q = tc.EPS * e / (p - (1 - tc.EPS) * e)
+    dims = ('point_name', 'time')
+    ds = xr.Dataset({'t': (dims, t[None]), 'p': (dims, p[None]), 'q': (dims, q[None]), 'tp': (dims, np.ones((1, n))),
+                     'SW': (dims, np.zeros((1, n))), 'LW': (dims, np.full((1, n), 300.)),
+                     'ws': (dims, np.full((1, n), 2.))},
+                    coords={'point_name': ['001'], 'time': pd.date_range('2020-01-01', periods=n, freq='1h')})
+    quiet(te.to_fsm, ds, fname_format=str(tmp_path / 'FSM_pt_*.txt'), snow_partition_method=method)
+    out = pd.read_csv(tmp_path / 'FSM_pt_0.txt', sep=r'\s+', header=None)
+    assert out[6].sum() / (out[6].sum() + out[7].sum()) < 0.1
 
 
 def test_q_2_rh_roundtrip():
@@ -137,7 +155,7 @@ def test_null_downscaling_reproduces_era5(summer, backend, tmp_path):
     np.testing.assert_allclose(ds.LW, era.strd / 3600, rtol=0.01)
     sw_day = ds.SW.resample(time='1D').sum()
     era_day = (era.ssrd / 3600).resample(time='1D').sum()
-    np.testing.assert_allclose(sw_day, era_day, rtol=0.01)  # daily shortwave energy conserved within 1 %
+    np.testing.assert_allclose(sw_day, era_day, rtol=1e-3)  # daily shortwave energy conserved
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
@@ -253,8 +271,6 @@ def test_no_direct_beam_behind_horizon(summer, backend, tmp_path):
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
-@known_violation('ERA5 ssrd at t is the accumulation over [t-1h, t] but the solar geometry is evaluated at t: '
-                 'SW lags the sun by ~30 min')
 def test_shortwave_timing_matches_solar_geometry(summer, backend, tmp_path):
     row = syn.make_point(summer, elevation=summer.z_surf)
     ds, ds_solar = downscale(summer, row, backend, tmp_path)
@@ -292,7 +308,7 @@ def test_backends_agree(summer, tmp_path):
         np.testing.assert_allclose(a[var], b[var], atol=1e-4, rtol=1e-5, err_msg=var)
 
 
-KNOWN_FAILING_CHECKS = {'sw_timing'}
+KNOWN_FAILING_CHECKS = set()
 
 
 def test_full_report_has_no_unexpected_failures(summer, tmp_path):
@@ -328,8 +344,6 @@ def test_aspect_and_horizon_conventions_match_solar_azimuth():
     assert horizon.horizon(0., dem, dx)[30, 30] > 0.5 > horizon.horizon(180., dem, dx)[30, 30]
 
 
-@known_violation("cluster 'aspect' is the arithmetic mean of angles in [0, 2pi) with 0 = south: south-facing "
-                 "clusters get an aspect near pi (north-facing) in the illumination angle")
 def test_cluster_centroid_aspect_is_circular_mean(tmp_path):
     pytest.importorskip('topocalc')
     pytest.importorskip('sklearn')
@@ -375,7 +389,6 @@ def _three_hourly(summer, tmp_path):
     return ds
 
 
-@known_violation('to_fsm converts mm per time step to kg m-2 s-1 by dividing by 3600 whatever the time step')
 def test_fsm_export_conserves_precipitation_3h(summer, tmp_path):
     from TopoPyScale import topo_export as te
     ds = _three_hourly(summer, tmp_path)
@@ -385,13 +398,13 @@ def test_fsm_export_conserves_precipitation_3h(summer, tmp_path):
     np.testing.assert_allclose((sf + rf).sum() * 3 * 3600, float(ds.tp.sum()), rtol=1e-3)
 
 
-@known_violation('to_snowpack writes DW in radians, SMET expects degrees')
 def test_snowpack_export_wind_direction_in_degrees(summer, tmp_path):
     from TopoPyScale import topo_export as te
     row = syn.make_point(summer)
     ds, _ = downscale(summer, row, 'netcdf', tmp_path)
     quiet(te.to_snowpack, ds, fname_format=str(tmp_path / 'smet_pt_*.txt'))
     out = pd.read_csv(next(tmp_path.glob('smet_pt_*.txt')), sep=' ', header=None)
+    assert pd.to_datetime(out[0], format='%Y-%m-%dT%H:%M:%S').notna().all()  # ISO time stamps, one column
     dw = out[4].values
     expected = np.rad2deg(ds.wd.isel(point_name=0).values)
     np.testing.assert_allclose(dw, expected, atol=0.5)
