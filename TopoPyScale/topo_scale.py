@@ -67,6 +67,77 @@ def clear_files(path: Union[Path, str]):
     print(f'{path} cleaned')
 
 
+# Monthly precipitation adjustment coefficients [km-1] (Liston and Elder, 2006, MicroMet)
+PRECIP_LAPSE_COEF = np.array([0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
+PRECIP_LAPSE_MAX_FACTOR = 5.
+
+
+def _bracket(coords, value):
+    """Indices of the two coordinates bracketing value and the normalized position of value between them."""
+    coords = np.asarray(coords, dtype=float)
+    order = np.argsort(coords)
+    c = coords[order]
+    k = int(np.clip(np.searchsorted(c, value) - 1, 0, c.size - 2))
+    t = float(np.clip((value - c[k]) / (c[k + 1] - c[k]), 0, 1))
+    return order[k], order[k + 1], t
+
+
+def horizontal_weights(row, lats, lons, Xs, Ys, method='idw'):
+    """
+    Weights of the ERA5 nodes surrounding a point for the horizontal interpolation.
+
+    Args:
+        row: point with attributes x, y (DEM projection) and lat, lon (WGS84)
+        lats (array): latitudes of the nodes (1D)
+        lons (array): longitudes of the nodes (1D)
+        Xs (array): x coordinates of the nodes in the DEM projection (2D, latitude x longitude)
+        Ys (array): y coordinates of the nodes in the DEM projection (2D, latitude x longitude)
+        method (str): 'idw' (inverse squared distance) or 'linear' (bilinear in latitude/longitude)
+
+    Returns:
+        array: 2D weights (latitude x longitude), non-negative and summing to 1
+    """
+    if method == 'idw':
+        dist = np.sqrt((row.x - Xs) ** 2 + (row.y - Ys) ** 2)
+        if dist.min() < 1e-6:
+            # point on an ERA5 node: inverse distance is singular, the node value is the answer
+            weights = (dist == dist.min()).astype(float)
+        else:
+            weights = 1 / dist ** 2
+    elif method == 'linear':
+        i0, i1, ti = _bracket(lats, row.lat)
+        j0, j1, tj = _bracket(lons, row.lon)
+        weights = np.zeros((len(lats), len(lons)))
+        weights[i0, j0] += (1 - ti) * (1 - tj)
+        weights[i1, j0] += ti * (1 - tj)
+        weights[i0, j1] += (1 - ti) * tj
+        weights[i1, j1] += ti * tj
+    else:
+        raise ValueError(f'ERROR: interpolation method {method} not available. Use idw or linear')
+    return weights / weights.sum()
+
+
+def precip_lapse_factor(elev_diff, months, max_factor=PRECIP_LAPSE_MAX_FACTOR):
+    """
+    Precipitation elevation adjustment factor (1 + c dz) / (1 - c dz) of Liston and Elder (2006).
+
+    The factor diverges for c dz -> 1 (dz ~ 2.9 km with c = 0.35 km-1) and becomes negative beyond. c dz is therefore
+    bounded so that the factor stays within [1/max_factor, max_factor].
+
+    Args:
+        elev_diff (array): elevation of the point minus elevation of the ERA5 surface [m]
+        months (array): month of each time step (1-12)
+        max_factor (float): upper bound of the factor (> 1)
+
+    Returns:
+        array: adjustment factor
+    """
+    x = PRECIP_LAPSE_COEF[np.asarray(months) - 1] * np.asarray(elev_diff) * 1e-3
+    x_max = (max_factor - 1) / (max_factor + 1)
+    x = np.clip(x, -x_max, x_max)
+    return (1 + x) / (1 - x)
+
+
 def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     """
     Function to interpolate atmospheric variables horizontally nd vertically to point
@@ -88,14 +159,8 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     Xs = Xs.reshape(lons.shape)
     Ys = Ys.reshape(lons.shape)
 
-    dist = np.sqrt((row.x - Xs) ** 2 + (row.y - Ys) ** 2)
-    if interp_method == 'idw':
-        idw = 1 / (dist ** 2)
-        weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
-    elif interp_method == 'linear':
-        weights = dist / np.sum(dist)
-    else:
-        sys.exit('ERROR: interpolation method not available')
+    weights = horizontal_weights(row, ds_plev_pt.latitude.values, ds_plev_pt.longitude.values, Xs, Ys,
+                                 method=interp_method)
 
     # create a dataArray of weights to then propagate through the dataset
     da_idw = xr.DataArray(data=weights,
@@ -140,7 +205,7 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
         down_pt['v'] = top.v
         down_pt['q'] = top.q
         down_pt['p'] = top.level * (10 ** 2) * np.exp(
-                -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
+                -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in Pa
 
     else:
         # ========== Vertical interpolation at the DEM surface z  ===============
@@ -168,24 +233,17 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
         down_pt['v'] = bot.v * weights[1] + top.v * weights[0]
         down_pt['q'] = bot.q * weights[1] + top.q * weights[0]
         down_pt['p'] = top.level * (10 ** 2) * np.exp(
-                -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
+                -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in Pa
 
         # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
     down_pt['month'] = ('time', down_pt.time.dt.month.data)
     print("precip lapse rate = " + str(meta.get('precip_lapse_rate_flag')))
     if meta.get('precip_lapse_rate_flag'):
-        monthly_coeffs = xr.Dataset(
-                {
-                    'coef': (['month'], [0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
-                },
-                coords={'month': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
-            )
-        # Cache coefficient selection (avoid duplicate .sel() call)
-        coef = monthly_coeffs.coef.sel(month=down_pt.month.values).data
-        elev_diff = (row.elevation - surf_interp.z) * 1e-3
-        down_pt['precip_lapse_rate'] = (1 + coef * elev_diff) / (1 - coef * elev_diff)
+        down_pt['precip_lapse_rate'] = ('time', precip_lapse_factor(
+            (row.elevation - surf_interp.z).values, down_pt.month.values,
+            max_factor=meta.get('precip_lapse_rate_max_factor') or PRECIP_LAPSE_MAX_FACTOR))
     else:
-        down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
+        down_pt['precip_lapse_rate'] = ('time', np.ones(down_pt.time.size))
 
     down_pt['tp'] = down_pt.precip_lapse_rate * surf_interp.tp * 1 * meta.get('tstep') * 10 ** 3  # mm per time step (mm/hr for 1h data)
     down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
@@ -200,10 +258,11 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
     down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
     down_pt.u.attrs = {'units': 'm s**-1', 'long_name': 'U component of wind', 'standard_name': 'eastward_wind'}
     down_pt.v.attrs = {'units': 'm s**-1', 'long_name': 'V component of wind', 'standard_name': 'northward wind'}
-    down_pt.p.attrs = {'units': 'bar', 'long_name': 'Pression atmospheric', 'standard_name': 'pression_atmospheric'}
+    down_pt.p.attrs = {'units': 'Pa', 'long_name': 'Surface air pressure', 'standard_name': 'surface_air_pressure'}
 
     down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
-    down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
+    down_pt.wd.attrs = {'units': 'rad', 'long_name': 'Wind direction (from), clockwise from north',
+                        'standard_name': 'wind_from_direction'}
     tstep_h = meta.get('tstep')
     down_pt.tp.attrs = {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
                         'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
@@ -294,7 +353,9 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
     ka = surf_interp.ssrd * 0
     # pdb.set_trace()
-    ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
+    # ka is the broadband extinction coefficient of the ERA5 column (from the ERA5 surface pressure). Applying it
+    # with the pressure at the point scales the direct beam with elevation.
+    ka[~sunset] = (g * mu0[~sunset] / surf_interp.sp[~sunset]) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
     # Illumination angle
     down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
                                       np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
@@ -317,13 +378,21 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
 
     # currently drop azimuth and level as they are coords. Could be passed to variables instead.
-    # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
-    down_pt = down_pt.drop(['level']).round(5)
+    # round(5) helps compression, but not for humidity: q ~ 1e-5 kg/kg in cold air, keep full precision
+    down_pt = down_pt.drop(['level'])
+    humidity = down_pt[['q', 'w']]
+    down_pt = down_pt.round(5)
+    down_pt['q'], down_pt['w'] = humidity.q, humidity.w
 
     # adding metadata
     down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
                         'standard_name': 'longwave_radiation_downward'}
-    down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+    down_pt.cse.attrs = {'units': '1', 'long_name': 'Clear sky emissivity'}
+    down_pt.w.attrs = {'units': 'kg kg**-1', 'long_name': 'Mixing ratio', 'standard_name': 'humidity_mixing_ratio'}
+    down_pt.vp.attrs = {'units': 'Pa', 'long_name': 'Vapor pressure', 'standard_name': 'water_vapor_partial_pressure_in_air'}
+    down_pt.cos_illumination.attrs = {'units': '1', 'long_name': 'Cosine of the solar illumination angle on the slope'}
+    down_pt.SW_direct.attrs = {'units': 'W m**-2', 'long_name': 'Surface direct solar radiation downwards',
+                               'standard_name': 'direct_downwelling_shortwave_flux_in_air'}
     down_pt = down_pt.drop(['SW_direct_tmp'])
     down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
                         'standard_name': 'shortwave_radiation_downward'}
@@ -364,7 +433,8 @@ def downscale_climate(project_directory,
                       lw_terrain_flag=True,
                       precip_lapse_rate_flag=False,
                       file_pattern='down_pt*.nc',
-                      n_core=4):
+                      n_core=4,
+                      precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR):
     """
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
@@ -382,6 +452,7 @@ def downscale_climate(project_directory,
         tstep (str): timestep of the input data, default = 1h
         file_pattern (str): filename pattern for storing downscaled points, default = 'down_pt_*.nc'
         n_core (int): number of core on which to distribute processing
+        precip_lapse_rate_max_factor (float): bound of the precipitation elevation factor, see precip_lapse_factor()
 
     Returns:
         dataset: downscaled data organized with time, point_name, lat, long
@@ -538,6 +609,7 @@ def downscale_climate(project_directory,
         'file_pattern': file_pattern,
         'target_epsg': target_EPSG,
         'precip_lapse_rate_flag': precip_lapse_rate_flag,
+        'precip_lapse_rate_max_factor': precip_lapse_rate_max_factor,
         'output_directory': output_directory,
         'transformer': transformer,  # Cached CRS transformer
     }

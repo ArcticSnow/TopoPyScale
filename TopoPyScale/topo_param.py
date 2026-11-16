@@ -329,7 +329,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
                       name='horizon',
                       attrs={
                           'long_name': 'Horizon angles',
-                          'units':'degree'
+                          'units':'rad'
                       }
                       )
     #te.to_netcdf(da.to_dataset(), fname=output_directory / fname)

@@ -78,6 +78,7 @@ project:
 climate:
   # For now TopoPyScale only supports ERA5-reanalysis input climate data
   precip_lapse_rate: False     # Apply precipitation lapse-rate correction (currently valid for Northern Hemisphere only)
+  precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
   
   # Settings for the ERA5 atmospheric forcings
   era5:
@@ -188,6 +189,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | Field             | Example Value      | Required | Possible Values | Description                                                                                                        |
 |-------------------|--------------------|----------|-----------------|--------------------------------------------------------------------------------------------------------------------|
 | precip_lapse_rate | True               | y        | True, False     | Apply precipitation lapse rate                                                                                     |
+| precip_lapse_rate_max_factor | 5 | n | float > 1 | Bound of the precipitation elevation factor (1 + c dz)/(1 - c dz), which otherwise diverges for dz ~ 2.9 km in winter |
 | **era5**          |                    |          |                 | As of now TopoPyScale only supports ERA5 data                                                                      |
 | path              | inputs/climate/    | y        | string          | path to store climate data (either relative to the project directory or absolute path possible)                    |
 | product           | reanalysis         | y        | reanalysis      | no other product available at the moment.                                                                          |

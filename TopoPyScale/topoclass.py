@@ -642,7 +642,9 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate.precip_lapse_rate,
                                      fname,
-                                     self.config.project.parallelization.setting.multicore.CPU_cores)
+                                     self.config.project.parallelization.setting.multicore.CPU_cores,
+                                     precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor
+                                     or ta.PRECIP_LAPSE_MAX_FACTOR)
 
             for pt_id in self.toposub.df_centroids.point_name.values:
                 print(f'Concatenating point {pt_id}')
@@ -690,7 +692,9 @@ class Topoclass(object):
                                      self.config.toposcale.LW_terrain_contribution,
                                      self.config.climate.precip_lapse_rate,
                                      self.config.outputs.file.downscaled_pt,
-                                     self.config.project.parallelization.setting.multicore.CPU_cores)
+                                     self.config.project.parallelization.setting.multicore.CPU_cores,
+                                     precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor
+                                     or ta.PRECIP_LAPSE_MAX_FACTOR)
             
             elif self.config.climate.era5.zarr_store is not None:
 
@@ -714,7 +718,9 @@ class Topoclass(object):
                             lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
                             precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
                             file_pattern=self.config.outputs.file.downscaled_pt,
-                            store_name=self.config.outputs.file.zarr_store                            
+                            store_name=self.config.outputs.file.zarr_store,
+                            precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor
+                            or ta.PRECIP_LAPSE_MAX_FACTOR
                     )
 
                 if self.config.project.parallelization.downscaling_method.lower() == 'multicore':

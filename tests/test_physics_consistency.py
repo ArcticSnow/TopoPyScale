@@ -141,21 +141,40 @@ def test_null_downscaling_reproduces_era5(summer, backend, tmp_path):
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
-@known_violation('IDW weights 1/d**2 are infinite when a point sits exactly on an ERA5 node -> NaN or error')
-def test_point_on_era5_node_is_finite(summer, backend, tmp_path):
+@pytest.mark.parametrize('method', ['idw', 'linear'])
+def test_point_on_era5_node_is_finite(summer, backend, method, tmp_path):
     row = syn.make_point(summer, dx=0., dy=0.)
-    ds, _ = downscale(summer, row, backend, tmp_path)
+    ds, _ = downscale(summer, row, backend, tmp_path, interp_method=method)
     for var in ['t', 'q', 'p', 'tp', 'SW', 'LW']:
         assert np.isfinite(ds[var]).all(), var
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
-@pytest.mark.parametrize('method', ['idw', pytest.param('linear', marks=known_violation(
-    "'linear' weights are d / sum(d): the nearest ERA5 node gets the smallest weight"))])
+@pytest.mark.parametrize('method', ['idw', 'linear'])
 def test_nearest_era5_node_dominates(delta_tp, backend, method, tmp_path):
     row = syn.make_point(delta_tp, dx=500.)
     ds, _ = downscale(delta_tp, row, backend, tmp_path, interp_method=method)
     assert float(ds.tp.mean()) > 0.9  # weight of the central node, in mm/h
+
+
+def test_bilinear_weights_reproduce_linear_field():
+    from types import SimpleNamespace
+    from TopoPyScale.topo_scale import horizontal_weights
+    lats, lons = np.array([60.75, 60.5, 60.25]), np.array([7.25, 7.5, 7.75])
+    field = 3 * lats[:, None] - 2 * lons[None, :]
+    for lat, lon in [(60.5, 7.5), (60.61, 7.43), (60.3, 7.7)]:
+        w = horizontal_weights(SimpleNamespace(lat=lat, lon=lon, x=0, y=0), lats, lons, None, None, method='linear')
+        assert w.min() >= 0 and np.isclose(w.sum(), 1)
+        assert np.isclose((w * field).sum(), 3 * lat - 2 * lon)
+
+
+def test_precip_lapse_factor_symmetric_and_bounded():
+    from TopoPyScale.topo_scale import precip_lapse_factor
+    dz = np.linspace(-6000, 6000, 241)
+    f = precip_lapse_factor(dz, np.full(dz.size, 1), max_factor=5.)
+    assert np.all(np.isfinite(f)) and f.min() >= 1 / 5 - 1e-12 and f.max() <= 5 + 1e-12
+    assert np.all(np.diff(f) >= 0)  # more precipitation with elevation
+    np.testing.assert_allclose(f * f[::-1], 1)  # f(-dz) = 1 / f(dz)
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
@@ -177,8 +196,7 @@ def test_no_supersaturation_from_vertical_interpolation(saturated, backend, tmp_
     assert report[('supersaturation', 'q')] == 'pass'
 
 
-@pytest.mark.parametrize('backend', [pytest.param('netcdf', marks=known_violation(
-    'down_pt.round(5) quantises q to 1e-5 kg/kg: > 1 % error in cold, dry air')), 'zarr'])
+@pytest.mark.parametrize('backend', BACKENDS)
 def test_specific_humidity_precision_in_cold_air(cold_dry, backend, tmp_path):
     z = cold_dry.z_surf + 1000.
     row = syn.make_point(cold_dry, elevation=z)
@@ -190,7 +208,6 @@ def test_specific_humidity_precision_in_cold_air(cold_dry, backend, tmp_path):
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
-@known_violation('precip lapse factor (1 + c dz)/(1 - c dz) diverges at dz = 1/c (~2.9 km in winter), negative beyond')
 def test_precip_lapse_factor_bounded(winter, backend, tmp_path):
     row = syn.make_point(winter, elevation=winter.z_surf + 3000.)
     ds, _ = downscale(winter, row, backend, tmp_path, precip_lapse=True)
@@ -203,8 +220,6 @@ def test_precip_lapse_factor_bounded(winter, backend, tmp_path):
 #  3. radiation
 # ---------------------------------------------------------------------------------------------------------------------
 @pytest.mark.parametrize('backend', BACKENDS)
-@known_violation("ka is derived with the point pressure instead of the ERA5 surface pressure, so the Beer's law "
-                 "elevation scaling of the direct beam is the identity")
 def test_direct_beam_transmissivity_increases_with_altitude(summer, backend, tmp_path):
     rows = [syn.make_point(summer, name='001', elevation=summer.z_surf),
             syn.make_point(summer, name='002', elevation=summer.z_surf + 1500.)]
@@ -263,7 +278,6 @@ def test_longwave_emissivity_bounds(summer, backend, tmp_path):
 #  4. metadata, backends, full report
 # ---------------------------------------------------------------------------------------------------------------------
 @pytest.mark.parametrize('backend', BACKENDS)
-@known_violation("p is in Pa but its units attribute says 'bar'; wd is in radians but its attribute says 'deg'")
 def test_units_attributes_match_values(summer, backend, tmp_path):
     ds, _ = downscale(summer, syn.make_point(summer), backend, tmp_path)
     report = tc.check_unit_attributes(tc._prepare(ds))
@@ -278,7 +292,7 @@ def test_backends_agree(summer, tmp_path):
         np.testing.assert_allclose(a[var], b[var], atol=1e-4, rtol=1e-5, err_msg=var)
 
 
-KNOWN_FAILING_CHECKS = {'units_attr', 'sw_timing'}
+KNOWN_FAILING_CHECKS = {'sw_timing'}
 
 
 def test_full_report_has_no_unexpected_failures(summer, tmp_path):
@@ -398,5 +412,6 @@ def test_topoclass_check_physics_writes_report(summer, tmp_path):
     report = quiet(Topoclass.check_physics, obj)
     assert (tmp_path / 'physics_checks.csv').is_file()
     assert {'dem_orientation', 'domain_precip_budget', 'centroid_aspect'} <= set(report.check)
+    obj.downscaled_pts = ds.assign(tp=-ds.tp - 1)  # inject a violation
     with pytest.raises(tc.PhysicsConsistencyError):
-        quiet(Topoclass.check_physics, obj, strict=True)  # units attributes are known errors today
+        quiet(Topoclass.check_physics, obj, strict=True)

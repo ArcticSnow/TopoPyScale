@@ -31,6 +31,7 @@ from pathlib import Path
 from pyproj import Transformer
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
+from TopoPyScale.topo_scale import horizontal_weights, precip_lapse_factor, PRECIP_LAPSE_MAX_FACTOR
 import pandas as pd
 import xarray as xr
 import numpy as np 
@@ -77,7 +78,8 @@ class ClimateDownscaler:
                  lw_terrain_flag=True,
                  precip_lapse_rate_flag=False,
                  file_pattern='down_pt*.nc',
-                 store_name=None):
+                 store_name=None,
+                 precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR):
         """
         Initialize the parallel processor for zarr datasets.
         
@@ -112,6 +114,7 @@ class ClimateDownscaler:
                                   'file_pattern': file_pattern,
                                   'target_epsg':target_EPSG,
                                   'precip_lapse_rate_flag':precip_lapse_rate_flag,
+                                  'precip_lapse_rate_max_factor':precip_lapse_rate_max_factor,
                                   'output_directory':output_path,
                                   'lw_terrain_flag':lw_terrain_flag}
 
@@ -213,14 +216,8 @@ class ClimateDownscaler:
         subset.z_surf.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
 
         # ========== Horizontal interpolation ==================
-        dist = np.sqrt((row.x - Xs) ** 2 + (row.y - Ys) ** 2)
-        if interp_method == 'idw':
-            idw = 1 / (dist ** 2)
-            weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
-        elif interp_method == 'linear':
-            weights = dist / np.sum(dist)
-        else:
-            sys.exit('ERROR: interpolation method not available')
+        weights = horizontal_weights(row, subset.latitude.values, subset.longitude.values, Xs, Ys,
+                                     method=interp_method)
 
         # create a dataArray of weights to then propagate through the dataset
         da_idw = xr.DataArray(data=weights,
@@ -263,7 +260,7 @@ class ClimateDownscaler:
             down_pt['v'] = top.v
             down_pt['q'] = top.q
             down_pt['p'] = top.level * (10 ** 2) * np.exp(
-                    -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
+                    -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in Pa
 
         else:
             # ========== Vertical interpolation at the DEM surface z  ===============
@@ -290,24 +287,17 @@ class ClimateDownscaler:
             down_pt['v'] = bot.v * weights[1] + top.v * weights[0]
             down_pt['q'] = bot.q * weights[1] + top.q * weights[0]
             down_pt['p'] = top.level * (10 ** 2) * np.exp(
-                    -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
+                    -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in Pa
 
             # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
         down_pt['month'] = ('time', down_pt.time.dt.month.data)
         print("precip lapse rate = " + str(meta.get('precip_lapse_rate_flag')))
         if meta.get('precip_lapse_rate_flag'):
-            monthly_coeffs = xr.Dataset(
-                    {
-                        'coef': (['month'], [0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
-                    },
-                    coords={'month': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
-                )
-            down_pt['precip_lapse_rate'] = (1 + monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
-                        row.elevation - subset_interp.z_surf) * 1e-3) / \
-                (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
-                                                       row.elevation - subset_interp.z_surf) * 1e-3)
+            down_pt['precip_lapse_rate'] = ('time', precip_lapse_factor(
+                (row.elevation - subset_interp.z_surf).values, down_pt.month.values,
+                max_factor=meta.get('precip_lapse_rate_max_factor') or PRECIP_LAPSE_MAX_FACTOR))
         else:
-            down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
+            down_pt['precip_lapse_rate'] = ('time', np.ones(down_pt.time.size))
         
         print(f"Downscaling SW, LW for point: {pt_id}")
         # ERA5 tp is the 1-hour accumulation ending at the time stamp: scale it to mm per time step
@@ -377,7 +367,9 @@ class ClimateDownscaler:
         # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
         ka = subset_interp.ssrd * 0
         # pdb.set_trace()
-        ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / subset_interp.SW_direct[~sunset])
+        # ka is the broadband extinction coefficient of the ERA5 column (from the ERA5 surface pressure). Applying it
+        # with the pressure at the point scales the direct beam with elevation.
+        ka[~sunset] = (g * mu0[~sunset] / subset_interp.sp[~sunset]) * np.log(SWtoa[~sunset] / subset_interp.SW_direct[~sunset])
         # Illumination angle
         down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
                                           np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
@@ -408,10 +400,11 @@ class ClimateDownscaler:
         down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
         down_pt.u.attrs = {'units': 'm s**-1', 'long_name': 'U component of wind', 'standard_name': 'eastward_wind'}
         down_pt.v.attrs = {'units': 'm s**-1', 'long_name': 'V component of wind', 'standard_name': 'northward wind'}
-        down_pt.p.attrs = {'units': 'bar', 'long_name': 'Pression atmospheric', 'standard_name': 'pression_atmospheric'}
+        down_pt.p.attrs = {'units': 'Pa', 'long_name': 'Surface air pressure', 'standard_name': 'surface_air_pressure'}
 
         down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
-        down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
+        down_pt.wd.attrs = {'units': 'rad', 'long_name': 'Wind direction (from), clockwise from north',
+                            'standard_name': 'wind_from_direction'}
         tstep_h = meta.get('tstep')
         down_pt.tp.attrs = {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
                             'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
@@ -422,7 +415,12 @@ class ClimateDownscaler:
 
         down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
                             'standard_name': 'longwave_radiation_downward'}
-        down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
+        down_pt.cse.attrs = {'units': '1', 'long_name': 'Clear sky emissivity'}
+        down_pt.w.attrs = {'units': 'kg kg**-1', 'long_name': 'Mixing ratio', 'standard_name': 'humidity_mixing_ratio'}
+        down_pt.vp.attrs = {'units': 'Pa', 'long_name': 'Vapor pressure', 'standard_name': 'water_vapor_partial_pressure_in_air'}
+        down_pt.cos_illumination.attrs = {'units': '1', 'long_name': 'Cosine of the solar illumination angle on the slope'}
+        down_pt.SW_direct.attrs = {'units': 'W m**-2', 'long_name': 'Surface direct solar radiation downwards',
+                                   'standard_name': 'direct_downwelling_shortwave_flux_in_air'}
         down_pt = down_pt.drop_vars(['SW_direct_tmp'])
         down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
                             'standard_name': 'shortwave_radiation_downward'}
