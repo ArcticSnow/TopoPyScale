@@ -105,10 +105,11 @@ def multicore_pooling(fun, fun_param, n_cores):
         n_cores = 1
 
     pool = Pool(n_cores)
-    pool.starmap(fun, fun_param)
+    results = pool.starmap(fun, fun_param)
     pool.close()
     pool.join()
     pool = None
+    return results
 
 
 def multithread_pooling(fun, fun_param, n_threads):

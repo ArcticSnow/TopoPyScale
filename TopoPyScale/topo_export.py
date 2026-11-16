@@ -41,20 +41,24 @@ def compute_scaling_and_offset(da, n=16):
 
     # stretch/compress data to the available packed range
     scale_factor = (vmax - vmin) / (2 ** n - 1)
+    if not np.isfinite(scale_factor) or scale_factor == 0:
+        scale_factor = 1.  # constant (or empty) variable: packed value 0 decodes to vmin
+        return scale_factor, vmin
     # translate the range to be symmetric about zero
     add_offset = vmin + 2 ** (n - 1) * scale_factor
 
     return scale_factor, add_offset
 
 
-def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
+def to_netcdf(ds, fname='output.nc', variables=None, complevel=9, n_bits=10):
     """
-    Generic function to save a datatset to one single compressed netcdf file
+    Generic function to save a datatset to one single compressed netcdf file. Float variables are packed as int16.
 
     Args:
         fname (str): name of export file
         variables (list str): list of variable to export. Default exports all variables
         complevel (int): Compression level. 1-9
+        n_bits (int): number of bits used to pack float variables (at most 15). Resolution = range / (2**n_bits - 1)
     """
 
     encod_dict = {}
@@ -62,7 +66,7 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
         variables = list(ds.keys())
 
     for var in variables:
-        scale_factor, add_offset = compute_scaling_and_offset(ds[var], n=10)
+        scale_factor, add_offset = compute_scaling_and_offset(ds[var], n=min(int(n_bits), 15))
         if str(ds[var].dtype)[:3] == 'int' or var == 'cluster_labels' or var == 'point_name':
             encod_dict.update({var: {
                 'dtype': ds[var].dtype}})
