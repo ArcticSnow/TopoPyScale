@@ -36,6 +36,7 @@ from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_sub as ts
 from TopoPyScale import topo_scale_zarr as tz
 from TopoPyScale import topo_utils as tu
+from TopoPyScale import topo_checks as tc
 
 class Topoclass(object):
     """
@@ -743,6 +744,41 @@ class Topoclass(object):
         if self.config.clean_up.rm_tmp_dirs:
             shutil.rmtree(self.config.outputs.tmp_path, ignore_errors=True)
             shutil.rmtree(self.config.climate.tmp_path, ignore_errors=True)
+
+        # optional physics-consistency checks (config: toposcale.physics_checks: true | 'warning' | 'error')
+        checks = self.config.toposcale.physics_checks
+        if checks:
+            self.check_physics(strict=checks if checks in ['warning', 'error'] else False)
+
+    def check_physics(self, strict=False, snow_partition_method=None, fname='physics_checks.csv', points=None):
+        """
+        Run physics-consistency checks on the downscaled outputs (see topo_checks.py) and save the report to csv.
+
+        Args:
+            strict (bool or str): False to only report; True or 'error' to raise on errors; 'warning' to raise on
+                warnings too
+            snow_partition_method (str or list): partition method(s) to probe, e.g. 'continuous'
+            fname (str): report file name, written to the outputs directory
+            points (list): optional subset of point_name to check
+
+        Returns:
+            dataframe: report with one row per check and variable
+        """
+        ds_down = getattr(self, 'downscaled_pts', None)
+        if ds_down is None:
+            ds_down = tu.read_downscaled(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
+        report = tc.run_all_checks(ds_down,
+                                   ds_solar=self.ds_solar,
+                                   df_centroids=self.toposub.df_centroids,
+                                   ds_param=self.toposub.ds_param,
+                                   snow_partition_method=snow_partition_method,
+                                   points=points)
+        report.to_csv(self.config.outputs.path / fname, index=False)
+        print(tc.summarize(report, min_status='warning'))
+        print(f'---> Physics-consistency report saved to {fname}')
+        if strict:
+            tc.raise_on_failure(report, level='error' if strict is True else strict)
+        return report
 
     def get_era5(self):
         # to maintain backward compatibility and simplicity of use.
