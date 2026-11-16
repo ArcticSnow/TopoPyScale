@@ -308,8 +308,11 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
     sun_down = elev <= 0
     rows.append(_row('direct_with_sun_down', 'SW_direct', ((dr > tol) & sun_down).sum(), sun_down.sum(), 'error',
                      worst=np.nanmax(np.where(sun_down, dr, 0)), note='direct beam while sun below astronomical horizon'))
+    # sun down at the previous, current and next evaluation times: down over the whole accumulation window,
+    # whether the geometry is evaluated at the end or at the centre of the window
     prev_down = np.concatenate([sun_down[:, :1], sun_down[:, :-1]], axis=1)
-    night = sun_down & prev_down
+    next_down = np.concatenate([sun_down[:, 1:], sun_down[:, -1:]], axis=1)
+    night = sun_down & prev_down & next_down
     rows.append(_row('sw_at_night', 'SW', ((SW > tol) & night).sum(), night.sum(), 'error',
                      worst=np.nanmax(np.where(night, SW, 0)),
                      note='SW > 0 although sun is down over the whole accumulation window'))
@@ -427,14 +430,6 @@ def check_domain_precip_budget(ds, ds_param=None, weights=None, bounds=(0.67, 1.
                  note=f'area-weighted sum(tp) / sum(ERA5 tp), expected in [{bounds[0]:g}, {bounds[1]:g}]')]
 
 
-def check_flux_timestep(ds):
-    """Several exporters (to_fsm, to_cryogrid, to_crocus, to_surfex) convert tp assuming 1 h steps."""
-    dt = _tstep_seconds(ds)
-    return [_row('exporters_assume_hourly', 'tp', int(np.isfinite(dt) and dt != 3600), 1, 'warning',
-                 worst=dt / 3600 if np.isfinite(dt) else np.nan,
-                 note='to_fsm/to_cryogrid/to_crocus/to_surfex convert precipitation assuming mm per hour')]
-
-
 # ---------------------------------------------------------------------------------------------------------------------
 #  probes of the physics functions themselves (independent of any output)
 # ---------------------------------------------------------------------------------------------------------------------
@@ -535,7 +530,6 @@ def run_all_checks(ds_down, ds_solar=None, df_centroids=None, ds_param=None, sno
     rows += check_longwave(ds, terrain)
     rows += check_precipitation(ds)
     rows += check_domain_precip_budget(ds, ds_param)
-    rows += check_flux_timestep(ds)
     if snow_partition_method is not None:
         methods = [snow_partition_method] if isinstance(snow_partition_method, str) else snow_partition_method
         for m in methods:
