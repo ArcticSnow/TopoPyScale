@@ -34,7 +34,7 @@ mp.downscale_climate()
 
 # ========= STEP 5 ==========
 # explore the downscaled dataset. For instance the temperature difference between each point and the first one
-(mp.downscaled_pts.t-mp.downscaled_pts.t.isel(point_id=0)).plot()
+(mp.downscaled_pts.t-mp.downscaled_pts.t.isel(point_name=0)).plot()
 plt.show()
 
 # ========= STEP 6 ==========
