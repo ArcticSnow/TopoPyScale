@@ -14,19 +14,58 @@ import warnings
 import xarray as xr
 
 
-def read_downscaled(path='outputs/down_pt*.nc'):
+def as_str(values):
+    """Fixed-width unicode array (zarr v3 returns numpy StringDType, which cannot be cast with astype(str))."""
+    values = np.asarray(values)
+    return np.array([str(v) for v in values.ravel()]).reshape(values.shape)
+
+
+def open_downscaled_store(store):
     """
-    Function to read downscaled points saved into netcdf files into one single dataset using Dask
+    Open the zarr store of downscaled points (dimensions point_name, time), lazily with Dask.
 
     Args:
-        path (str): path and pattern to use into xr.open_mfdataset
+        store (str): path to the zarr store, e.g. outputs/downscaled/down.zarr
 
     Returns:
-        dataset: merged dataset readily to use and loaded in chuncks via Dask
+        dataset: point_name as plain strings
     """
+    ds = xr.open_zarr(str(store))
+    return ds.assign_coords(point_name=as_str(ds.point_name.values))
 
-    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested')
-    return down_pts
+
+def open_netcdf_stack(files, concat_dim):
+    """
+    Open netcdf files one by one (lazily, with Dask) and concatenate them along concat_dim.
+
+    Args:
+        files (list): netcdf files, in the order of concatenation
+        concat_dim (str): dimension along which to concatenate
+
+    Returns:
+        dataset
+    """
+    files = list(files)
+    if not files:
+        raise FileNotFoundError('No file to open')
+    return xr.concat([xr.open_dataset(f, chunks={}) for f in files], dim=concat_dim)
+
+
+def read_downscaled(path='outputs/downscaled/down.zarr'):
+    """
+    Read downscaled points as one dataset, lazily with Dask.
+
+    Args:
+        path (str): zarr store of downscaled points (*.zarr), or path pattern of per-point netcdf files written by
+            the deprecated netcdf backend (e.g. outputs/downscaled/down_pt_*.nc)
+
+    Returns:
+        dataset: dimensions point_name, time
+    """
+    path = str(path)
+    if path.rstrip('/').endswith('.zarr'):
+        return open_downscaled_store(path)
+    return open_netcdf_stack(sorted(glob.glob(path)), concat_dim='point_name')
 
 
 def ds_to_indexed_dataframe(ds):

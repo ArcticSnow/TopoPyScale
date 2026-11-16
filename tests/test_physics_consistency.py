@@ -38,6 +38,8 @@ def downscale(case, rows, backend, workdir, horizon_deg=0., **kwargs):
     workdir.mkdir(parents=True, exist_ok=True)
     ds_solar = quiet(syn.solar_geometry, case, rows, workdir)
     hor = syn.horizon_da(rows, horizon_deg)
+    if backend == 'zarr':
+        return quiet(syn.run_zarr, case, rows, ds_solar, hor, workdir, **kwargs), ds_solar
     out = [quiet(syn.run, case, r, ds_solar, hor, workdir, backend=backend, **kwargs) for r in rows]
     ds = xr.concat(out, dim='point_name') if len(out) > 1 else out[0].expand_dims('point_name')
     return ds, ds_solar

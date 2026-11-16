@@ -158,15 +158,58 @@ def run(case, row, ds_solar, hor, workdir, backend='netcdf', interp_method='idw'
         with xr.open_dataset(out / 'downscaled' / f'down_pt_{row.point_name}.nc', engine='h5netcdf') as ds:
             ds = ds.load()
     elif backend == 'zarr':
-        from TopoPyScale import topo_scale_zarr as tz
+        return run_zarr(case, [row], ds_solar, hor, workdir, interp_method=interp_method, lw_terrain=lw_terrain,
+                        precip_lapse=precip_lapse).isel(point_name=0)
+    else:
+        raise ValueError(backend)
+    return ds.assign_coords(point_name=row.point_name)
+
+
+def era5_store(case, workdir):
+    """Write the synthetic ERA5 case as a zarr store with the layout of fetch_era5.netcdf_to_zarr()."""
+    store = Path(workdir) / 'ERA5.zarr'
+    if not store.exists():
         plev = case.plev.copy(deep=True)
         plev['z'] = plev.z * G
         surf = case.surf.rename({'z': 'z_surf'}).copy(deep=True)
         surf['z_surf'] = surf.z_surf * G
-        subset = xr.merge([plev, surf])
-        meta.update(output_directory=Path(workdir))
-        ds = tz.ClimateDownscaler.downscale_atmo(None, row, subset, meta, sol, hor).load()
-        ds = ds.drop_vars(['point_ind', 'reference_time'], errors='ignore')
-    else:
-        raise ValueError(backend)
-    return ds.assign_coords(point_name=row.point_name)
+        xr.merge([plev, surf]).astype('float32').to_zarr(store, mode='w', zarr_format=3)
+    return store
+
+
+def run_zarr(case, rows, ds_solar, hor, workdir, interp_method='idw', lw_terrain=False, precip_lapse=False,
+             point_block=100, time_block=None, n_core=1, store_name='down.zarr'):
+    """Downscale several points with the zarr engine. Returns a loaded dataset (point_name, time)."""
+    from TopoPyScale import topo_scale_zarr as tz
+    workdir = Path(workdir)
+    df = pd.DataFrame([vars(r) for r in rows])
+    cd = tz.ClimateDownscaler(era5_store(case, workdir), workdir / 'downscaled', df, hor, ds_solar, EPSG,
+                              case.start, case.end, '1h', interp_method=interp_method, lw_terrain_flag=lw_terrain,
+                              precip_lapse_rate_flag=precip_lapse, store_name=store_name, point_block=point_block,
+                              time_block=time_block)
+    return cd.downscale(n_core=n_core).load()
+
+
+def write_era5_netcdf(case, folder, n_parts=2, cds_beta=False):
+    """
+    Write the case as raw ERA5-like netcdf files PLEV_<part>.nc / SURF_<part>.nc (geopotential in m2 s-2), split in
+    time. With cds_beta, use the new CDS names (valid_time, pressure_level), descending levels and an expver dimension.
+    """
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    plev = case.plev.copy(deep=True)
+    plev['z'] = plev.z * G
+    surf = case.surf.copy(deep=True)
+    surf['z'] = surf.z * G
+    edges = np.linspace(0, case.tvec.size, n_parts + 1).astype(int)
+    for k in range(n_parts):
+        p = plev.isel(time=slice(edges[k], edges[k + 1]))
+        s = surf.isel(time=slice(edges[k], edges[k + 1]))
+        if cds_beta:
+            p = p.sortby('level', ascending=False).rename({'time': 'valid_time', 'level': 'pressure_level'})
+            s = s.rename({'time': 'valid_time'})
+            # ERA5 / ERA5T mix: values in the first expver, NaN in the second
+            s = xr.concat([s, s.where(False)], dim=pd.Index([1, 5], name='expver'))
+        p.to_netcdf(folder / f'PLEV_{k:02d}.nc')
+        s.to_netcdf(folder / f'SURF_{k:02d}.nc')
+    return folder

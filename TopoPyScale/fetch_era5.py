@@ -238,29 +238,21 @@ class FetchERA5():
                 output_format=output_format
             )
 
-    def to_zarr(self):
+    def to_zarr(self, zarr_store=None, time_chunk=720):
+        """
+        Convert the yearly PLEV/SURF netcdf files of the climate folder to the zarr store used for downscaling.
 
-        # extract chunk size for time and pressure level
-        nlevels = len(self.config.climate[self.config.project.climate].plevels)
-        ntime = int(self.config.climate.era5.timestep[:-1]) * 365
-
-        print("Be aware that the conversion to Zarr requires plenty of memory, and may crash the console if resources are not sufficient")
-
-        convert_netcdf_stack_to_zarr(
-            path_to_netcdfs= str(self.config.climate.path / 'yearly'),
-            zarrout= str(self.config.climate.path/'ERA5.zarr'), 
-            chunks={'latitude':3, 'longitude':3, 'time':ntime, 'level':nlevels}, 
-            compressor=None,
-            plev_name='PLEV_*.nc',
-            surf_name='SURF_*.nc',
-            parallelize=False,
-            n_cores=self.config.project.parallelization.setting.multicore.CPU_cores
-            )
-
-
-
-
-
+        Args:
+            zarr_store (str): name of the store in the climate folder. Default: climate.<source>.zarr_store or ERA5.zarr
+            time_chunk (int): number of time steps per chunk
+        """
+        name = zarr_store or self.config.climate[self.config.project.climate].zarr_store or 'ERA5.zarr'
+        yearly = self.config.climate.path / 'yearly'
+        netcdf_to_zarr(path_to_netcdfs=yearly if yearly.is_dir() else self.config.climate.path,
+                       zarrout=self.config.climate.path / name,
+                       plev_name='PLEV_*.nc',
+                       surf_name='SURF_*.nc',
+                       time_chunk=time_chunk)
 
 
 def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
@@ -272,144 +264,111 @@ def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
     dp.to_zarr(zarrstore, mode='a',region='auto', align_chunks=True)
     dp = None
 
+def _standardize_era5(ds):
+    """Harmonize ERA5 netcdf files: CDS-beta dimension names, ERA5/ERA5T expver, ascending pressure levels."""
+    ds = ds.rename({k: v for k, v in {'valid_time': 'time', 'pressure_level': 'level'}.items()
+                    if k in ds.variables or k in ds.dims})
+    if 'expver' in ds.dims:
+        # ERA5 (first expver) completed by ERA5T for the most recent dates
+        parts = [ds.isel(expver=i, drop=True) for i in range(ds.sizes['expver'])]
+        merged = parts[0]
+        for part in parts[1:]:
+            merged = merged.combine_first(part)
+        ds = merged
+    ds = ds.drop_vars([c for c in ['number', 'expver'] if c in ds.variables])
+    if 'level' in ds.dims:
+        ds = ds.sortby('level')
+    return ds
+
+
+def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+                   zarrout='inputs/climate/ERA5.zarr',
+                   plev_name='PLEV_*.nc',
+                   surf_name='SURF_*.nc',
+                   time_chunk=720,
+                   chunks=None,
+                   max_chunk_mb=16,
+                   compressor=None):
+    """
+    Convert pairs of PLEV and SURF netcdf files (e.g. yearly files) into one zarr store, file by file.
+
+    Each pair is opened with xr.open_dataset, merged (the surface geopotential is renamed z_surf), cast to float32
+    and appended along time. The store holds z, t, q, u, v, r (time, level, latitude, longitude) and z_surf, sp, t2m,
+    d2m, tp, ssrd, strd (time, latitude, longitude), the layout read by topo_scale_zarr.ClimateDownscaler.
+
+    Args:
+        path_to_netcdfs (str): folder of the netcdf files
+        zarrout (str): output zarr store (overwritten)
+        plev_name (str): pattern of the pressure level files, * standing for the period (e.g. the year)
+        surf_name (str): pattern of the surface files
+        time_chunk (int): number of time steps per chunk
+        chunks (dict): optional chunk sizes per dimension, overriding the automatic choice
+        max_chunk_mb (float): target size of a pressure-level chunk, used to choose the spatial chunk size
+        compressor (obj): zarr codec. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle')
+    """
+    pn, pz = Path(path_to_netcdfs), Path(zarrout)
+
+    def by_period(pattern):
+        prefix, suffix = pattern.split('*')
+        return {f.name[len(prefix):len(f.name) - len(suffix)]: f for f in pn.glob(pattern)}
+
+    plev_files, surf_files = by_period(plev_name), by_period(surf_name)
+    periods = sorted(set(plev_files) & set(surf_files))
+    unmatched = sorted(set(plev_files) ^ set(surf_files))
+    if unmatched:
+        warnings.warn(f'Files without PLEV/SURF counterpart are skipped: {unmatched}')
+    if not periods:
+        raise FileNotFoundError(f'No pair of {plev_name} and {surf_name} files in {pn}')
+    if compressor is None:
+        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+
+    last_time = None
+    for i, period in enumerate(periods):
+        print(f'---> Converting {plev_files[period].name} and {surf_files[period].name} to {pz.name}')
+        with xr.open_dataset(plev_files[period]) as dp, xr.open_dataset(surf_files[period]) as du:
+            dp = _standardize_era5(dp)
+            du = _standardize_era5(du).rename({'z': 'z_surf'})
+            try:
+                ds = xr.merge([dp, du], join='exact', combine_attrs='drop_conflicts')
+            except ValueError as e:
+                raise ValueError(f'{plev_files[period].name} and {surf_files[period].name} do not share the same '
+                                 f'time, latitude and longitude coordinates: {e}')
+            ds = ds.assign({v: ds[v].astype('float32') for v in ds.data_vars}).load()
+        if last_time is not None and ds.time.values[0] <= last_time:
+            raise ValueError(f'{plev_files[period].name} overlaps the previous file (starts at {ds.time.values[0]})')
+        last_time = ds.time.values[-1]
+        if i == 0:
+            nlev = ds.sizes['level']
+            spatial = max(1, int(np.sqrt(max_chunk_mb * 1e6 / (time_chunk * nlev * 4))))
+            ch = {'time': time_chunk, 'level': nlev, 'latitude': min(ds.sizes['latitude'], spatial),
+                  'longitude': min(ds.sizes['longitude'], spatial)}
+            ch.update(chunks or {})
+            encoding = {v: {'compressors': compressor, 'chunks': tuple(ch[d] for d in ds[v].dims)}
+                        for v in ds.data_vars}
+            ds.to_zarr(pz, mode='w', zarr_format=3, encoding=encoding)
+        else:
+            ds.to_zarr(pz, mode='a', append_dim='time')
+    print(f'---> {pz} written ({len(periods)} periods)')
+    return pz
+
+
 def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
-                                    zarrout='inputs/climate/ERA5.zarr', 
-                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13}, 
+                                    zarrout='inputs/climate/ERA5.zarr',
+                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13},
                                     compressor=None,
                                     plev_name='PLEV_*.nc',
                                     surf_name='SURF_*.nc',
                                     parallelize=False,
                                     n_cores=4):
     """
-    Function to convert a stack of netcdf PLEV and SURF files to a zarr store. Optimizing chunking based on auto detection by dask.
-    
-    Args:
-        path_to_netcdfs (str): path to yearly netcdf files of PLEV and SURF
-        zarrout (str): path and name of the output zarr store to be created 
-        chunks (dict): dictionnary indicating the size of the chunk for the output zarr store. Good practice to have time chunk equivalent to a yearly file size. 
-        compressor (obj): Compressor object to use for encoding. See Zarr compression. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
-        plev_name (str): file pattern of the netcdf containing the pressure levels. Use * instead of the year 
-        surf_name (str): file pattern of the netcdf containing the surface level. Use * instead of the year 
-
+    Deprecated, use netcdf_to_zarr(). Kept for backward compatibility: converts the files one pair at a time.
     """
-    pn = Path(path_to_netcdfs)
-    pz = Path(zarrout)
-
-    # lazy load stack of PLEV netcdf to grab dimensions and attributes
-
-    ds = xr.open_mfdataset(str(pn / plev_name))
-    #ds = xr.open_mfdataset(str(pn / plev_name), parallel=True, chunks='auto')
-    tvec = ds.time.values
-    za1 = dask.array.empty((len(tvec), ds.level.shape[0], ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
-    za2 = dask.array.empty((len(tvec), ds.latitude.shape[0], ds.longitude.shape[0] ), dtype='float32')
-
-    dd = xr.Dataset(
-        coords={
-            'time':tvec,
-            'longitude': ds.longitude.values,
-            'latitude': ds.latitude.values,
-            'level': ds.level.values,
-            },
-        data_vars={
-            'z': (('time', 'level', 'latitude', 'longitude'),  za1),
-            't': (('time', 'level', 'latitude', 'longitude'),  za1),
-            'u': (('time', 'level', 'latitude', 'longitude'),  za1),
-            'v': (('time', 'level', 'latitude', 'longitude'),  za1),
-            'q': (('time', 'level', 'latitude', 'longitude'),  za1),
-            'r': (('time', 'level', 'latitude', 'longitude'),  za1),
-            'z_surf': (('time', 'latitude', 'longitude'),  za2),
-            'd2m': (('time', 'latitude', 'longitude'),  za2),
-            'sp': (('time', 'latitude', 'longitude'),  za2),
-            'strd': (('time', 'latitude', 'longitude'),  za2),
-            'ssrd': (('time', 'latitude', 'longitude'),  za2),
-            'tp': (('time', 'latitude', 'longitude'),  za2),
-            't2m': (('time', 'latitude', 'longitude'),  za2),
-            },
-        attrs=ds.attrs
-    )
-
-    chunks_plev = chunks
-    chunks_surf = {'time':chunks.get('time'), 'latitude':chunks.get('latitude'),'longitude':chunks.get('longitude')}
-
-    #dd = dd.chunk(chunks=chunks).persist()
-    # Suggested by leChat
-    dd = dd.chunk(chunks=chunks)
-
-    vars = list(ds.keys())
-    if compressor is None:
-        compressor = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
-    encoder = dict(zip(vars, [{'compressors': compressor}]*len(vars)))
-    dd.to_zarr(zarrout, mode='w', zarr_format=3, encoding=encoder)
-    dd.close()
-    del dd
-    ds.close()
-    del ds
-
-    zarr_store = xr.open_zarr(str(pz))
-    current_time_length = zarr_store.sizes['time']
-    zarr_store.close()
-
-    if not parallelize:
-        # loop through the years. This could be sent to multicore eventually
-        for year in pd.to_datetime(tvec).year.unique():
-
-            # print(f"---> Appending PLEV year {year} to {pz.name}")
-            # # Open the current year's NetCDF file
-            # with xr.open_dataset(str(pn / (plev_name.replace('*', f'{year}'))), chunks='auto') as dp:
-            #     # Number of time steps in the current year
-            #     year_time_length = dp.sizes['time']
-            #
-            #     # Compute start and end indices for the Zarr archive
-            #     start_idx = current_time_length
-            #     end_idx = start_idx + year_time_length
-            #
-            #     # Append the data to the Zarr archive
-            #     dp.to_zarr(
-            #         str(pz),
-            #         mode='a',
-            #         region={'time': slice(start_idx, end_idx)},
-            #         append_dim='time',
-            #         align_chunks=True  # Ensure chunks are aligned
-            #     )
-            #
-            #     # Update the current time length for the next iteration
-            #     current_time_length = end_idx
-            #
-            #
-            # print(f"---> Appending SURF year {year} to {pz.name}")
-            # # Repeat for the SURF file
-            # with xr.open_dataset(str(pn / (surf_name.replace('*', f'{year}'))), chunks='auto') as du:
-            #     du = du.rename({'z': 'z_surf'})
-            #     du.to_zarr(
-            #         str(pz),
-            #         mode='a',
-            #         region={'time': slice(start_idx, end_idx)},
-            #         append_dim='time',
-            #         align_chunks=True  # Ensure chunks are aligned
-            #     )
-
-
-            print(f"---> Appending PLEV year {year} to {pz.name}")
-            dp = xr.open_dataset(str(pn / (plev_name.replace('*',f'{year}'))),chunks='auto')
-            dp.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
-            dp.close()
-            del dp
-
-            print(f"---> Appending SURF year {year} to {pz.name}")
-            du = xr.open_dataset(str(pn / (surf_name.replace('*',f'{year}'))), chunks='auto')
-            du = du.rename({'z':'z_surf'})
-            du.to_zarr(str(pz), mode='a',region='auto', align_chunks=True)
-            du.close()
-            del du
-    else:
-        flist = pn.glob(plev_name)
-        fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(False)*len(list(flist))])
-        tu.multicore_pooling(append_nc_to_zarr_region, fun_param, n_cores)
-
-        flist = pn.glob(surf_name)
-        fun_param = zip(list(np.unique(dd.time.dt.year.values).astype(int)), list(flist), [str(pz)*len(list(flist))], [str(True)*len(list(flist))])
-        tu.multicore_pooling(append_nc_to_zarr_region, fun_param, n_cores)
-    print("Conversion done :)")
+    warnings.warn('convert_netcdf_stack_to_zarr() is deprecated, use netcdf_to_zarr()', FutureWarning)
+    chunks = dict(chunks or {})
+    time_chunk = chunks.pop('time', 720)
+    chunks.pop('level', None)
+    return netcdf_to_zarr(path_to_netcdfs, zarrout, plev_name, surf_name, time_chunk=time_chunk, chunks=chunks,
+                          compressor=compressor)
 
 
 def to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':8760, 'level':7}, compressor=None, mode='w'):
@@ -932,9 +891,9 @@ def unzip_file(file_path):
             merged_file_path = os.path.join(os.path.dirname(zip_file_path), os.path.basename(zip_file_path).replace('.zip', '.nc'))
             try:
                 # Combine all `.nc` files
-                merged_ds = xr.open_mfdataset(str(Path(unzip_dir) / "*.nc"))
-                #datasets = [xr.open_dataset(nc_file, engine='netcdf4') for nc_file in nc_files]
-                #merged_ds = xr.merge(datasets, compat='override')  # Use override to handle conflicting metadata like 'expver'
+                datasets = [xr.open_dataset(nc_file).load() for nc_file in sorted(nc_files)]
+                merged_ds = xr.merge(datasets, compat='override')  # override conflicting metadata like 'expver'
+                [d.close() for d in datasets]
                 merged_ds.to_netcdf(merged_file_path)
                 print(f"Merged .nc files into {merged_file_path}.")
             except:

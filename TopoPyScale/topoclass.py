@@ -199,17 +199,18 @@ class Topoclass(object):
         else:
             print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
 
-        flist = glob.glob(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
-        if len(flist) > 0:
-            print('---> Loading downscaled points \n ...')
-            self.downscaled_pts = xr.open_mfdataset(
-                f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}',
-                concat_dim='point_name',
-                combine='nested')
-                    #parallel=True)
-            print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
+        store = self.config.outputs.downscaled / self._downscaled_store_name()
+        if store.exists():
+            self.downscaled_pts = tu.open_downscaled_store(store)
+            print(f'---> Downscaled points {store.name} exists and loaded')
+        elif self.config.outputs.file.downscaled_pt and \
+                glob.glob(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}'):
+            # netcdf files written by the deprecated netcdf backend
+            self.downscaled_pts = tu.read_downscaled(
+                f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
+            print(f'---> Downscaled point files {self.config.outputs.file.downscaled_pt} loaded')
         else:
-            print(f'-> WARNING: Downscale point files {self.config.outputs.file.downscaled_pt} not found')
+            print(f'-> WARNING: Downscaled points {store.name} not found')
 
     class Toposub:
         """
@@ -697,72 +698,9 @@ class Topoclass(object):
             del ds
 
         else:
-            if self.config.climate.era5.zarr_store is None:
-                ta.downscale_climate(self.config.project.directory,
-                                     self.config.climate.path,
-                                     self.config.outputs.path,
-                                     self.toposub.df_centroids,
-                                     self.da_horizon,
-                                     self.ds_solar,
-                                     self.config.dem.epsg,
-                                     self.config.project.start,
-                                     self.config.project.end,
-                                     self.config.climate[self.config.project.climate].timestep,
-                                     self.config.toposcale.interpolation_method,
-                                     self.config.toposcale.LW_terrain_contribution,
-                                     self.config.climate.precip_lapse_rate,
-                                     self.config.outputs.file.downscaled_pt,
-                                     self.config.project.parallelization.setting.multicore.CPU_cores,
-                                     precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor
-                                     or ta.PRECIP_LAPSE_MAX_FACTOR)
-            
-            elif self.config.climate.era5.zarr_store is not None:
-
-                if (self.config.outputs.variables is None) or (self.config.outputs.variables=='all'):
-                    self.config.outputs.variables = tz.varout_default
-
-
-                era5_zarr_path = self.config.climate.path / Path(self.config.climate.era5.zarr_store)
-                cda = tz.ClimateDownscaler(
-                            era5_zarr_path=era5_zarr_path,
-                            output_path=downscaled_dir,
-                            df_centroids=self.toposub.df_centroids,
-                            da_horizon=self.da_horizon,
-                            ds_solar=self.ds_solar,
-                            target_EPSG=self.config.dem.epsg,
-                            start_date=self.config.project.start,
-                            end_date=self.config.project.end,
-                            tstep=self.config.climate[self.config.project.climate].timestep,
-                            varout=self.config.outputs.variables,
-                            interp_method=self.config.toposcale.interpolation_method,
-                            lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
-                            precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
-                            file_pattern=self.config.outputs.file.downscaled_pt,
-                            store_name=self.config.outputs.file.zarr_store,
-                            precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor
-                            or ta.PRECIP_LAPSE_MAX_FACTOR
-                    )
-
-                if self.config.project.parallelization.downscaling_method.lower() == 'multicore':
-                    cda.multicore_parallel_process_multiple_subsets(n_core=self.config.project.parallelization.setting.multicore.CPU_cores)
-                
-                elif self.config.project.parallelization.downscaling_method.lower() == 'dask':
-                    dask_worker={
-                        'n_workers': self.config.project.parallelization.setting.dask.n_workers,
-                        'threads_per_worker': self.config.project.parallelization.setting.dask.threads_per_worker,
-                        'memory_target_fraction': self.config.project.parallelization.setting.dask.memory_target_fraction,
-                        'memory_limit': self.config.project.parallelization.setting.dask.memory_limit
-                    }
-                    cda.dask_parallel_process_multiple_subsets(dask_worker=self.config.project.dask_worker)
-                
-                else:
-                    raise ValueError('Parallelization method must be multicore (multiprocessing core library), or Dask')
-            else:
-                print('deadend')
-        print("debug 0")
-
-        self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
-        print("debug 1")
+            self.downscaled_pts = self._downscale_zarr(downscaled_dir)
+        if self.config.project.split.IO:
+            self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 
@@ -775,6 +713,53 @@ class Topoclass(object):
         checks = self.config.toposcale.physics_checks
         if checks:
             self.check_physics(strict=checks if checks in ['warning', 'error'] else False)
+
+    def _downscaled_store_name(self):
+        return self.config.outputs.file.zarr_store or 'down.zarr'
+
+    def _climate_store(self):
+        """Path of the climate zarr store; converted from the netcdf files of the climate folder if missing."""
+        name = self.config.climate[self.config.project.climate].zarr_store or 'ERA5.zarr'
+        store = self.config.climate.path / name
+        yearly = self.config.climate.path / 'yearly'
+        nc_dir = yearly if yearly.is_dir() else self.config.climate.path
+        rebuild = not store.exists()
+        if store.exists() and list(nc_dir.glob('PLEV_*.nc')):
+            # rebuild a store that does not cover the project period, e.g. after downloading more years
+            times = pd.DatetimeIndex(xr.open_zarr(str(store)).time.values)
+            start = pd.to_datetime(self.config.project.start)
+            end = pd.to_datetime(self.config.project.end) + pd.Timedelta('1D') - pd.Timedelta('1h')
+            rebuild = times.min() > start or times.max() < end
+            if rebuild:
+                print(f'---> {name} covers {times.min()} to {times.max()}, not the project period: rebuilding it')
+        if rebuild:
+            print(f'---> Converting the netcdf files of {nc_dir} to {name}')
+            fe.netcdf_to_zarr(path_to_netcdfs=nc_dir, zarrout=store)
+        return store
+
+    def _downscale_zarr(self, downscaled_dir):
+        """Downscale all points from the climate zarr store into one zarr store of downscaled points."""
+        variables = self.config.outputs.variables
+        cda = tz.ClimateDownscaler(
+            era5_zarr_path=self._climate_store(),
+            output_path=downscaled_dir,
+            df_centroids=self.toposub.df_centroids,
+            da_horizon=self.da_horizon,
+            ds_solar=self.ds_solar,
+            target_EPSG=self.config.dem.epsg,
+            start_date=self.config.project.start,
+            end_date=self.config.project.end,
+            tstep=self.config.climate[self.config.project.climate].timestep,
+            varout=None if variables in (None, 'all') else variables,
+            interp_method=self.config.toposcale.interpolation_method,
+            lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
+            precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
+            store_name=self._downscaled_store_name(),
+            precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or ta.PRECIP_LAPSE_MAX_FACTOR,
+            point_block=self.config.toposcale.point_block or 100,
+            time_block=self.config.toposcale.time_block)
+        n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
+        return cda.downscale(n_core=n_core)
 
     def check_physics(self, strict=False, snow_partition_method=None, fname='physics_checks.csv', points=None):
         """
@@ -792,7 +777,7 @@ class Topoclass(object):
         """
         ds_down = getattr(self, 'downscaled_pts', None)
         if ds_down is None:
-            ds_down = tu.read_downscaled(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
+            ds_down = tu.open_downscaled_store(self.config.outputs.downscaled / self._downscaled_store_name())
         report = tc.run_all_checks(ds_down,
                                    ds_solar=self.ds_solar,
                                    df_centroids=self.toposub.df_centroids,

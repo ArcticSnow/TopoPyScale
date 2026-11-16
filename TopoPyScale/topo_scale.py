@@ -41,6 +41,7 @@ import xarray as xr
 import dask
 from pyproj import Transformer
 import numpy as np
+import warnings
 import sys, time
 from types import SimpleNamespace
 import datetime as dt
@@ -67,75 +68,9 @@ def clear_files(path: Union[Path, str]):
     print(f'{path} cleaned')
 
 
-# Monthly precipitation adjustment coefficients [km-1] (Liston and Elder, 2006, MicroMet)
-PRECIP_LAPSE_COEF = np.array([0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
-PRECIP_LAPSE_MAX_FACTOR = 5.
-
-
-def _bracket(coords, value):
-    """Indices of the two coordinates bracketing value and the normalized position of value between them."""
-    coords = np.asarray(coords, dtype=float)
-    order = np.argsort(coords)
-    c = coords[order]
-    k = int(np.clip(np.searchsorted(c, value) - 1, 0, c.size - 2))
-    t = float(np.clip((value - c[k]) / (c[k + 1] - c[k]), 0, 1))
-    return order[k], order[k + 1], t
-
-
-def horizontal_weights(row, lats, lons, Xs, Ys, method='idw'):
-    """
-    Weights of the ERA5 nodes surrounding a point for the horizontal interpolation.
-
-    Args:
-        row: point with attributes x, y (DEM projection) and lat, lon (WGS84)
-        lats (array): latitudes of the nodes (1D)
-        lons (array): longitudes of the nodes (1D)
-        Xs (array): x coordinates of the nodes in the DEM projection (2D, latitude x longitude)
-        Ys (array): y coordinates of the nodes in the DEM projection (2D, latitude x longitude)
-        method (str): 'idw' (inverse squared distance) or 'linear' (bilinear in latitude/longitude)
-
-    Returns:
-        array: 2D weights (latitude x longitude), non-negative and summing to 1
-    """
-    if method == 'idw':
-        dist = np.sqrt((row.x - Xs) ** 2 + (row.y - Ys) ** 2)
-        if dist.min() < 1e-6:
-            # point on an ERA5 node: inverse distance is singular, the node value is the answer
-            weights = (dist == dist.min()).astype(float)
-        else:
-            weights = 1 / dist ** 2
-    elif method == 'linear':
-        i0, i1, ti = _bracket(lats, row.lat)
-        j0, j1, tj = _bracket(lons, row.lon)
-        weights = np.zeros((len(lats), len(lons)))
-        weights[i0, j0] += (1 - ti) * (1 - tj)
-        weights[i1, j0] += ti * (1 - tj)
-        weights[i0, j1] += (1 - ti) * tj
-        weights[i1, j1] += ti * tj
-    else:
-        raise ValueError(f'ERROR: interpolation method {method} not available. Use idw or linear')
-    return weights / weights.sum()
-
-
-def precip_lapse_factor(elev_diff, months, max_factor=PRECIP_LAPSE_MAX_FACTOR):
-    """
-    Precipitation elevation adjustment factor (1 + c dz) / (1 - c dz) of Liston and Elder (2006).
-
-    The factor diverges for c dz -> 1 (dz ~ 2.9 km with c = 0.35 km-1) and becomes negative beyond. c dz is therefore
-    bounded so that the factor stays within [1/max_factor, max_factor].
-
-    Args:
-        elev_diff (array): elevation of the point minus elevation of the ERA5 surface [m]
-        months (array): month of each time step (1-12)
-        max_factor (float): upper bound of the factor (> 1)
-
-    Returns:
-        array: adjustment factor
-    """
-    x = PRECIP_LAPSE_COEF[np.asarray(months) - 1] * np.asarray(elev_diff) * 1e-3
-    x_max = (max_factor - 1) / (max_factor + 1)
-    x = np.clip(x, -x_max, x_max)
-    return (1 + x) / (1 - x)
+# Shared helpers now live in toposcale_core.py (re-exported here for backward compatibility)
+from TopoPyScale.toposcale_core import (PRECIP_LAPSE_COEF, PRECIP_LAPSE_MAX_FACTOR, _bracket,  # noqa: F401
+                                        horizontal_weights, precip_lapse_factor)
 
 
 def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
@@ -436,6 +371,8 @@ def downscale_climate(project_directory,
                       n_core=4,
                       precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR):
     """
+    DEPRECATED: use topo_scale_zarr.ClimateDownscaler (Topoclass.downscale_climate does).
+
     Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic
 
     Args:
@@ -460,6 +397,10 @@ def downscale_climate(project_directory,
     global pt_downscale_interp
     global pt_downscale_radiations
     global _subset_climate_dataset
+
+    warnings.warn('topo_scale.downscale_climate() (netcdf backend) is deprecated and will be removed in a future '
+                  'release. Downscale from an ERA5 zarr store with topo_scale_zarr.ClimateDownscaler, as '
+                  'Topoclass.downscale_climate() does.', FutureWarning, stacklevel=2)
 
     # Use default file_pattern if None is passed
     if file_pattern is None:

@@ -27,7 +27,7 @@ def read_fsm_ds_with_mask(path):
     '''
     function to read fsm as ds, adding a dummy cluster for masked area
     '''
-    ds = xr.open_mfdataset(path, concat_dim='point_ind', combine='nested', parallel=True)
+    ds = tu.open_netcdf_stack(sorted(glob.glob(path)), concat_dim='point_ind')
     tp = ds.isel(point_ind=0).copy()
     tp['point_ind'] = -9999
     for var in list(tp.keys()):

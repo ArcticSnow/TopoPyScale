@@ -91,6 +91,12 @@ def _skip(check, variable, note):
             'frac_fail': np.nan, 'worst': np.nan, 'note': f'skipped: {note}'}
 
 
+def _as_str(values):
+    """Fixed-width unicode array (zarr v3 returns numpy StringDType, which cannot be cast with astype(str))."""
+    values = np.asarray(values)
+    return np.array([str(v) for v in values.ravel()]).reshape(values.shape)
+
+
 def _prepare(ds, df_centroids=None):
     """Return ds with a string `point_name` dimension (handles the zarr `point_ind` layout)."""
     if 'point_name' not in ds.dims:
@@ -101,7 +107,7 @@ def _prepare(ds, df_centroids=None):
             ds = ds.expand_dims('point_name')
         else:
             raise ValueError('Dataset must have a point_name (or point_ind + df_centroids) dimension')
-    return ds.assign_coords(point_name=ds.point_name.astype(str))
+    return ds.assign_coords(point_name=_as_str(ds.point_name.values))
 
 
 def _terrain(df_centroids, point_names):
@@ -115,7 +121,7 @@ def _terrain(df_centroids, point_names):
 def _align_solar(ds, ds_solar):
     if ds_solar is None:
         return None
-    sol = ds_solar.assign_coords(point_name=ds_solar.point_name.astype(str))
+    sol = ds_solar.assign_coords(point_name=_as_str(ds_solar.point_name.values))
     sol = sol.sel(point_name=ds.point_name.values)
     return sol.reindex(time=ds.time.values)
 
