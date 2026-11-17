@@ -629,8 +629,7 @@ class Topoclass(object):
         """Path of the climate zarr store; converted from the netcdf files of the climate folder if missing."""
         name = self.config.climate[self.config.project.climate].zarr_store or 'ERA5.zarr'
         store = self.config.climate.path / name
-        yearly = self.config.climate.path / 'yearly'
-        nc_dir = yearly if yearly.is_dir() else self.config.climate.path
+        nc_dir = fe.climate_netcdf_dir(self.config.climate.path)
         rebuild = not store.exists()
         if store.exists() and list(nc_dir.glob('PLEV_*.nc')):
             # rebuild a store that does not cover the project period, e.g. after downloading more years

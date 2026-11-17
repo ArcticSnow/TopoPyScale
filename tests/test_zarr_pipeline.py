@@ -116,6 +116,20 @@ def test_topoclass_downscales_from_netcdf_through_zarr(case, rows, inputs, tmp_p
         np.testing.assert_allclose(ds[v].values, ref[v].values, rtol=1e-6, atol=1e-6, err_msg=v)
 
 
+def test_climate_files_found_beside_an_empty_yearly_folder(case, tmp_path):
+    """Files placed directly in the climate folder (as in the examples), with the empty yearly/ of Topoclass."""
+    from munch import DefaultMunch
+    from TopoPyScale.topoclass import Topoclass
+    climate = tmp_path / 'climate'
+    syn.write_era5_netcdf(case, climate, n_parts=1)
+    (climate / 'yearly').mkdir()
+    obj = object.__new__(Topoclass)
+    obj.config = DefaultMunch.fromDict({'project': {'climate': 'era5', 'start': case.start, 'end': case.end},
+                                        'climate': {'path': climate, 'era5': {}}})
+    store = quiet(obj._climate_store)
+    assert xr.open_zarr(store).sizes['time'] == case.tvec.size
+
+
 def test_topoclass_rebuilds_store_not_covering_period(case, rows, inputs, tmp_path):
     from munch import DefaultMunch
     from TopoPyScale.topoclass import Topoclass

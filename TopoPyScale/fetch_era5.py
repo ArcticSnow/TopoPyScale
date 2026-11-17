@@ -257,12 +257,21 @@ class FetchERA5():
             time_chunk (int): number of time steps per chunk
         """
         name = zarr_store or self.config.climate[self.config.project.climate].zarr_store or 'ERA5.zarr'
-        yearly = self.config.climate.path / 'yearly'
-        netcdf_to_zarr(path_to_netcdfs=yearly if yearly.is_dir() else self.config.climate.path,
+        netcdf_to_zarr(path_to_netcdfs=climate_netcdf_dir(self.config.climate.path),
                        zarrout=self.config.climate.path / name,
                        plev_name='PLEV_*.nc',
                        surf_name='SURF_*.nc',
                        time_chunk=time_chunk)
+
+
+def climate_netcdf_dir(climate_path, plev_name='PLEV_*.nc'):
+    """
+    Folder of the PLEV/SURF netcdf files to convert to zarr: climate_path/yearly (where get_era5() merges the daily
+    files) if it holds some, else climate_path itself (files placed there by hand, as in the examples).
+    """
+    climate_path = Path(climate_path)
+    yearly = climate_path / 'yearly'
+    return yearly if any(yearly.glob(plev_name)) else climate_path
 
 
 def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
