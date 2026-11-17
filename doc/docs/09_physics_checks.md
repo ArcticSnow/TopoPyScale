@@ -83,7 +83,7 @@ supersaturation        q warning     432      432        1.0     1.128541       
 
 | Check | Status if failing | Tests that |
 |---|---|---|
-| `dem_orientation` | error | the DEM is north-up (`y` decreasing with row index). Aspect (from `gradient_d8`) and horizons (from `topocalc`) assume it; otherwise north and south are swapped |
+| `dem_orientation` | error | the DEM is north-up (`y` decreasing with row index). Aspect (from `gradient_d8`) assumes it; otherwise north and south are swapped |
 | `centroid_aspect` | error | for clusters steeper than 5°, `aspect` agrees within 10° with `atan2(aspect_sin, aspect_cos)`, the circular mean carried by the clustering features |
 | `time_monotonic`, `time_regular` | error, warning | time steps are strictly increasing and regular |
 | `tp_units_vs_timestep` | error | the `units` of `tp` agree with the time step (e.g. not `mm hr**-1` for 3 h data) |

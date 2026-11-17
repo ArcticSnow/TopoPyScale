@@ -91,6 +91,19 @@ TPS uses parallelization for a number of steps: threads to manage download reque
 `ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it.
 
 
+## Horizons
+
+`mp.compute_horizon()` computes the horizon angle of each point in the directions `dem.horizon_increments` degrees apart (the centres of the bins: -175, -165, ..., 175 for 10°; 0 = south, 90 = east, ±180 = north). The downscaling sets the direct beam to zero when the sun is below the horizon of the nearest direction. The horizons are saved to `outputs/da_horizon.nc`, with dimensions (`azimuth`, `point_name`), and as the columns `hori_azi_<azimuth>` of `df_centroids`.
+
+From each point, `topo_param.horizon_rays()` follows a straight ray in each direction, one cell at a time along the major grid axis, interpolating the DEM bilinearly. The observer is on the DEM surface at the exact position of the point. The horizon is the steepest elevation angle to the terrain along the ray, or 0 if no terrain is higher than the point. A ray stops at the edge of the DEM, or as soon as no terrain further away could be steeper than the horizon already found: the highest elevation of the DEM seen from that distance is below it. This shortcut does not change the result. No-data cells never form a horizon. Earth curvature is ignored, as in topocalc (about 0.1° for terrain 20 km away).
+
+Earlier versions computed the horizons of every DEM pixel with topocalc and took the pixel nearest to each point. topocalc follows lines of sight shared by many pixels: for a direction off the grid axes, each line is a staircase, and all lines step at the same columns (or rows). The pixels just before a step read their nearest terrain from the adjacent row. This leaves streaks in the horizon maps for directions a few degrees off the grid axes: strongest 5° off (azimuths ±5°, ±85°, ±95°, ±175° with a 10° increment, a step every 11 cells), still visible 15° off, and absent at 45°. On the Davos example (SRTM 30 m), at azimuth 95°, these pixels differ from a straight ray by 3.6° on average, and by more than 17° for 5% of them. Along the grid axes, where topocalc's lines are exact rows and columns, the rays give the same horizons as topocalc.
+
+Computing at the points only is also faster and lighter. For the 50 centroids of the Davos example (747 × 500 cells), it takes 0.15 s and writes 24 kB, instead of 7.5 s and 108 MB for the full grid. Each point and direction costs about 10 µs on that DEM. With `sampling.method: grid`, every pixel is a point: about 2 minutes for its 373,500 pixels on one core. Blocks of points run in `project.parallelization.setting.multicore.CPU_cores` threads.
+
+An existing `da_horizon.nc` is loaded if it holds the same points (names and positions), and recomputed otherwise. A file computed on the full DEM grid by an earlier version is still used, at the nearest pixel, with a warning: delete it to recompute the horizons at the points. For maps of horizons, `topo_param.compute_horizon()` still computes the full grid with topocalc.
+
+
 ## Clustering
 
 Clustering offer a number of possibilities. First, any DEM can by segmented by clustering (k-means) using a list of features. These features can be topographic or anything which can be labeled to the pixel level (e.g. watershed, glaciated land, etc.). The clustering will return a list of groups of pixels that fall within the same "cluster". The method implemented is K-means from [Scikit-learn](https://sklearn.org/stable/getting_started.html). To speed up the processing, TPS will use the routine `minibatch_kmean()` to spread the computational load on multiple core. 

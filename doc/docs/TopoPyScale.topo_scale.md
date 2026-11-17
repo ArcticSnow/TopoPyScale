@@ -23,10 +23,12 @@ down_pt => downscaled data time series (t, u, v, q, LW, SW, tp)
 ---------------
 - **g**
 - **R**
+- **PRECIP_LAPSE_COEF**
+- **PRECIP_LAPSE_MAX_FACTOR**
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L60"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L61"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `clear_files`
 
@@ -41,7 +43,7 @@ clear_files(path: Union[Path, str])
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L69"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L76"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `pt_downscale_interp`
 
@@ -49,14 +51,12 @@ clear_files(path: Union[Path, str])
 pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta)
 ```
 
-
-
-
+Function to interpolate atmospheric variables horizontally nd vertically to point 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L231"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L228"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `pt_downscale_radiations`
 
@@ -71,7 +71,7 @@ pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L346"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L359"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `downscale_climate`
 
@@ -91,9 +91,12 @@ downscale_climate(
     lw_terrain_flag=True,
     precip_lapse_rate_flag=False,
     file_pattern='down_pt*.nc',
-    n_core=4
+    n_core=4,
+    precip_lapse_rate_max_factor=5.0
 )
 ```
+
+DEPRECATED: use topo_scale_zarr.ClimateDownscaler (Topoclass.downscale_climate does). 
 
 Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on Toposcale logic 
 
@@ -103,44 +106,20 @@ Function to perform downscaling of climate variables (t,q,u,v,tp,SW,LW) based on
  
  - <b>`project_directory`</b> (str):  path to project root directory climate_directory (str): output_directory (path): 
  - <b>`df_centroids`</b> (dataframe):  containing a list of point for which to downscale (includes all terrain data) 
- - <b>`horizon_da`</b> (dataarray):  horizon angles for a list of azimuth 
+ - <b>`horizon_da`</b> (dataarray):  horizon angles [rad] of the points (azimuth, point_name) or of the DEM grid (azimuth, y, x) 
  - <b>`target_EPSG`</b> (int):  EPSG code of the DEM start_date: end_date: 
  - <b>`interp_method`</b> (str):  interpolation method for horizontal interp. 'idw' or 'linear' 
  - <b>`lw_terrain_flag`</b> (bool):  flag to compute contribution of surrounding terrain to LW or ignore 
- - <b>`tstep`</b> (str):  timestep of the input data, default = 1H 
+ - <b>`tstep`</b> (str):  timestep of the input data, default = 1h 
  - <b>`file_pattern`</b> (str):  filename pattern for storing downscaled points, default = 'down_pt_*.nc' 
  - <b>`n_core`</b> (int):  number of core on which to distribute processing 
+ - <b>`precip_lapse_rate_max_factor`</b> (float):  bound of the precipitation elevation factor, see precip_lapse_factor() 
 
 
 
 **Returns:**
  
  - <b>`dataset`</b>:  downscaled data organized with time, point_name, lat, long 
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale.py#L528"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `read_downscaled`
-
-```python
-read_downscaled(path='outputs/down_pt*.nc')
-```
-
-Function to read downscaled points saved into netcdf files into one single dataset using Dask 
-
-
-
-**Args:**
- 
- - <b>`path`</b> (str):  path and pattern to use into xr.open_mfdataset 
-
-
-
-**Returns:**
- 
- - <b>`dataset`</b>:  merged dataset readily to use and loaded in chuncks via Dask 
 
 
 

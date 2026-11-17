@@ -94,7 +94,7 @@ dem:
   path: inputs/dem/                       # (optional) folder of the DEM, relative to the project directory or absolute. Default inputs/dem/
   file: myDEM.tif                         # name of the DEM file. Must be a raster
   epsg: 32632                             # EPSG code of the DEM projection (projected, in metres)
-  horizon_increments: 10                  # horizon increment angle in degrees
+  horizon_increments: 10                  # azimuth step of the horizons computed at the points, in degrees
   solar_position_method: nrel_numpy       # (optional) pvlib solar position method. Default nrel_numpy
 
 #.....................................................................................................
@@ -138,7 +138,7 @@ outputs:
     df_centroids: df_centroids.pck      # (pickle)  dataframe containing the points of interest with their topographic features
     ds_param: ds_param.nc               # (netcdf)  topographic parameters (slope, aspect, etc.)
     ds_solar: ds_solar.nc               # (netcdf)  solar geometry
-    da_horizon: da_horizon.nc           # (netcdf)  horizon angles
+    da_horizon: da_horizon.nc           # (netcdf)  horizon angles of the points
     zarr_store: down.zarr               # (optional) store of the downscaled timeseries in outputs/downscaled/. Default down.zarr
     downscaled_pt: down_pt_*.nc         # (optional) only for the deprecated netcdf backend
 
@@ -202,7 +202,7 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 | path               | C:/GIS/DEMs     | no       | string                   | folder of the DEM file, relative to the project directory or absolute. Default `inputs/dem/` |
 | file               | ASTER_Finse.tif | yes      | `*.tif`                  | filename of the DEM |
 | epsg               | 32632           | yes      | EPSG CRS projection code | EPSG code of the DEM projection. Must be projected (metres). Also the projection of the `x,y` of a list of points |
-| horizon_increments | 10              | yes      | 1-90                     | sector angle to compute horizon angles. Unit: `degree` |
+| horizon_increments | 10              | yes      | 1-90                     | azimuth step of the horizons, computed at the points along straight rays (see [Horizons](07_features.md#horizons)). The azimuths are the centres of the bins: -175, -165, ..., 175 for 10. Unit: `degree` |
 | solar_position_method | nrel_numpy   | no       | nrel_numpy, or a method of [pvlib](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.solarposition.get_solarposition.html) | sun position algorithm. `nrel_numpy` (default) is vectorized over all points; other pvlib methods are run point by point and may require a specific [installation](01_install.md) |
 
 ### Sampling
@@ -246,7 +246,7 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 | df_centroids  | df_centroids.pck   | yes      | `*.pck`             | filename of the dataframe of the points/centroids where downscaling takes place. Saved in `outputs/` |
 | ds_param      | ds_param.nc        | yes      | `*.nc`              | filename of the dataset of DEM morphometrics and cluster labels. Saved in `outputs/` |
 | ds_solar      | ds_solar.nc        | yes      | `*.nc`              | filename of the solar geometry of the points. Saved in `outputs/` |
-| da_horizon    | da_horizon.nc      | yes      | `*.nc`              | filename of the DataArray of the DEM horizons. Saved in `outputs/` |
+| da_horizon    | da_horizon.nc      | yes      | `*.nc`              | filename of the horizon angles of the points (`azimuth`, `point_name`). Saved in `outputs/`, recomputed when the points change |
 | zarr_store    | down.zarr          | no       | string              | name of the zarr store of the downscaled timeseries, in `outputs/downscaled/`. Default down.zarr |
 | downscaled_pt | down_pt_*.nc       | no       | `*.nc` with a `*`   | file pattern of the deprecated netcdf backend (`topo_scale.downscale_climate()`), where `*` is the point name. Not used by the zarr pipeline |
 

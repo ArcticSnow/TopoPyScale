@@ -10,7 +10,134 @@
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L14"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L17"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `as_str`
+
+```python
+as_str(values)
+```
+
+Fixed-width unicode array (zarr v3 returns numpy StringDType, which cannot be cast with astype(str)). 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L23"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `horizon_matches_points`
+
+```python
+horizon_matches_points(da_horizon, df_points, tol=0.001)
+```
+
+True if da_horizon holds the horizons of exactly these points (names and positions within tol m). False for the full-grid horizons of earlier versions (dims azimuth, y, x). 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L41"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `horizon_at_points`
+
+```python
+horizon_at_points(da_horizon, df_points)
+```
+
+Horizon profile of each point of df_points, in the order of its rows. 
+
+
+
+**Args:**
+ 
+ - <b>`da_horizon`</b> (dataarray):  horizon angles [rad], either computed at the points (azimuth, point_name),  or on the full DEM grid by earlier versions (azimuth, y, x), then taken at the nearest pixel 
+ - <b>`df_points`</b> (dataframe):  points with columns point_name, x, y 
+
+
+
+**Returns:**
+ 
+ - <b>`dataarray`</b>:  horizon angles [rad], (azimuth, point) 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L64"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `open_downscaled_store`
+
+```python
+open_downscaled_store(store)
+```
+
+Open the zarr store of downscaled points (dimensions point_name, time), lazily with Dask. 
+
+
+
+**Args:**
+ 
+ - <b>`store`</b> (str):  path to the zarr store, e.g. outputs/downscaled/down.zarr 
+
+
+
+**Returns:**
+ 
+ - <b>`dataset`</b>:  point_name as plain strings 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L78"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `open_netcdf_stack`
+
+```python
+open_netcdf_stack(files, concat_dim)
+```
+
+Open netcdf files one by one (lazily, with Dask) and concatenate them along concat_dim. 
+
+
+
+**Args:**
+ 
+ - <b>`files`</b> (list):  netcdf files, in the order of concatenation 
+ - <b>`concat_dim`</b> (str):  dimension along which to concatenate 
+
+
+
+**Returns:**
+ dataset 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L95"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `read_downscaled`
+
+```python
+read_downscaled(path='outputs/downscaled/down.zarr')
+```
+
+Read downscaled points as one dataset, lazily with Dask. 
+
+
+
+**Args:**
+ 
+ - <b>`path`</b> (str):  zarr store of downscaled points (*.zarr), or path pattern of per-point netcdf files written by  the deprecated netcdf backend (e.g. outputs/downscaled/down_pt_*.nc) 
+
+
+
+**Returns:**
+ 
+ - <b>`dataset`</b>:  dimensions point_name, time 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L112"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `ds_to_indexed_dataframe`
 
@@ -36,7 +163,7 @@ By default the ds.to_dataframe() returns a multi-index dataframe. Here the coord
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L31"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L129"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `multicore_pooling`
 
@@ -55,7 +182,7 @@ Function to perform multiprocessing on n_cores
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L57"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L156"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `multithread_pooling`
 
@@ -74,7 +201,7 @@ Function to perform multiprocessing on n_threads
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L71"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L170"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `get_versionning`
 
@@ -89,7 +216,7 @@ get_versionning()
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L86"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L189"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `FsmMetParser`
 
@@ -102,12 +229,12 @@ Parses FSM forcing files from toposcale sims
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L105"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L208"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `FsmSnowParser`
 
 ```python
-FsmSnowParser(file, freq='1H', resample=False)
+FsmSnowParser(file, freq='1h', resample=False)
 ```
 
 parses FSM output fuiles 
@@ -115,7 +242,7 @@ parses FSM output fuiles
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L127"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `FsmPlot_ensemble`
 
@@ -145,20 +272,20 @@ Function to plot ensemble results for a given variable and point.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L155"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L258"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `SmetParser`
 
 ```python
-SmetParser(file, doresample=True, freq='1H', NA_val=-999)
+SmetParser(file, doresample=True, freq='1h', NA_val=-999)
 ```
 
-val_file = full path to a smet resample = "TRUE" or "FALSE" freq = '1D' '1H' etc 
+val_file = full path to a smet resample = "TRUE" or "FALSE" freq = '1D' '1h' etc 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L193"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L296"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `getCoordinatePixel`
 
@@ -194,22 +321,7 @@ getCoordinatePixel("/home/joel/sim/topoPyscale_davos/landform.tif", 9.80933, 46.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `val_plots`
-
-```python
-val_plots()
-```
-
-
-
-
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L303"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_utils.py#L407"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `time_vecs`
 
