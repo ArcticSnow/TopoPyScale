@@ -235,6 +235,7 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 | solar_constant          | 1361          | no       | float           | total solar irradiance at 1 AU [W m-2], scaled by the Earth-Sun distance to compute the top-of-atmosphere irradiance. Default 1361 |
 | solar_substeps          | 6             | no       | int             | number of sub-steps used to average the top-of-atmosphere irradiance over the radiation accumulation window. Default 6 |
 | physics_checks          | True          | no       | True, False, 'warning', 'error' | run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. Default False. See [Physics Checks](09_physics_checks.md) |
+| surface_effect          | {method: redcapp} | no   | dict            | surface-effect correction of air temperature and dew point: `method` none, redcapp or dreamit, plus `coefficients`, `context_dem`, `dewpoint`, `lw_consistent`, `allow_partial_window`, `diagnostics` (see the example above). Default off. See [Features](07_features.md#surface-effect-correction-of-air-temperature) |
 
 ### Outputs
 
