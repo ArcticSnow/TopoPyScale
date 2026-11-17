@@ -3,17 +3,20 @@
 <a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 # <kbd>module</kbd> `TopoPyScale.topo_export`
-Functions to export topo_scale output to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...) 
+Functions to export the downscaled points to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...) 
 
 S. Filhol, December 2021 
 
 TODO; 
 - SPHY forcing (grids) 
 
+**Global Variables**
+---------------
+- **MUSA_VARS**
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L26"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L31"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_scaling_and_offset`
 
@@ -33,15 +36,15 @@ Compute offset and scale factor for int conversion
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L45"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L53"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_netcdf`
 
 ```python
-to_netcdf(ds, fname='output.nc', variables=None, complevel=9)
+to_netcdf(ds, fname='output.nc', variables=None, complevel=9, n_bits=10)
 ```
 
-Generic function to save a datatset to one single compressed netcdf file 
+Generic function to save a datatset to one single compressed netcdf file. Float variables are packed as int16. 
 
 
 
@@ -50,11 +53,12 @@ Generic function to save a datatset to one single compressed netcdf file
  - <b>`fname`</b> (str):  name of export file 
  - <b>`variables`</b> (list str):  list of variable to export. Default exports all variables 
  - <b>`complevel`</b> (int):  Compression level. 1-9 
+ - <b>`n_bits`</b> (int):  number of bits used to pack float variables (at most 15). Resolution = range / (2**n_bits - 1) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L75"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L119"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_musa`
 
@@ -62,29 +66,74 @@ Generic function to save a datatset to one single compressed netcdf file
 to_musa(
     ds,
     df_pts,
-    da_label,
-    fname_met='musa_met.nc',
-    fname_labels='musa_labels.nc',
-    path='outputs/',
+    ds_param=None,
+    path=None,
+    layout='grid',
+    bbox=None,
+    stride=1,
+    cell_mask=None,
+    start=None,
+    end=None,
+    n_cores=4,
     climate_dataset_name='ERA5',
     project_authors='S. Filhol'
 )
 ```
 
-Function to export to MuSa standard. 
+Function to export downscaled timeseries as forcing for MuSA (https://github.com/ealonsogzl/MuSA). 
+
+TopoPyScale downscales to a set of points: the TopoSUB cluster centroids, or points given by the user, one timeseries each (ds). MuSA reads its forcing from netcdf files on a 2D grid of cells, and runs one simulation per cell where mask.nc is 1. This function writes the points onto such a grid, in one of two layouts. 
+
+Layouts: 
+    - 'grid' (default): fully distributed, one MuSA cell per DEM cell. Variables var(time, northing, easting)  on the DEM grid of ds_param, where northing and easting are the DEM y and x coordinates (DEM CRS). Every  DEM cell gets the timeseries of its TopoSUB cluster (ds_param.point_name). Cells without a cluster  (point_name '-9999'), outside bbox or outside cell_mask get NaN forcing and a NaN mask, so MuSA skips  them. MuSA saves the results of the cell at northing[i], easting[j] of mask.nc in cell_<i>_<j>.pkl.blp.  Needs the toposub sampling method. 
+    - 'points': one MuSA cell per point (e.g. per TopoSUB cluster). Variables var(time, y, x) with  y = point id and x = [0], i.e. a column of N cells. The point id is point_name as an integer: 0..N-1 for  toposub, 1..N for point sampling (0..N-1 in name order when the names are not numbers). MuSA saves the  results of the i-th point (0-based, sorted by point id) in cell_<i>_0.pkl.blp; with toposub, i is the  cluster number. 
+
+Both layouts hold the same values: a DEM cell in 'grid' has exactly the timeseries of its cluster in 'points'. With the same forcing and perturbations and without observations, MuSA therefore gives every cell of a cluster the same result. Use 'points' for open-loop runs (N simulations; map the results back to the DEM with ds_param.point_name), and 'grid' to assimilate observations that differ between DEM cells. 
+
+Saved in path: 
+    - forcing/YYYY-MM-DD.nc: one file per day (MuSA nc_forcing_path). MuSA reads every *.nc in this folder, so  the function stops if other netcdf files are in it, including days left from a longer export. 
+    - mask.nc: mask = 1 for the cells to simulate, NaN to skip them (MuSA nc_maks_path). MuSA needs NaN rather  than 0 for the cells to skip. Set cells to NaN to run a subset. 
+    - DEM.nc ('grid'): DEM(northing, easting), elevation in m (MuSA dem_path, nc_dem_varname = "DEM") 
+    - points_meta.csv ('points'): one row per point with musa_cell (the result file name), musa_y (point id),  musa_x (0), point_name, and x, y, lon, lat, elevation, slope, aspect, svf of the point from df_pts 
+
+Variables, in the units MuSA expects so that its forcing_multiplier and forcing_offset keep their defaults (1 and 0); float32, zlib-compressed, NaN where a cell has no forcing: 
+    - SW, LW: incoming shortwave and longwave radiation (W m-2), from SW and LW 
+    - t: air temperature (K) 
+    - RH: relative humidity (%), 100 * meteo_util.q_2_rh(t, p, q) 
+    - ws: wind speed (m s-1) 
+    - p: surface air pressure (Pa) 
+    - precip: precipitation rate (kg m-2 s-1), tp (mm per timestep) divided by the timestep in seconds 
+
+MuSA config.py settings for these files:  nc_forcing_path = "<path>/forcing/"  nc_maks_path = "<path>/mask.nc"  dem_path = "<path>/DEM.nc" and nc_dem_varname = "DEM" (layout 'grid', if MuSA needs the DEM)  forcing_var_names = {"SW_var_name": "SW", "LW_var_name": "LW", "Precip_var_name": "precip",  "Press_var_name": "p", "RH_var_name": "RH", "Temp_var_name": "t", "Wind_var_name": "ws"}  forcing_dim_names = {"lat_forz_var_name": "northing" ('grid') or "y" ('points'),  "lon_forz_var_name": "easting" ('grid') or "x" ('points'), "time_forz_var_name": "time"}  date_ini, date_end, dt: the values returned by this function MuSA also needs observation files on the same grid as mask.nc (nc_obs_path, obs_var_names, dates_obs), even for an open-loop run. They are not written here. 
+
+
 
 **Args:**
-  ds:  df_pts:  da_labels:  fname:  path: 
+ 
+ - <b>`ds`</b> (dataset):  downscaled points with dims (point_name, time) 
+ - <b>`df_pts`</b> (dataframe):  points or cluster centroids (df_centroids) 
+ - <b>`ds_param`</b> (dataset):  DEM parameters with the TopoSUB map point_name. Required for layout 'grid' 
+ - <b>`path`</b> (str or Path):  output folder. Default: outputs/musa_<layout> 
+ - <b>`layout`</b> (str):  'grid' (default) or 'points', see above 
+ - <b>`bbox`</b> (list):  [xmin, xmax, ymin, ymax] in DEM coordinates, to crop the DEM for layout 'grid' 
+ - <b>`stride`</b> (int):  keep every stride-th DEM cell for layout 'grid' 
+ - <b>`cell_mask`</b> (array):  boolean (y, x) array on the DEM grid of the cells to simulate for layout 'grid' 
+ - <b>`start`</b> (str):  first timestep to export. Default: first timestep of ds 
+ - <b>`end`</b> (str):  last timestep to export. Default: last timestep of ds 
+ - <b>`n_cores`</b> (int):  number of cores to write the daily files 
+ - <b>`climate_dataset_name`</b> (str):  name of the original climate dataset 
+ - <b>`project_authors`</b> (str):  authors of the dataset 
 
 
 
 **Returns:**
-  Save downscaled timeseries and toposub cluster mapping 
+ 
+ - <b>`dict`</b>:  layout, dims, grid shape, number of cells to simulate (n_cells), number of daily files, and  date_ini, date_end and dt for MuSA's config.py 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L156"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L302"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_cryogrid`
 
@@ -93,7 +142,7 @@ to_cryogrid(
     ds,
     df_pts,
     fname_format='Cryogrid_pt_*.nc',
-    path='outputs/',
+    path='outputs',
     label_map=False,
     da_label=None,
     snow_partition_method='continuous',
@@ -108,7 +157,7 @@ Function to export TopoPyScale downscaled dataset in a netcdf format compatible 
 
 **Args:**
  
- - <b>`ds`</b> (dataset):  downscaled values from topo_scale 
+ - <b>`ds`</b> (dataset):  downscaled points (Topoclass.downscaled_pts) 
  - <b>`df_pts`</b> (dataframe):  with metadata of all point of downscaling 
  - <b>`fname_format`</b> (str):  file name for output 
  - <b>`path`</b> (str):  path where to export files 
@@ -118,7 +167,7 @@ Function to export TopoPyScale downscaled dataset in a netcdf format compatible 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L245"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L392"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm2`
 
@@ -161,22 +210,18 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L651"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L798"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm2oshd`
 
 ```python
 to_fsm2oshd(
-    ds_down,
-    fsm_param,
+    mp,
     ds_tvt,
     simulation_path='fsm_sim',
     fname_format='fsm_',
     namelist_options=None,
-    n_digits=None,
     snow_partition_method='continuous',
-    cluster_method=True,
-    epsg_ds_param=2056,
     temperature_correction=0,
     forest_param_scaler={'vfhp': 100, 'fveg': 100, 'fves': 100, 'hcan': 100, 'lai5': 100}
 )
@@ -190,8 +235,7 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
 
 **Args:**
  
- - <b>`ds_down`</b>:   Downscaled weather variable dataset 
- - <b>`fsm_param`</b>:   terrain and canopy parameter dataset 
+ - <b>`mp`</b>:   TopoClass object 
  - <b>`df_centroids`</b>:   cluster centroids statistics (terrain + canopy) 
  - <b>`ds_tvt`</b> (dataset, int, float, or str):   transmisivity. Can be a dataset, a constant or 'svf_for' 
  - <b>`simulation_path`</b> (str):  'fsm_sim' 
@@ -200,12 +244,12 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
  - <b>`n_digits`</b> (int):  Number of digits (for filename system) 
  - <b>`snow_partition_method`</b> (str):  method for snow partitioning. Default: 'continuous' 
  - <b>`cluster_method`</b> (bool):  boolean to be True is using cluster appraoch 
- - <b>`epsg_ds_param`</b> (int):  epsg code of ds_parma: example: 2056 
+ - <b>`epsg_ds_param`</b> (int):  epsg code of ds_param: example: 2056 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L964"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1120"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm`
 
@@ -244,7 +288,7 @@ See README.md file from FSM source code for further details
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1012"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1168"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_TC`
 
@@ -267,7 +311,7 @@ format is a text file with the following columns datetime    TA  P       PRESS R
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1055"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1211"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_micromet_single_station`
 
@@ -304,7 +348,7 @@ year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1111"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1267"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_crocus`
 
@@ -337,7 +381,7 @@ Functiont to export toposcale output to CROCUS netcdf format. Generates one file
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1254"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1410"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_surfex`
 
@@ -379,7 +423,7 @@ Function to export toposcale output to Surfex forcing netcdf format. Generates o
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1416"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1572"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_snowpack`
 
@@ -404,7 +448,7 @@ SMET 1.1 ASCII [HEADER] station_id       = meteoc1 station_name     = WFJ2 latit
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1483"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1639"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_geotop`
 

@@ -53,7 +53,7 @@ print(tc.summarize(report))
 tc.raise_on_failure(report, level='error')
 ```
 
-The optional inputs widen the set of checks: `ds_solar` enables the shortwave geometry and timing checks, `df_centroids` the checks across points and on the clusters, and `ds_param` the DEM orientation check and the area weights of the precipitation budget. A check whose inputs are missing is reported with status `info` and a note starting with `skipped:`. Per-point netcdf files of the deprecated netcdf backend can be checked the same way, and older zarr outputs with a `point_ind` dimension are supported when `df_centroids` is given.
+The optional inputs widen the set of checks: `ds_solar` enables the shortwave geometry and timing checks, `df_centroids` the checks across points and on the clusters, and `ds_param` the DEM orientation check and the area weights of the precipitation budget. A check whose inputs are missing is reported with status `info` and a note starting with `skipped:`. Older zarr outputs with a `point_ind` dimension are supported when `df_centroids` is given.
 
 ### Reading the report
 
@@ -186,7 +186,7 @@ The exporters convert precipitation to rates with the actual time step of the da
 
 ## Test suite
 
-The folder `tests/` runs the actual downscaling code on synthetic ERA5 fields built in `tests/synthetic_era5.py`: the zarr engine (`topo_scale_zarr.py` with the array functions of `toposcale_core.py`) and, as an independent reference, the deprecated point-by-point netcdf backend (`topo_scale.py`). The synthetic atmosphere is hydrostatic with a constant lapse rate, a diurnal cycle and a known relative humidity. Accumulated fluxes are integrated minute by minute over the hour preceding each time stamp, as in ERA5. The correct downscaled values are therefore known analytically.
+The folder `tests/` runs the actual downscaling code on synthetic ERA5 fields built in `tests/synthetic_era5.py`: the zarr engine (`topo_scale_zarr.py` with the array functions of `toposcale_core.py`). The synthetic atmosphere is hydrostatic with a constant lapse rate, a diurnal cycle and a known relative humidity. Accumulated fluxes are integrated minute by minute over the hour preceding each time stamp, as in ERA5. The correct downscaled values are therefore known analytically.
 
 ```bash
 pip install pytest
@@ -199,9 +199,10 @@ The suite covers:
 - **Interpolation**: no NaN when a point sits on an ERA5 node; the nearest node dominates the weights; bilinear weights reproduce a linear field exactly; temperature and pressure follow the analytical profile at altitude; humidity keeps its precision in cold, dry air.
 - **Radiation**: the direct beam increases with altitude (Beer's law with the ERA5 surface pressure, as in TopoSCALE [@fiddes2014]); SW closure, beam bound, no SW at night and no direct beam behind the horizon on steep slopes; SW in phase with the sun; LW emissivity bounds.
 - **Precipitation**: the elevation factor is bounded, monotonic and symmetric (`f(−Δz) = 1/f(Δz)`); the rain/snow partition is closed and monotonic.
-- **DEM and clusters**: `topocalc` aspect and horizon conventions match the solar azimuth; cluster aspects are circular means (on a synthetic cone DEM).
+- **DEM and clusters**: the aspect and horizon conventions match the solar azimuth; cluster aspects are circular means (on a synthetic cone DEM).
+- **Horizons and sky view factor** (`tests/test_horizon_points.py`, `tests/test_svf.py`): rays are exact on a tilted plane and a wall, and equal an exhaustive search along the grid axes; no streaks at azimuths a few degrees off the axes; the line sweep equals the rays along the axes and diagonals and stays within 0.05° of them for 95% of the cells elsewhere; slope and aspect of a plane; svf = 1 on flat ground and (1 + cos S)/2 on a plane; svf within 0.005 of exact rays on a rough synthetic DEM, independent of the number of processes and of the raster orientation; no-data handling.
 - **Exports**: FSM conserves precipitation with 3 h data and receives RH in % for the Jennings methods; SNOWPACK gets wind direction in degrees and ISO time stamps.
-- **Zarr pipeline** (`tests/test_zarr_pipeline.py`): the netcdf-to-zarr conversion (including the new CDS naming and the ERA5/ERA5T `expver` dimension), identical results whatever the block sizes and number of threads, agreement with the netcdf backend, the layout of the output store, an error for points at the edge of the ERA5 domain, and the `Topoclass` workflow from yearly netcdf files to `down.zarr`.
+- **Zarr pipeline** (`tests/test_zarr_pipeline.py`): the netcdf-to-zarr conversion (including the new CDS naming and the ERA5/ERA5T `expver` dimension), identical results whatever the block sizes and number of threads, the layout of the output store, an error for points at the edge of the ERA5 domain, and the `Topoclass` workflow from yearly netcdf files to `down.zarr`.
 - **Report**: `run_all_checks` reports no failure on a consistent multi-point run.
 
 To document a constraint that the code is known to violate, decorate its test with `known_violation('reason')` (a strict `xfail`). The suite then passes while the issue is open and fails as soon as the issue is fixed, as a reminder to remove the marker.

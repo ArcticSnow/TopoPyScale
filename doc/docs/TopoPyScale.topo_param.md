@@ -3,18 +3,14 @@
 <a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 # <kbd>module</kbd> `TopoPyScale.topo_param`
-Set of functions to work with DEMs S. Filhol, Oct 2021 
+Set of functions to work with DEMs: slope, aspect, sky view factor and horizons. S. Filhol, Oct 2021 
 
-
-
-**TODO:**
- 
-- an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice 
+Horizons at points are traced along straight rays (horizon_rays). Horizons of every cell, used for the sky view factor (sky_view_factor) and maps (compute_horizon), are computed with a line sweep (horizon_sweep). Both are described in the documentation (Features > Slope, aspect and sky view factor; Features > Horizons). 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L25"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L22"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `convert_epsg_pts`
 
@@ -43,7 +39,7 @@ Simple function to convert a list fo poitn from one projection to another oen us
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L45"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L42"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `get_extent_latlon`
 
@@ -69,7 +65,7 @@ Function to extract DEM extent in Lat/Lon
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L67"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L64"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `extract_pts_param`
 
@@ -96,7 +92,7 @@ Function to sample DEM parameters for a list point. This is used as an alternati
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L130"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L127"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_dem_complexity`
 
@@ -127,7 +123,7 @@ Function to compute topographic complexity index. This index is an arbitray inde
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L158"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L155"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `open_dem`
 
@@ -152,7 +148,7 @@ Function to quickly open a DEM raster using xarray and removing the band dimensi
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L175"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L172"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_dem_param`
 
@@ -161,17 +157,22 @@ compute_dem_param(
     dem_file,
     fname='ds_param.nc',
     project_directory=PosixPath('.'),
-    output_folder='outputs'
+    output_folder='outputs',
+    n_processes=1
 )
 ```
 
-Function to compute and derive DEM parameters: slope, aspect, sky view factor 
+Function to compute and derive DEM parameters: slope, aspect (gradient_d8), sky view factor (sky_view_factor). An existing file is loaded as is. 
 
 
 
 **Args:**
  
  - <b>`dem_file`</b> (str):  path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM) 
+ - <b>`fname`</b> (str):  netcdf file name 
+ - <b>`project_directory`</b> (Path):  project directory 
+ - <b>`output_folder`</b> (str):  folder of fname, in project_directory 
+ - <b>`n_processes`</b> (int):  number of processes computing the sky view factor 
 
 
 
@@ -182,7 +183,7 @@ Function to compute and derive DEM parameters: slope, aspect, sky view factor
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L282"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L285"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_horizon`
 
@@ -190,15 +191,14 @@ Function to compute and derive DEM parameters: slope, aspect, sky view factor
 compute_horizon(
     dem_file,
     azimuth_inc=30,
-    num_threads=None,
-    fname='da_horizon.nc',
-    output_directory=PosixPath('outputs')
+    n_processes=1,
+    fname='da_horizon_grid.nc',
+    output_directory=PosixPath('outputs'),
+    near=32
 )
 ```
 
-Horizon angles of every pixel of the DEM, with topocalc (e.g. for maps). 
-
-topocalc follows lines of sight that are staircases stepping at the same columns (or rows) for all pixels. For azimuths a few degrees off the grid axes, the pixels just before a step read their nearest terrain from the adjacent row, which leaves streaks in the horizon maps. Topoclass uses compute_horizon_points() instead, which traces a straight ray from each point. 
+Horizon angles of every cell of the DEM (e.g. for maps), with the line sweep of horizon_sweep(). Topoclass computes the horizons of the points with compute_horizon_points() instead. 
 
 
 
@@ -206,20 +206,108 @@ topocalc follows lines of sight that are staircases stepping at the same columns
  
  - <b>`dem_file`</b> (str):  path and filename of the dem 
  - <b>`azimuth_inc`</b> (int):  angle increment to compute horizons at, in Degrees [0-359] 
- - <b>`num_threads`</b> (int):  number of threads to parallize on 
+ - <b>`n_processes`</b> (int):  number of processes, one azimuth each 
+ - <b>`fname`</b> (str):  netcdf file written in output_directory. None to skip writing 
+ - <b>`output_directory`</b> (Path):  output directory 
+ - <b>`near`</b> (int):  cells traced exactly along each ray before the sweep takes over 
 
 
 
 **Returns:**
  
- - <b>`dataarray`</b>:  all horizon angles for x,y,azimuth coordinates  
-
-
+ - <b>`dataarray`</b>:  horizon angles [rad], (azimuth, y, x) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L357"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L317"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `gradient_d8`
+
+```python
+gradient_d8(dem, dx, dy, aspect_rad=False)
+```
+
+Slope and aspect from the 3x3 neighbourhood (Horn's finite differences), port of topocalc.gradient.gradient_d8 (USDA ARS NWRC, public domain). Edges are extrapolated linearly. 
+
+For a cell e and its neighbours  | a | b | c |  | d | e | f |  | g | h | i | dz/dx = ((c + 2f + i) - (a + 2d + g)) / (8 dx) and dz/dy = ((g + 2h + i) - (a + 2b + c)) / (8 dy). 
+
+
+
+**Args:**
+ 
+ - <b>`dem`</b> (array):  elevation (y, x) 
+ - <b>`dx, dy (float)`</b>:  cell size along x and y (dy < 0 for a north-up raster) 
+ - <b>`aspect_rad`</b> (bool):  return the aspect in IPW radians (0 = south, positive east) instead of degrees 
+
+
+
+**Returns:**
+ slope [rad], aspect [deg clockwise from north, or IPW rad] 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L469"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `horizon_sweep`
+
+```python
+horizon_sweep(elevation, dx, dy, azimuth, near=32)
+```
+
+Horizon elevation angle [rad] of every cell for one azimuth, by a line sweep (see _sweep). 
+
+
+
+**Args:**
+ 
+ - <b>`elevation`</b> (2D array):  DEM (y, x), NaN for no data 
+ - <b>`dx, dy (float)`</b>:  cell size along x and y, signed as the coordinates (dy < 0 for a north-up raster) 
+ - <b>`azimuth`</b> (float):  direction [deg]: 0 = south, 90 = east, -90 = west, +-180 = north 
+ - <b>`near`</b> (int):  cells traced exactly along each ray before the sweep takes over 
+
+
+
+**Returns:**
+ 
+ - <b>`array`</b>:  horizon angles [rad] (>= 0), NaN on no-data cells 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L539"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `sky_view_factor`
+
+```python
+sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1)
+```
+
+Sky view factor of every cell, from horizons computed by a line sweep (horizon_sweep). 
+
+The sky view factor integrates the sky visible above the local horizon, weighted for a tilted surface (Dozier and Frew, 1990, eq. 7b):  svf = 1/(2 pi) * integral over azimuth phi of [cos(S) sin^2(H) + sin(S) cos(phi - A) (H - sin(H) cos(H))] with S the slope, A the aspect and H the horizon angle from zenith in direction phi. It is evaluated at n_angles azimuths, keeping the positive part of the integrand, as topocalc did. Azimuths are added in order whatever the number of processes, so the result does not depend on it. 
+
+
+
+**Args:**
+ 
+ - <b>`elevation`</b> (2D array):  DEM (y, x) 
+ - <b>`dx, dy (float)`</b>:  cell size along x and y, signed as the coordinates (dy < 0 for a north-up raster) 
+ - <b>`n_angles`</b> (int):  number of azimuths, from -180 deg every 360 / n_angles 
+ - <b>`near`</b> (int):  cells traced exactly along each ray before the sweep takes over 
+ - <b>`n_processes`</b> (int):  number of processes, one azimuth each 
+
+
+
+**Returns:**
+ 
+ - <b>`array`</b>:  sky view factor (0 to 1), NaN on no-data cells and their neighbours (slope undefined, as topocalc) 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L582"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `horizon_rays`
 
@@ -262,7 +350,7 @@ From each point, a ray is followed in each direction one cell at a time along th
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L453"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_param.py#L678"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_horizon_points`
 

@@ -4,7 +4,7 @@
 TopoPyScale is a Python package for topography-based downscaling of climate data to hillslope scale. It processes climate reanalysis data (ERA5, etc.) and digital elevation models (DEM) to produce outputs for models like Cryogrid and FSM. The codebase is organized as a PyPI library, with main logic in the `TopoPyScale/` directory and documentation in `doc/`.
 
 ## Key Components
-- **Core Library:** All main modules are in `TopoPyScale/`. Each file typically handles a specific aspect (e.g., `fetch_dem.py` for DEM fetching, `topo_scale.py` for downscaling logic).
+- **Core Library:** All main modules are in `TopoPyScale/`. Each file typically handles a specific aspect (e.g., `fetch_dem.py` for DEM fetching, `topo_scale_zarr.py` for downscaling logic).
 - **Documentation:** Markdown docs are in `doc/docs/`. API docs are auto-generated using `lazydocs`.
 - **Configuration:** Project uses `pyproject.toml` and `MANIFEST.in` for packaging. Documentation build is managed by `mkdocs.yml`.
 
@@ -32,7 +32,7 @@ TopoPyScale is a Python package for topography-based downscaling of climate data
 
 ## Examples
 - To fetch DEM: see `fetch_dem.py`.
-- To run downscaling: see `topo_scale.py` and related modules.
+- To run downscaling: see `topo_scale_zarr.py` and `toposcale_core.py`.
 - To build docs locally:
   ```bash
   pip install mkdocs sphinx_rtd_theme mkdocs-material pygments

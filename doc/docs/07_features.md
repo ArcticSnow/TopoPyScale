@@ -81,7 +81,7 @@ The store holds `z, t, q, u, v, r` on pressure levels and `z_surf, sp, t2m, d2m,
 
 ## Parallelization
 
-TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
+TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, processes over directions for the sky view factor, threads over blocks of points for the horizons, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
 
 ## Solar geometry
 
@@ -93,17 +93,50 @@ TPS uses parallelization for a number of steps: threads to manage download reque
 `ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it.
 
 
+## Slope, aspect and sky view factor
+
+`mp.compute_dem_param()` computes the elevation, slope, aspect and sky view factor of every DEM cell and saves them to `outputs/ds_param.nc`. An existing `ds_param.nc` is loaded as is: delete it to recompute it (files computed with topocalc by earlier versions differ by about 0.003 in svf, see below).
+
+**Slope and aspect** come from the 3 × 3 neighbourhood of each cell (Horn's finite differences, `topo_param.gradient_d8()`, the same code as topocalc's). The aspect is in radians, 0 = south, +π/2 = east, the convention of the solar azimuth.
+
+**Sky view factor.** The svf is the part of the sky hemisphere seen by the ground surface, each direction weighted by the cosine of its angle to the normal of the surface. It is 1 on flat open ground and (1 + cos S)/2 on a plane of slope S with nothing above it. It scales the diffuse shortwave and the longwave from the sky; 1 − svf weights the longwave emitted by the surrounding terrain (`toposcale.LW_terrain_contribution`). `topo_param.sky_view_factor()` integrates it from the horizon angle H in 72 directions, every 5° (Dozier and Frew, 1990, eq. 7b), keeping the positive part of the integrand:
+
+svf = 1/(2π) ∫ [cos S sin²H' + sin S cos(φ − A) (H' − sin H' cos H')] dφ, with H' = 90° − H the horizon angle from the zenith, S the slope and A the aspect.
+
+**Horizons of every cell: line sweep.** One azimuth at a time, `topo_param.horizon_sweep()` computes the horizon of all cells of the DEM:
+
+1. The grid axis closest to the direction is the major axis. Rays advance one column per step (columns stand for the major axis here) and drift by t rows per column, |t| ≤ 1.
+2. Parallel straight lines in the direction of the rays cross the grid, one per row. At each column, the elevation of a line is interpolated linearly between the two rows it passes between.
+3. Along each line, from its end back to its start, each node gets a pointer to the node ahead seen at the steepest angle. Following the pointers from any node walks along the upper convex hull of the line ahead of it (Dozier and Frew, 1990). From an observer, the elevation angle to the hull nodes rises to the horizon, then decreases, so the walk stops at the first decrease. The pointers of a line cost a number of steps proportional to its length. All lines are processed together as arrays.
+4. The ray of each cell passes between two of these lines, at a distance f from one and 1 − f from the other (in rows). Over its first 32 cells (`near`), the ray is traced exactly, interpolating the DEM between rows at each column. Beyond, the horizon is the steepest angle from the elevation of the cell to the hull of each of the two lines, weighted by 1 − f and f. The horizon of the cell is the higher of the two parts.
+
+![Line sweep](horizon_sweep.png){ width="900" }
+
+Along the grid axes and diagonals the lines pass through the cell centres, and the result is exact. In other directions, distant terrain changes little from one line to the next, so the two lines around a ray give its horizon well. Near terrain changes much faster from one line to the next, which is why the first 32 cells are traced along the ray itself. Without them (`near=0`), horizons are wrong by more than 3° for 5% of the cells of the Davos example.
+
+On the Davos example (SRTM 30 m, 747 × 500 cells), compared with exact straight rays from every cell in the 72 directions:
+
+| | svf difference: median | 99th percentile | maximum |
+|---|---|---|---|
+| line sweep (`near` = 32) | 0.00001 | 0.0001 | 0.001 |
+| topocalc (earlier versions) | 0.003 | 0.016 | 0.046 |
+
+topocalc follows lines of sight shaped as staircases, which step at the same columns for all cells. The cells just before a step read their nearest terrain from the adjacent row, which leaves streaks in its horizon and svf maps for directions a few degrees off the grid axes. The straight lines of the sweep have no steps.
+
+Each direction takes about 0.5 s on the Davos DEM (373,500 cells), so the svf takes about 45 s on one core. Most of this time goes to the near part, so the cost grows with the number of cells times `near`. The directions are shared between `project.parallelization.setting.multicore.CPU_cores` processes (23 s with 2), and summed in order: the svf does not depend on the number of processes. No-data cells (NaN) never form a horizon. Their svf is NaN, as is that of their neighbours, which have no slope. Earth curvature is ignored (about 0.1° for terrain 20 km away).
+
+For maps of horizons, `topo_param.compute_horizon(dem_file, azimuth_inc=30)` runs the same sweep for each direction and writes `outputs/da_horizon_grid.nc`, with dimensions (`azimuth`, `y`, `x`).
+
+
 ## Horizons
 
 `mp.compute_horizon()` computes the horizon angle of each point in the directions `dem.horizon_increments` degrees apart (the centres of the bins: -175, -165, ..., 175 for 10°; 0 = south, 90 = east, ±180 = north). The downscaling sets the direct beam to zero when the sun is below the horizon of the nearest direction. The horizons are saved to `outputs/da_horizon.nc`, with dimensions (`azimuth`, `point_name`), and as the columns `hori_azi_<azimuth>` of `df_centroids`.
 
-From each point, `topo_param.horizon_rays()` follows a straight ray in each direction, one cell at a time along the major grid axis, interpolating the DEM bilinearly. The observer is on the DEM surface at the exact position of the point. The horizon is the steepest elevation angle to the terrain along the ray, or 0 if no terrain is higher than the point. A ray stops at the edge of the DEM, or as soon as no terrain further away could be steeper than the horizon already found: the highest elevation of the DEM seen from that distance is below it. This shortcut does not change the result. No-data cells never form a horizon. Earth curvature is ignored, as in topocalc (about 0.1° for terrain 20 km away).
+From each point, `topo_param.horizon_rays()` follows a straight ray in each direction, one cell at a time along the major grid axis, interpolating the DEM bilinearly. The observer is on the DEM surface at the exact position of the point, not at the centre of the nearest cell. The horizon is the steepest elevation angle to the terrain along the ray, or 0 if no terrain is higher than the point. A ray stops at the edge of the DEM, or as soon as no terrain further away could be steeper than the horizon already found: the highest elevation of the DEM seen from that distance is below it. This shortcut does not change the result. No-data cells never form a horizon. Earth curvature is ignored.
 
-Earlier versions computed the horizons of every DEM pixel with topocalc and took the pixel nearest to each point. topocalc follows lines of sight shared by many pixels: for a direction off the grid axes, each line is a staircase, and all lines step at the same columns (or rows). The pixels just before a step read their nearest terrain from the adjacent row. This leaves streaks in the horizon maps for directions a few degrees off the grid axes: strongest 5° off (azimuths ±5°, ±85°, ±95°, ±175° with a 10° increment, a step every 11 cells), still visible 15° off, and absent at 45°. On the Davos example (SRTM 30 m), at azimuth 95°, these pixels differ from a straight ray by 3.6° on average, and by more than 17° for 5% of them. Along the grid axes, where topocalc's lines are exact rows and columns, the rays give the same horizons as topocalc.
+For the 50 centroids of the Davos example (747 × 500 cells), this takes 0.15 s and writes 24 kB. Each point and direction costs about 10 µs on that DEM. With `sampling.method: grid`, every cell is a point: about 2 minutes for the 373,500 cells of Davos on one core. Blocks of points run in `project.parallelization.setting.multicore.CPU_cores` threads.
 
-Computing at the points only is also faster and lighter. For the 50 centroids of the Davos example (747 × 500 cells), it takes 0.15 s and writes 24 kB, instead of 7.5 s and 108 MB for the full grid. Each point and direction costs about 10 µs on that DEM. With `sampling.method: grid`, every pixel is a point: about 2 minutes for its 373,500 pixels on one core. Blocks of points run in `project.parallelization.setting.multicore.CPU_cores` threads.
-
-An existing `da_horizon.nc` is loaded if it holds the same points (names and positions), and recomputed otherwise. A file computed on the full DEM grid by an earlier version is still used, at the nearest pixel, with a warning: delete it to recompute the horizons at the points. For maps of horizons, `topo_param.compute_horizon()` still computes the full grid with topocalc.
+An existing `da_horizon.nc` is loaded if it holds the same points (names and positions), and recomputed otherwise, including files computed on the full DEM grid by earlier versions.
 
 
 ## Clustering

@@ -9,7 +9,6 @@
 uv venv tps --python 3.13
 source tps/bin/activate
 uv pip install xarray matplotlib pandas scikit-learn netcdf4 h5netcdf pyproj dask cdsapi zarr
-uv pip install git+https://github.com/ArcticSnow/topocalc
 uv pip install TopoPyScale
 ```
 
@@ -33,9 +32,6 @@ conda activate downscaling
 
 # Recomended way to install dependencies:
 conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4 h5netcdf rasterio pyproj dask geopandas
-
-# install forked version of Topocalc compatible with Python >3.9 (tested with 3.13)
-pip install git+https://github.com/ArcticSnow/topocalc
 ```
 
 

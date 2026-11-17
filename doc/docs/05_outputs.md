@@ -19,7 +19,7 @@ ds.t.sel(point_name='12').plot()
 `Topoclass` loads the store into `mp.downscaled_pts`, which all export functions below use.
 
 ### Netcdf files
-It is possible to export netcdf files for a list of given variables with `mp.to_netcdf()`. Per-point netcdf files written by the deprecated netcdf backend can still be read with `tu.read_downscaled('outputs/downscaled/down_pt_*.nc')`.
+It is possible to export netcdf files for a list of given variables with `mp.to_netcdf()`.
 
 ### FSM Format
 `TopoPyScale` includes tools to interact and work with [FSM](https://github.com/RichardEssery/FSM). Those are available in the file `topo_sim.py`.

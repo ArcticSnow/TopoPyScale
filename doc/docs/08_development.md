@@ -28,7 +28,7 @@ More elaborated discussion are taking place in the Github Discussion [page](http
 
 ## Tests
 
-`tests/` runs the downscaling functions of both backends on synthetic ERA5 fields with a known answer, and checks the exports. Run it before submitting changes:
+`tests/` runs the downscaling on synthetic ERA5 fields with a known answer, checks the horizons and sky view factor on synthetic DEMs, and checks the exports. Run it before submitting changes:
 
 ```bash
 pip install pytest

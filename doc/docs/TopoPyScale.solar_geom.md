@@ -13,7 +13,7 @@ The solar position follows the NREL Solar Position Algorithm (Reda and Andreas, 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L36"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L35"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `spa_time_terms`
 
@@ -32,7 +32,7 @@ Location-independent part of the NREL SPA, for a DatetimeIndex in UTC.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L75"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L74"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `spa_positions`
 
@@ -59,7 +59,7 @@ Location-dependent part of the NREL SPA, broadcast over time and points.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L103"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L102"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `cos_zenith_geocentric`
 
@@ -72,7 +72,7 @@ Cosine of the geocentric solar zenith angle, (time, point): cheap, used to avera
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L124"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L123"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `get_solar_geom`
 
@@ -83,7 +83,6 @@ get_solar_geom(
     end_date,
     tstep,
     sr_epsg='4326',
-    num_threads=None,
     fname='ds_solar.nc',
     project_ouput=PosixPath('.'),
     method_solar='nrel_numpy',
@@ -104,7 +103,6 @@ Compute the solar geometry and top-of-atmosphere irradiance for each point. Azim
  - <b>`end_date`</b> (str):  end date   "2015-05-10" 
  - <b>`tstep`</b> (str):  time step, ex: '6h' 
  - <b>`sr_epsg`</b> (str):  EPSG code of x, y, used when longitude/latitude are not given 
- - <b>`num_threads`</b> (int):  deprecated, not used (the computation is vectorized) 
  - <b>`fname`</b> (str):  name of netcdf file to store solar geometry 
  - <b>`project_ouput`</b> (str):  path to project root directory 
  - <b>`method_solar`</b> (str):  pvlib solar position method. 'nrel_numpy' (default) is vectorized over points 
