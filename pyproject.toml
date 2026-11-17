@@ -28,6 +28,7 @@ dependencies = [
     "rioxarray",
     "matplotlib",
     "scikit-learn",
+    "joblib",
     "pandas",
     "geopandas",
     "numpy",

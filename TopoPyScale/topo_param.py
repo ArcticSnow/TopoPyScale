@@ -510,30 +510,22 @@ def _svf_task(azimuth, z, dx, dy, near, slope, aspect):
     return np.maximum(v, 0.).astype(np.float32)          # NaN where the slope is undefined
 
 
-_POOL_ARGS = None
-
-
-def _pool_init(args):
-    global _POOL_ARGS
-    _POOL_ARGS = args
-
-
-def _pool_call(item):
-    fun, azimuth = item
-    return fun(azimuth, *_POOL_ARGS)
-
-
 def _map_azimuths(fun, azimuths, args, n_processes=1):
-    """fun(azimuth, *args) for each azimuth, in order, in n_processes processes."""
+    """
+    fun(azimuth, *args) for each azimuth, in order, in n_processes processes.
+
+    The processes are joblib's loky workers: unlike a multiprocessing pool started with spawn or forkserver, they do
+    not re-import the main script, so scripts without an `if __name__ == "__main__":` guard work. Large arrays in args
+    are memory-mapped, not copied for each azimuth.
+    """
     n_processes = max(1, int(n_processes or 1))
     if n_processes == 1 or len(azimuths) == 1:
         for a in azimuths:
             yield fun(a, *args)
         return
-    from multiprocessing import get_context
-    with get_context('spawn').Pool(min(n_processes, len(azimuths)), initializer=_pool_init,
-                                   initargs=(args,)) as pool:
-        yield from pool.imap(_pool_call, [(fun, a) for a in azimuths])
+    from joblib import Parallel, delayed
+    yield from Parallel(n_jobs=min(n_processes, len(azimuths)), backend='loky', return_as='generator')(
+        delayed(fun)(a, *args) for a in azimuths)
 
 
 def sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1):

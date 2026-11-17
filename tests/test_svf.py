@@ -143,3 +143,23 @@ def test_compute_dem_param_and_horizon_maps(tmp_path):
     assert np.abs(ds.svf.values - svf).max() < 1e-3
     assert maps.dims == ('azimuth', 'y', 'x') and (tmp_path / 'h.nc').is_file()
     np.testing.assert_allclose(maps.sel(azimuth=45.).values, tp.horizon_sweep(zf, DX, -DX, 45.), atol=1e-6)
+
+
+def test_processes_from_script_without_main_guard(tmp_path):
+    """Example scripts have no `if __name__ == "__main__":` guard: the svf processes must not re-run them."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = str(Path(tp.__file__).resolve().parents[1])     # TopoPyScale may not be installed: import it from here
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([root, os.environ.get('PYTHONPATH', '')]))
+    script = tmp_path / 'run.py'
+    script.write_text('import numpy as np\n'
+                      'from TopoPyScale import topo_param as tp\n'
+                      'print("top-level", flush=True)\n'
+                      'z = 1000 + 100 * np.random.default_rng(0).random((30, 40))\n'
+                      'print(tp.sky_view_factor(z, 30., -30., n_angles=8, n_processes=2).shape, flush=True)\n')
+    out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=120, cwd=tmp_path,
+                         env=env)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.split() == ['top-level', '(30,', '40)']
