@@ -255,15 +255,23 @@ Area-weighted domain precipitation relative to the horizontally interpolated ERA
 ## <kbd>function</kbd> `check_centroid_aspect`
 
 ```python
-check_centroid_aspect(df_centroids, min_slope_deg=5.0, tol_deg=10.0)
+check_centroid_aspect(
+    df_centroids,
+    min_slope_deg=5.0,
+    tol_deg=10.0,
+    tol_dispersed_deg=45.0,
+    min_resultant=0.7
+)
 ```
 
 The centroid `aspect` used for the illumination angle must agree with the circular mean carried by the clustering features (aspect_cos, aspect_sin). Aspect is in [0, 2 pi) with 0 = south, so an arithmetic mean of a south-facing cluster (pixels near 0 and near 2 pi) gives ~pi, i.e. a north-facing slope. 
 
+The cluster centre (aspect_cos, aspect_sin) is the mean of the pixels only for k-means; for mini-batch k-means it is an estimate. Its length, the mean resultant length of the aspects, measures how concentrated they are. For clusters whose aspects are spread (length < min_resultant), the direction of the centre and the circular mean of the pixels can differ by tens of degrees: they are compared with tol_dispersed_deg instead of tol_deg. 
+
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L459"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L466"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_dem_orientation`
 
@@ -276,7 +284,7 @@ slope/aspect (gradient_d8 with dy < 0) assume a north-up raster.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L468"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L475"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_snow_partition`
 
@@ -289,7 +297,7 @@ Probe meteo_util.partition_snow: closure, bounds, monotonic in T, and RH unit co
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L500"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L507"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `run_all_checks`
 
@@ -328,7 +336,7 @@ Run all physics-consistency checks on downscaled outputs.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L549"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L556"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `summarize`
 
@@ -341,7 +349,7 @@ Human-readable summary of the checks at or above `min_status`.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L560"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L567"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `raise_on_failure`
 

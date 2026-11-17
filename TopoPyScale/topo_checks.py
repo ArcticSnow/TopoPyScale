@@ -439,19 +439,26 @@ def check_domain_precip_budget(ds, ds_param=None, weights=None, bounds=(0.67, 1.
 # ---------------------------------------------------------------------------------------------------------------------
 #  probes of the physics functions themselves (independent of any output)
 # ---------------------------------------------------------------------------------------------------------------------
-def check_centroid_aspect(df_centroids, min_slope_deg=5., tol_deg=10.):
+def check_centroid_aspect(df_centroids, min_slope_deg=5., tol_deg=10., tol_dispersed_deg=45., min_resultant=0.7):
     """
     The centroid `aspect` used for the illumination angle must agree with the circular mean carried by the
     clustering features (aspect_cos, aspect_sin). Aspect is in [0, 2 pi) with 0 = south, so an arithmetic mean of a
     south-facing cluster (pixels near 0 and near 2 pi) gives ~pi, i.e. a north-facing slope.
+
+    The cluster centre (aspect_cos, aspect_sin) is the mean of the pixels only for k-means; for mini-batch k-means it
+    is an estimate. Its length, the mean resultant length of the aspects, measures how concentrated they are. For
+    clusters whose aspects are spread (length < min_resultant), the direction of the centre and the circular mean of
+    the pixels can differ by tens of degrees: they are compared with tol_dispersed_deg instead of tol_deg.
     """
     need = ['aspect', 'aspect_cos', 'aspect_sin', 'slope']
     if df_centroids is None or not all(c in df_centroids for c in need):
         return [_skip('centroid_aspect', 'aspect', f'needs df_centroids with {need}')]
     circ = np.arctan2(df_centroids.aspect_sin.values, df_centroids.aspect_cos.values)
     diff = np.rad2deg(np.abs(np.angle(np.exp(1j * (df_centroids.aspect.values - circ)))))
+    resultant = np.hypot(df_centroids.aspect_sin.values, df_centroids.aspect_cos.values)
+    tol = np.where(resultant < min_resultant, tol_dispersed_deg, tol_deg)
     mask = df_centroids.slope.values > np.deg2rad(min_slope_deg)
-    return [_row('centroid_aspect', 'aspect', (diff[mask] > tol_deg).sum(), mask.sum(), 'error',
+    return [_row('centroid_aspect', 'aspect', (diff[mask] > tol[mask]).sum(), mask.sum(), 'error',
                  worst=diff[mask].max() if mask.any() else np.nan,
                  note='aspect differs from atan2(aspect_sin, aspect_cos) (worst in degrees)')]
 

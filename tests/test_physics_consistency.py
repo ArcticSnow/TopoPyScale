@@ -354,6 +354,17 @@ def test_cluster_centroid_aspect_is_circular_mean(tmp_path):
     assert report[('centroid_aspect', 'aspect')] == 'pass'
 
 
+def test_centroid_aspect_check_tolerates_dispersed_minibatch_clusters():
+    """A spread cluster (short centre vector, mini-batch k-means) may differ by ~20 deg; the mean bug gives ~180."""
+    def df(dev_deg, length):
+        a = np.deg2rad(np.array([10., 10.]))
+        return pd.DataFrame({'aspect': np.mod(a + np.deg2rad([0., dev_deg]), 2 * np.pi), 'slope': np.deg2rad([20., 20.]),
+                             'aspect_cos': length * np.cos(a), 'aspect_sin': length * np.sin(a)})
+    assert statuses(tc.check_centroid_aspect(df(20., 0.6)))[('centroid_aspect', 'aspect')] == 'pass'
+    assert statuses(tc.check_centroid_aspect(df(20., 0.95)))[('centroid_aspect', 'aspect')] == 'error'
+    assert statuses(tc.check_centroid_aspect(df(170., 0.6)))[('centroid_aspect', 'aspect')] == 'error'
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 #  6. exports
 # ---------------------------------------------------------------------------------------------------------------------
