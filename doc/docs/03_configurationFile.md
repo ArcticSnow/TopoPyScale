@@ -61,7 +61,7 @@ project:
   parallelization:
     setting:
         multicore:
-            CPU_cores: 6                  # sky view factor processes, horizon, clustering and downscaling threads, FSM runs
+            CPU_cores: 6                  # sky view factor, horizon, clustering and downscaling threads, FSM runs
 
 #.....................................................................................................
 climate:
@@ -171,7 +171,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | ***parallelization*** |             |          |                 | |
 | **setting**   |                     |          |                 | |
 | *multicore*   |                     |          |                 | |
-| CPU_cores   | 4                     | yes      | integer         | number of cores for the horizon computation, minibatch k-means clustering, `to_musa()`, and the number of threads downscaling blocks of points |
+| CPU_cores   | 4                     | yes      | integer         | number of cores for the sky view factor and horizon computation, minibatch k-means clustering, `to_musa()`, and the number of threads downscaling blocks of points |
 
 The former keys `parallelization.downscaling_method` and `parallelization.setting.dask` are no longer read.
 
@@ -295,7 +295,7 @@ Keys renamed or no longer read:
 
 ## Parallelization
 
-TopoPyScale uses parallelization for a number of steps: threads to manage the download requests to the CDS server, or processes fetching days from GDEX (`download_threads`), and `project.parallelization.setting.multicore.CPU_cores` cores for the horizons and the clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `CPU_cores` of them.
+TopoPyScale uses parallelization for a number of steps: threads to manage the download requests to the CDS server, or processes fetching days from GDEX (`download_threads`), and `project.parallelization.setting.multicore.CPU_cores` cores for the sky view factor, the horizons and the clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `CPU_cores` of them.
 
 Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).
 

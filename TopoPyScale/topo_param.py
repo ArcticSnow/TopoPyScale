@@ -5,6 +5,9 @@ S. Filhol, Oct 2021
 Horizons at points are traced along straight rays (horizon_rays). Horizons of every cell, used for the sky view
 factor (sky_view_factor) and maps (compute_horizon), are computed with a line sweep (horizon_sweep). Both are
 described in the documentation (Features > Slope, aspect and sky view factor; Features > Horizons).
+
+The line sweep runs as a numba kernel compiled on first use (engine='numba', the default when numba is installed),
+or as numpy code (engine='numpy'). Both give the same horizons.
 """
 
 import rasterio
@@ -16,7 +19,25 @@ from multiprocessing.dummy import Pool as ThreadPool
 import shutil
 from TopoPyScale import topo_export as te
 from pathlib import Path
+import warnings
 
+try:
+    import numba as nb
+except ImportError:  # pragma: no cover - numba is a dependency, the numpy engine is the fallback
+    nb = None
+
+ENGINES = ('numba', 'numpy')
+
+
+def _engine(engine=None):
+    """Engine of the line sweep: 'numba' (default when installed) or 'numpy'."""
+    engine = engine or 'numba'
+    if engine not in ENGINES:
+        raise ValueError(f'engine must be one of {ENGINES}')
+    if engine == 'numba' and nb is None:
+        warnings.warn('numba is not installed: the line sweep runs with numpy (slower)')
+        engine = 'numpy'
+    return engine
 
 
 def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
@@ -290,7 +311,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
 
 
 def compute_horizon(dem_file, azimuth_inc=30, n_processes=1, fname='da_horizon_grid.nc',
-                    output_directory=Path('./outputs'), near=32):
+                    output_directory=Path('./outputs'), near=32, engine=None):
     """
     Horizon angles of every cell of the DEM (e.g. for maps), with the line sweep of horizon_sweep().
     Topoclass computes the horizons of the points with compute_horizon_points() instead.
@@ -298,10 +319,11 @@ def compute_horizon(dem_file, azimuth_inc=30, n_processes=1, fname='da_horizon_g
     Args:
         dem_file (str): path and filename of the dem
         azimuth_inc (int): angle increment to compute horizons at, in Degrees [0-359]
-        n_processes (int): number of processes, one azimuth each
+        n_processes (int): number of threads (numba engine) or processes (numpy engine)
         fname (str): netcdf file written in output_directory. None to skip writing
         output_directory (Path): output directory
         near (int): cells traced exactly along each ray before the sweep takes over
+        engine (str): 'numba' (default when installed) or 'numpy'
 
     Returns:
         dataarray: horizon angles [rad], (azimuth, y, x)
@@ -311,7 +333,8 @@ def compute_horizon(dem_file, azimuth_inc=30, n_processes=1, fname='da_horizon_g
     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
     z = ds.elevation.values.astype(np.float64)
     dx, dy = float(ds.x.diff('x').median()), float(ds.y.diff('y').median())
-    hor = np.stack(list(_map_azimuths(_sweep_task, azimuth, (z, dx, dy, near), n_processes)))
+    engine = _engine(engine)
+    hor = np.stack(list(_map_azimuths(_sweep_task, azimuth, (z, dx, dy, near, engine), n_processes, engine)))
     da = xr.DataArray(data=hor, coords={"y": ds.y.values, "x": ds.x.values, "azimuth": azimuth},
                       dims=["azimuth", "y", "x"], name='horizon',
                       attrs={'long_name': 'Horizon angles', 'units': 'rad',
@@ -379,7 +402,14 @@ def _lerp(a, b, w):
     return np.where(np.isnan(v), -np.inf, v)
 
 
-def _sweep(z, t, ds, near):
+def _sweep(z, t, ds, near, engine='numpy'):
+    """Line sweep of _sweep_numpy, run by the numba kernel (_sweep_numba) or by numpy."""
+    if engine == 'numba':
+        return _sweep_numba(z, float(t), float(ds), int(near))
+    return _sweep_numpy(z, t, ds, near)
+
+
+def _sweep_numpy(z, t, ds, near):
     """
     Horizon elevation angle [rad] of every cell of z (ny, nx), looking towards increasing columns, the ray drifting
     by t rows per column (|t| <= 1); ds is the distance of one column step.
@@ -473,7 +503,91 @@ def _hull_walk(Z, H, li, obs, k, j, positive_only, has=None):
     return s
 
 
-def horizon_sweep(elevation, dx, dy, azimuth, near=32):
+if nb is not None:
+    @nb.njit(cache=True, inline='always')
+    def _lerp_nb(a, b, w):
+        if w == 0.:
+            return a
+        if w == 1.:
+            return b
+        v = (1. - w) * a + w * b
+        return -np.inf if np.isnan(v) else v
+
+    @nb.njit(cache=True, inline='always')
+    def _hull_walk_nb(Z, H, li, k, j, obs):
+        s = (Z[li, k] - obs) / (k - j)
+        while H[li, k] != k:
+            hk = H[li, k]
+            sh = (Z[li, hk] - obs) / (hk - j)
+            if sh > s:
+                k, s = hk, sh
+            else:
+                break
+        return k, s
+
+    @nb.njit(cache=True, parallel=True)
+    def _sweep_numba(z, t, ds, near):
+        """The algorithm of _sweep_numpy, compiled: lines and rows in parallel threads, same result."""
+        ny, nx = z.shape
+        lo = int(np.floor(min(0., -(nx - 1) * t))) - 1
+        hi = int(np.ceil(max(ny - 1., ny - 1 - (nx - 1) * t))) + 1
+        nl = hi - lo + 1
+        zf = np.where(np.isnan(z), -np.inf, z)
+        Z = np.full((nl, nx), -np.inf)
+        first = np.full(nl, nx, dtype=np.int64)
+        H = np.empty((nl, nx), dtype=np.int32)
+        for li in nb.prange(nl):
+            # 1. elevations of the line; -inf outside the grid
+            for j in range(nx):
+                pos = lo + li + j * t
+                if pos >= -1e-9 and pos <= ny - 1 + 1e-9:
+                    i0 = min(max(int(np.floor(pos)), 0), ny - 2)
+                    Z[li, j] = _lerp_nb(zf[i0, j], zf[i0 + 1, j], pos - i0)
+                    if first[li] == nx:
+                        first[li] = j
+            # 2. hull pointers
+            H[li, nx - 1] = nx - 1
+            for j in range(nx - 2, -1, -1):
+                obs = Z[li, j] if np.isfinite(Z[li, j]) else np.inf
+                k, s = _hull_walk_nb(Z, H, li, j + 1, j, obs)
+                H[li, j] = k if s > 0 else j
+        # 3. every cell: exact near field, then the two lines around its ray
+        out = np.zeros((ny, nx))
+        for r in nb.prange(ny):
+            for j in range(nx - 1):
+                zp = z[r, j]
+                if np.isnan(zp):
+                    out[r, j] = np.nan
+                    continue
+                nk = min(near, nx - 1 - j)
+                best = 0.
+                for kk in range(1, nk + 1):
+                    pos = r + kk * t
+                    if pos >= -1e-9 and pos <= ny - 1 + 1e-9:
+                        i0 = min(max(int(np.floor(pos)), 0), ny - 2)
+                        sl = (_lerp_nb(zf[i0, j + kk], zf[i0 + 1, j + kk], pos - i0) - zp) / kk
+                        if sl > best:
+                            best = sl
+                c = -j * t
+                l0 = int(np.floor(c))
+                f = c - l0
+                far = 0.
+                for m in range(2):
+                    li = r + l0 + m - lo
+                    k0 = max(j + 1 + nk, first[li])
+                    s = -np.inf
+                    if k0 < nx:
+                        s = _hull_walk_nb(Z, H, li, k0, j, zp)[1]
+                    far += (f if m == 1 else 1. - f) * np.arctan(max(s, 0.) / ds)
+                out[r, j] = max(far, np.arctan(best / ds))
+            if np.isnan(z[r, nx - 1]):
+                out[r, nx - 1] = np.nan
+        return out
+else:  # pragma: no cover
+    _sweep_numba = None
+
+
+def horizon_sweep(elevation, dx, dy, azimuth, near=32, engine=None):
     """
     Horizon elevation angle [rad] of every cell for one azimuth, by a line sweep (see _sweep).
 
@@ -482,6 +596,7 @@ def horizon_sweep(elevation, dx, dy, azimuth, near=32):
         dx, dy (float): cell size along x and y, signed as the coordinates (dy < 0 for a north-up raster)
         azimuth (float): direction [deg]: 0 = south, 90 = east, -90 = west, +-180 = north
         near (int): cells traced exactly along each ray before the sweep takes over
+        engine (str): 'numba' (default when installed) or 'numpy'
 
     Returns:
         array: horizon angles [rad] (>= 0), NaN on no-data cells
@@ -499,33 +614,43 @@ def horizon_sweep(elevation, dx, dy, azimuth, near=32):
     z = z.T if transpose else z
     flip = cx < 0
     z = z[:, ::-1] if flip else z
-    h = _sweep(np.ascontiguousarray(z), cy * ds, ds, near)
+    h = _sweep(np.ascontiguousarray(z), cy * ds, ds, near, _engine(engine))
     h = h[:, ::-1] if flip else h
     return h.T if transpose else h
 
 
-def _sweep_task(azimuth, z, dx, dy, near):
-    return horizon_sweep(z, dx, dy, azimuth, near).astype(np.float32)
+def _sweep_task(azimuth, z, dx, dy, near, engine):
+    return horizon_sweep(z, dx, dy, azimuth, near, engine).astype(np.float32)
 
 
-def _svf_task(azimuth, z, dx, dy, near, slope, aspect):
+def _svf_task(azimuth, z, dx, dy, near, slope, aspect, engine):
     """Positive part of the sky view factor integrand of Dozier and Frew (1990, eq. 7b) for one azimuth."""
-    hcos = np.sin(horizon_sweep(z, dx, dy, azimuth, near))   # cosine of the horizon angle from zenith
+    hcos = np.sin(horizon_sweep(z, dx, dy, azimuth, near, engine))   # cosine of the horizon angle from zenith
     sin2 = (1 - hcos) * (1 + hcos)
     h_mult = np.arccos(hcos) - np.sqrt(sin2) * hcos
     v = np.cos(slope) * sin2 + np.sin(slope) * np.cos(np.deg2rad(azimuth) - aspect) * h_mult
     return np.maximum(v, 0.).astype(np.float32)          # NaN where the slope is undefined
 
 
-def _map_azimuths(fun, azimuths, args, n_processes=1):
+def _map_azimuths(fun, azimuths, args, n_processes=1, engine='numpy'):
     """
-    fun(azimuth, *args) for each azimuth, in order, in n_processes processes.
+    fun(azimuth, *args) for each azimuth, in order.
 
-    The processes are joblib's loky workers: unlike a multiprocessing pool started with spawn or forkserver, they do
-    not re-import the main script, so scripts without an `if __name__ == "__main__":` guard work. Large arrays in args
-    are memory-mapped, not copied for each azimuth.
+    numba engine: the azimuths run one after the other, each on n_processes threads of the compiled kernel.
+    numpy engine: n_processes processes, one azimuth each. The processes are joblib's loky workers: unlike a
+    multiprocessing pool started with spawn or forkserver, they do not re-import the main script, so scripts without
+    an `if __name__ == "__main__":` guard work. Large arrays in args are memory-mapped, not copied for each azimuth.
     """
     n_processes = max(1, int(n_processes or 1))
+    if engine == 'numba':
+        previous = nb.get_num_threads()
+        nb.set_num_threads(min(n_processes, nb.config.NUMBA_NUM_THREADS))
+        try:
+            for a in azimuths:
+                yield fun(a, *args)
+        finally:
+            nb.set_num_threads(previous)
+        return
     if n_processes == 1 or len(azimuths) == 1:
         for a in azimuths:
             yield fun(a, *args)
@@ -535,7 +660,7 @@ def _map_azimuths(fun, azimuths, args, n_processes=1):
         delayed(fun)(a, *args) for a in azimuths)
 
 
-def sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1):
+def sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1, engine=None):
     """
     Sky view factor of every cell, from horizons computed by a line sweep (horizon_sweep).
 
@@ -544,14 +669,15 @@ def sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1):
         svf = 1/(2 pi) * integral over azimuth phi of [cos(S) sin^2(H) + sin(S) cos(phi - A) (H - sin(H) cos(H))]
     with S the slope, A the aspect and H the horizon angle from zenith in direction phi. It is evaluated at n_angles
     azimuths, keeping the positive part of the integrand, as topocalc did. Azimuths are added in order whatever
-    the number of processes, so the result does not depend on it.
+    the number of threads or processes, so the result does not depend on it.
 
     Args:
         elevation (2D array): DEM (y, x)
         dx, dy (float): cell size along x and y, signed as the coordinates (dy < 0 for a north-up raster)
         n_angles (int): number of azimuths, from -180 deg every 360 / n_angles
         near (int): cells traced exactly along each ray before the sweep takes over
-        n_processes (int): number of processes, one azimuth each
+        n_processes (int): number of threads (numba engine) or processes, one azimuth each (numpy engine)
+        engine (str): 'numba' (default when installed) or 'numpy'
 
     Returns:
         array: sky view factor (0 to 1), NaN on no-data cells and their neighbours (slope undefined, as topocalc)
@@ -561,7 +687,8 @@ def sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1):
     aspect = _aspect_south(z, dx, dy)
     angles = np.linspace(-180, 180, num=n_angles, endpoint=False)
     svf = np.zeros(z.shape)
-    for term in _map_azimuths(_svf_task, angles, (z, dx, dy, near, slope, aspect), n_processes):
+    engine = _engine(engine)
+    for term in _map_azimuths(_svf_task, angles, (z, dx, dy, near, slope, aspect, engine), n_processes, engine):
         svf += term
     svf /= n_angles
     svf[np.isnan(z)] = np.nan

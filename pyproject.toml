@@ -33,6 +33,7 @@ dependencies = [
     "geopandas",
     "numpy",
     "scipy",
+    "numba",
     "pyyaml",
     "netcdf4",
     "h5netcdf",

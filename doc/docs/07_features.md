@@ -81,7 +81,7 @@ The store holds `z, t, q, u, v, r` on pressure levels and `z_surf, sp, t2m, d2m,
 
 ## Parallelization
 
-TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, processes over directions for the sky view factor, threads over blocks of points for the horizons, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
+TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, threads for the sky view factor, threads over blocks of points for the horizons, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
 
 ## Solar geometry
 
@@ -123,7 +123,7 @@ On the Davos example (SRTM 30 m, 747 × 500 cells), compared with exact straight
 
 topocalc follows lines of sight shaped as staircases, which step at the same columns for all cells. The cells just before a step read their nearest terrain from the adjacent row, which leaves streaks in its horizon and svf maps for directions a few degrees off the grid axes. The straight lines of the sweep have no steps.
 
-Each direction takes about 0.5 s on the Davos DEM (373,500 cells), so the svf takes about 45 s on one core. Most of this time goes to the near part, so the cost grows with the number of cells times `near`. The directions are shared between `project.parallelization.setting.multicore.CPU_cores` processes (23 s with 2), and summed in order: the svf does not depend on the number of processes. No-data cells (NaN) never form a horizon. Their svf is NaN, as is that of their neighbours, which have no slope. Earth curvature is ignored (about 0.1° for terrain 20 km away).
+The sweep runs as a [numba](https://numba.pydata.org) kernel, compiled on first use (about 10 s once, then cached), with the lines and rows of each direction split between `project.parallelization.setting.multicore.CPU_cores` threads. Each direction takes about 0.15 s on the Davos DEM (747 × 500 cells) on one core: the svf takes 11 s on one core and 6.6 s on two (topocalc: 18 s on one core). Most of this time goes to the near part, so the cost grows with the number of cells times `near`. Without numba, or with `engine='numpy'` in `topo_param.sky_view_factor()`, the same algorithm runs with numpy, about 4 times slower, the directions shared between processes. Both engines give the same horizons, and the directions are summed in order: the svf depends neither on the engine nor on the number of threads or processes. No-data cells (NaN) never form a horizon. Their svf is NaN, as is that of their neighbours, which have no slope. Earth curvature is ignored (about 0.1° for terrain 20 km away).
 
 For maps of horizons, `topo_param.compute_horizon(dem_file, azimuth_inc=30)` runs the same sweep for each direction and writes `outputs/da_horizon_grid.nc`, with dimensions (`azimuth`, `y`, `x`).
 

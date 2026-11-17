@@ -108,10 +108,25 @@ def test_svf_matches_exact_rays():
     assert np.median(d) < 1e-4 and d.max() < 5e-3, (np.median(d), d.max())
 
 
-def test_svf_processes_orientation_and_no_data():
+def test_numba_and_numpy_engines_agree():
+    z = fractal(45, 60, seed=4)
+    z[12:16, 30:36] = np.nan
+    for az in [-180., -135., -90., -37., 0., 17., 45., 90., 133., 179.]:
+        for near in [0, 5, 32]:
+            a = tp.horizon_sweep(z, DX, -DX, az, near, engine='numpy')
+            b = tp.horizon_sweep(z, DX, -DX, az, near, engine='numba')
+            np.testing.assert_array_equal(np.isnan(a), np.isnan(b))
+            np.testing.assert_allclose(b, a, atol=1e-12, err_msg=f'azimuth {az}, near {near}')
+    with pytest.raises(ValueError, match='engine'):
+        tp.horizon_sweep(z, DX, -DX, 0., engine='fortran')
+
+
+@pytest.mark.parametrize('engine', ['numba', 'numpy'])
+def test_svf_processes_orientation_and_no_data(engine):
     z = fractal(30, 40, seed=5)
-    one = tp.sky_view_factor(z, DX, -DX, n_angles=24)
-    np.testing.assert_array_equal(tp.sky_view_factor(z, DX, -DX, n_angles=24, n_processes=2), one)
+    one = tp.sky_view_factor(z, DX, -DX, n_angles=24, engine=engine)
+    # threads (numba) or processes (numpy): same result
+    np.testing.assert_array_equal(tp.sky_view_factor(z, DX, -DX, n_angles=24, n_processes=2, engine=engine), one)
     np.testing.assert_allclose(tp.sky_view_factor(z[::-1], DX, DX, n_angles=24)[::-1], one, atol=1e-12)
     zn = z.copy()
     zn[10:14, 20:25] = np.nan
@@ -145,7 +160,8 @@ def test_compute_dem_param_and_horizon_maps(tmp_path):
     np.testing.assert_allclose(maps.sel(azimuth=45.).values, tp.horizon_sweep(zf, DX, -DX, 45.), atol=1e-6)
 
 
-def test_processes_from_script_without_main_guard(tmp_path):
+@pytest.mark.parametrize('engine', ['numba', 'numpy'])
+def test_processes_from_script_without_main_guard(tmp_path, engine):
     """Example scripts have no `if __name__ == "__main__":` guard: the svf processes must not re-run them."""
     import os
     import subprocess
@@ -158,8 +174,18 @@ def test_processes_from_script_without_main_guard(tmp_path):
                       'from TopoPyScale import topo_param as tp\n'
                       'print("top-level", flush=True)\n'
                       'z = 1000 + 100 * np.random.default_rng(0).random((30, 40))\n'
-                      'print(tp.sky_view_factor(z, 30., -30., n_angles=8, n_processes=2).shape, flush=True)\n')
+                      f'print(tp.sky_view_factor(z, 30., -30., n_angles=8, n_processes=2, engine="{engine}").shape, '
+                      'flush=True)\n')
     out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=120, cwd=tmp_path,
                          env=env)
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.split() == ['top-level', '(30,', '40)']
+
+
+def test_numpy_fallback_without_numba(monkeypatch):
+    z = fractal(20, 25, seed=8)
+    ref = tp.horizon_sweep(z, DX, -DX, 30., engine='numpy')
+    monkeypatch.setattr(tp, 'nb', None)
+    with pytest.warns(UserWarning, match='numba is not installed'):
+        h = tp.horizon_sweep(z, DX, -DX, 30.)
+    np.testing.assert_array_equal(h, ref)
