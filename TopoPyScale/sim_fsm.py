@@ -24,7 +24,30 @@ import datetime as dt
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_export as te
 
-def fsm_nlst(nconfig, metfile, nave):
+def infer_met_timestep(metfile, default=3600):
+    """
+    Time step [s] of an FSM forcing file, from its first two rows (year month day hour ...).
+
+    Args:
+        metfile (str): path to the FSM forcing file
+        default (float): value returned, with a warning, if the time step cannot be inferred
+
+    Returns:
+        float: time step in seconds
+    """
+    try:
+        head = pd.read_csv(metfile, sep=r'\s+', header=None, nrows=2, usecols=[0, 1, 2, 3])
+        times = pd.to_datetime(dict(year=head[0], month=head[1], day=head[2], hour=head[3]))
+        tstep = (times.iloc[1] - times.iloc[0]).total_seconds()
+        if tstep <= 0:
+            raise ValueError
+        return float(tstep)
+    except Exception:
+        print(f'WARNING: cannot infer the time step of {metfile}, assuming {default} s')
+        return float(default)
+
+
+def fsm_nlst(nconfig, metfile, nave, dt_seconds=3600):
     """
     Function to generate namelist parameter file that is required to run the FSM model.
     https://github.com/RichardEssery/FSM
@@ -33,7 +56,9 @@ def fsm_nlst(nconfig, metfile, nave):
         nconfig (int): which FSm configuration to run (integer 1-31)
         metfile (str): path to input tscale file (relative as Fortran fails with long strings (max 21 chars?))
         nave (int): number of forcing steps to average output over eg if forcing is hourly and output required is daily then nave = 24
-    
+            (4 with 6-hourly forcing)
+        dt_seconds (int): time step of the forcing file [s] (FSM namelist dt). Default 3600 (hourly)
+
     Returns:
         NULL (writes out namelist text file which configures a single FSM run)
 
@@ -62,8 +87,7 @@ def fsm_nlst(nconfig, metfile, nave):
     """
 
     METEOFILENAME = os.path.split(metfile)[1].split('.txt')[0]
-    if not os.path.exists('./fsm_sims'):
-        os.mkdir('./fsm_sims')
+    os.makedirs('./fsm_sims', exist_ok=True)   # fsm_nlst runs in threads: several may create the folder at once
 
     f = open('./fsm_sims/nlst_' + METEOFILENAME + '.txt', 'w')
     f.write('&config' + '\n')
@@ -71,6 +95,7 @@ def fsm_nlst(nconfig, metfile, nave):
     f.write('/' + '\n')
     f.write('&drive' + '\n')
     f.write('  met_file = ' + "'" + metfile + "'" + '\n')
+    f.write('  dt = ' + str(int(dt_seconds)) + '\n')
     f.write('  zT = 1.5' + '\n')
     f.write('  zvar = .FALSE.' + '\n')
     f.write('/' + '\n')
@@ -222,12 +247,11 @@ def read_pt_fsm(fname):
     Returns:
         pandas dataframe
     '''
-    fsm = pd.read_csv(fname,
-                delim_whitespace=True,
-                header=0,
-                index_col='time',
-                parse_dates = {'time': [0, 1, 2, 3]},
-                date_format = '%Y %m %d %H.000')
+    # no header line: year month day hour (float) and 6 variables
+    fsm = pd.read_csv(fname, sep=r'\s+', header=None)
+    fsm.index = pd.DatetimeIndex(pd.to_datetime(dict(year=fsm[0], month=fsm[1], day=fsm[2],
+                                                     hour=fsm[3].astype(float).round().astype(int))), name='time')
+    fsm = fsm.iloc[:, 4:10]
     fsm.columns = ['albedo', 'runoff', 'snd', 'swe', 't_surface', 't_soil']
     return fsm
 
@@ -250,7 +274,8 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
                      fsm_exec='./FSM',
                      n_core=6,
                      n_thread=100,
-                     delete_nlst_files=True):
+                     delete_nlst_files=True,
+                     fsm_dt=None):
     '''
     Function to run parallelised simulations of FSM
 
@@ -262,6 +287,7 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
         n_core (int): number of cores. Default = 6
         n_thread (int): number of threads when creating simulation configuration files. Default=100
         delete_nlst_files (bool): delete simulation configuration files or not. Default=True
+        fsm_dt (int): time step of the forcing [s] (FSM namelist dt). Default: inferred from the first forcing file
 
     Returns:
         NULL (FSM simulation file written to disk)
@@ -269,21 +295,28 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
     print('---> Run FSM simulation in parallel')
     # 1. create all nlsit_files
     if isinstance(fsm_input, str):
-        met_flist = glob.glob(fsm_input)
+        met_flist = sorted(glob.glob(fsm_input))
     elif isinstance(fsm_input, list):
-        met_list = fsm_input
+        met_flist = fsm_input
     else:
         print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
         return
+    if not met_flist:
+        print(f'ERROR: no FSM forcing file found for {fsm_input}')
+        return
+    if fsm_dt is None:
+        fsm_dt = infer_met_timestep(met_flist[0])
+    print(f'---> FSM time step {fsm_dt:.0f} s, outputs averaged over {fsm_nave} time steps')
 
-    fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist) )
+    fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist), [fsm_dt]*len(met_flist))
     tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
     print('nlst files ready')
 
-    # 2. execute FSM on multicore
-    nlst_flist = glob.glob('fsm_sims/nlst_*.txt')
+    # 2. execute FSM, n_core executables at a time. Threads are enough (each one waits for its FSM process) and,
+    # unlike a process pool, do not re-import the main script nor fork a process holding locks (e.g. in Jupyter)
+    nlst_flist = sorted(glob.glob('fsm_sims/nlst_*.txt'))
     fun_param = zip([fsm_exec]*len(nlst_flist), nlst_flist)
-    tu.multicore_pooling(_run_fsm, fun_param, n_core)
+    tu.multithread_pooling(_run_fsm, fun_param, n_core)
     print('---> FSM simulations finished.')
 
     # 3. remove nlist files

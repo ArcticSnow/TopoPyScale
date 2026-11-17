@@ -306,8 +306,14 @@ class Topoclass(object):
 
         # ----------proceed----------
 
-        # read df param
-        df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+        # variables of a previous clustering (ds_param.nc read from disk) are replaced, not used as cluster attributes
+        self.toposub.ds_param = self.toposub.ds_param.drop_vars(
+            ['cluster_labels', 'point_name', 'point_ind', 'mask', 'cluster_group'], errors='ignore')
+
+        # read df param. Rows in map order (y, x), whatever the order of the dimensions of ds_param (it differs
+        # between a dataset built from the DEM and one read from ds_param.nc): the mask, the groups and the cluster
+        # maps below rely on it
+        df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param, dim_order=['y', 'x'])
 
         # Auto-mask nodata pixels (e.g. from reprojected DEMs with non-rectangular valid regions)
         valid_elev = ~df_param['elevation'].isna()
@@ -340,7 +346,7 @@ class Topoclass(object):
             print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
             # get mask (combine with nodata auto-mask)
-            mask = (ts.ds_to_indexed_dataframe(ds_mask)['mask'] == 1) & valid_elev
+            mask = (ts.ds_to_indexed_dataframe(ds_mask, dim_order=['y', 'x'])['mask'] == 1) & valid_elev
 
         # add cluster groups. Groups can be landcover classes for instance
         if groups_file in [None, {}]:
@@ -364,7 +370,7 @@ class Topoclass(object):
                     'The GeoTIFFS of the DEM and the MASK must have the same bounds/resolution. Please check.')
 
             # add cluster group
-            df_param['cluster_group'] = ts.ds_to_indexed_dataframe(ds_group)['group'].astype(int)
+            df_param['cluster_group'] = ts.ds_to_indexed_dataframe(ds_group, dim_order=['y', 'x'])['group'].astype(int)
 
             # create group dataframe
             gr = df_param[mask].groupby('cluster_group').slope.count()
@@ -464,20 +470,22 @@ class Topoclass(object):
         self.toposub.df_centroids['point_name'] = self.toposub.df_centroids.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
         self.toposub.df_centroids['point_ind'] = self.toposub.df_centroids.cluster_labels.astype(int)
         if df_param.cluster_labels.isnull().values.any():
+            valid = ~df_param.cluster_labels.isnull()
             df_param['point_name'] = '-9999'
-            df_param['point_name'].loc[~df_param.cluster_labels.isnull()] = df_param.cluster_labels.loc[~df_param.cluster_labels.isnull()].astype(int).astype(str).str.zfill(n_digits)
+            # .loc on the frame: chained assignment (df[col].loc[...] = ...) does nothing with pandas >= 3
+            df_param.loc[valid, 'point_name'] = df_param.cluster_labels[valid].astype(int).astype(str).str.zfill(n_digits)
             df_param['point_ind'] = df_param.point_name.astype(int)
         else:
             df_param['point_name'] = df_param.cluster_labels.astype(int).astype(str).str.zfill(n_digits)
             df_param['point_ind'] = df_param.cluster_labels.astype(int)
 
         # Build the final cluster map
-        shape = self.toposub.ds_param.slope.shape
-        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.to_numpy(), shape,order='F'))
-        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.to_numpy(), shape,order='F'))
-        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.to_numpy(), shape,order='F'))
+        shape = (self.toposub.ds_param.sizes['y'], self.toposub.ds_param.sizes['x'])
+        self.toposub.ds_param['cluster_labels'] = (["y", "x"], np.reshape(df_param.point_name.to_numpy(), shape, order='C'))
+        self.toposub.ds_param['point_name'] = (["y", "x"], np.reshape(df_param.point_name.to_numpy(), shape, order='C'))
+        self.toposub.ds_param['point_ind'] = (["y", "x"], np.reshape(df_param.point_ind.to_numpy(), shape, order='C'))
         if split_clustering:
-            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.to_numpy(), shape,order='F'))
+            self.toposub.ds_param['cluster_group'] = (["y", "x"], np.reshape(df_param.cluster_group.to_numpy(), shape, order='C'))
 
         # update file
         fname = self.config.outputs.path / self.config.outputs.file.ds_param

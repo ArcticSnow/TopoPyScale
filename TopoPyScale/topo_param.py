@@ -173,7 +173,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
                       n_processes=1):
     """
     Function to compute and derive DEM parameters: slope, aspect (gradient_d8), sky view factor (sky_view_factor).
-    An existing file is loaded as is.
+    An existing file is loaded as is; it is rewritten only if parameters are missing from it.
 
     Args:
         dem_file (str): path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
@@ -244,6 +244,13 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
                     raise ValueError(f'ERROR: Cannot read elevation data and no DEM file available')
         else:
             raise e
+
+    missing = [v for v in ['slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'] if v not in var_in]
+    if file_ds.is_file() and not missing:
+        # not rewritten: nothing was computed. Loaded in memory and closed, as the clustering writes to this file
+        ds.close()
+        print(f'---> {fname} holds all DEM parameters: loaded')
+        return xr.load_dataset(file_ds)
 
     if ('slope' not in var_in) or ('aspect' not in var_in):
         print('Computing slope and aspect ...')

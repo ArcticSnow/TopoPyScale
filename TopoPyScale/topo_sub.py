@@ -23,18 +23,19 @@ from concurrent.futures import ProcessPoolExecutor
 from TopoPyScale import topo_utils as tu
 
 
-def ds_to_indexed_dataframe(ds):
+def ds_to_indexed_dataframe(ds, dim_order=None):
     '''
     Function to convert dataset to dataframe
 
     See definition of function in topo_utils.py
     Args:
         ds (dataset): xarray dataset N * 2D Dataarray
+        dim_order (list): order of the dimensions in the rows, e.g. ['y', 'x']. Default: the order of ds.dims
 
     Returns:
 
     '''
-    return tu.ds_to_indexed_dataframe(ds)
+    return tu.ds_to_indexed_dataframe(ds, dim_order=dim_order)
 
 
 def scale_df(df_param,

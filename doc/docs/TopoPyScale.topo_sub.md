@@ -17,12 +17,12 @@ S. Filhol, Oct 2021
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L27"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L26"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `ds_to_indexed_dataframe`
 
 ```python
-ds_to_indexed_dataframe(ds)
+ds_to_indexed_dataframe(ds, dim_order=None)
 ```
 
 Function to convert dataset to dataframe 
@@ -32,6 +32,7 @@ See definition of function in topo_utils.py
 **Args:**
  
  - <b>`ds`</b> (dataset):  xarray dataset N * 2D Dataarray 
+ - <b>`dim_order`</b> (list):  order of the dimensions in the rows, e.g. ['y', 'x']. Default: the order of ds.dims 
 
 
 
@@ -182,7 +183,7 @@ Function to perform mini-batch K-mean clustering
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L157"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L216"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `search_number_of_clusters`
 
@@ -195,7 +196,8 @@ search_number_of_clusters(
     scaler_type=StandardScaler(),
     scaler=None,
     seed=2,
-    plot=True
+    plot=True,
+    n_workers=None
 )
 ```
 
@@ -211,6 +213,7 @@ Function to help identify an optimum number of clusters using the elbow method
  - <b>`scaler`</b> (scikit_learn obj):  fitted scaler to dataset. Implies that df_param is already scaled 
  - <b>`seed`</b> (int):  random seed for kmeans clustering 
  - <b>`plot`</b> (bool):  plot results or not 
+ - <b>`n_workers`</b> (int):  number of parallel workers. None = sequential, 0 or negative = all CPUs 
 
 
 
@@ -221,7 +224,7 @@ Function to help identify an optimum number of clusters using the elbow method
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L264"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L287"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `plot_center_clusters`
 
@@ -231,7 +234,7 @@ plot_center_clusters(
     ds_param,
     df_centers,
     var='elevation',
-    cmap=<matplotlib.colors.ListedColormap object at 0x7f669fe9c8e0>,
+    cmap=<matplotlib.colors.ListedColormap object at 0x7fbf39b1c9f0>,
     figsize=(14, 10)
 )
 ```
@@ -251,7 +254,7 @@ Function to plot the location of the cluster centroids over the DEM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L293"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L316"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `write_landform`
 

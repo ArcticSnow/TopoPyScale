@@ -103,7 +103,7 @@ def read_downscaled(path='outputs/downscaled/down.zarr'):
     return open_downscaled_store(path)
 
 
-def ds_to_indexed_dataframe(ds):
+def ds_to_indexed_dataframe(ds, dim_order=None):
     """
     Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
     WARNING: this only works if the variable of the dataset have all the same dimensions!
@@ -112,11 +112,14 @@ def ds_to_indexed_dataframe(ds):
 
     Args:
         ds (dataset): xarray dataset with all variable of same number of dimensions
+        dim_order (list): order of the dimensions in the rows (e.g. ['y', 'x']: row-major for a map). Default: the
+            order of ds.dims, which depends on how the dataset was built (e.g. (x, y) from a GeoTIFF, (y, x) from a
+            netcdf file)
 
     Returns:
         pandas dataframe:
     """
-    df = ds.to_dataframe()
+    df = ds.to_dataframe(dim_order=dim_order)
     n_levels = df.index.names.__len__()
     return df.reset_index(level=list(range(0, n_levels)))
 

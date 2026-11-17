@@ -61,7 +61,7 @@ project:
   parallelization:
     setting:
         multicore:
-            CPU_cores: 6                  # horizons, minibatch k-means clustering and downscaling threads
+            CPU_cores: 6                  # sky view factor processes, horizon, clustering and downscaling threads, FSM runs
 
 #.....................................................................................................
 climate:
