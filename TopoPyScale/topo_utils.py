@@ -20,6 +20,47 @@ def as_str(values):
     return np.array([str(v) for v in values.ravel()]).reshape(values.shape)
 
 
+def horizon_matches_points(da_horizon, df_points, tol=1e-3):
+    """
+    True if da_horizon holds the horizons of exactly these points (names and positions within tol m).
+    False for the full-grid horizons of earlier versions (dims azimuth, y, x).
+    """
+    if 'point_name' not in da_horizon.dims:
+        return False
+    names = as_str(df_points.point_name.values)
+    hor = da_horizon.assign_coords(point_name=as_str(da_horizon.point_name.values))
+    if set(names) - set(hor.point_name.values):
+        return False
+    hor = hor.sel(point_name=names)
+    if 'x' in hor.coords and 'y' in hor.coords:
+        return bool(np.allclose(hor.x.values, df_points.x.values.astype(float), atol=tol, rtol=0)
+                    and np.allclose(hor.y.values, df_points.y.values.astype(float), atol=tol, rtol=0))
+    return True
+
+
+def horizon_at_points(da_horizon, df_points):
+    """
+    Horizon profile of each point of df_points, in the order of its rows.
+
+    Args:
+        da_horizon (dataarray): horizon angles [rad], either computed at the points (azimuth, point_name),
+            or on the full DEM grid by earlier versions (azimuth, y, x), then taken at the nearest pixel
+        df_points (dataframe): points with columns point_name, x, y
+
+    Returns:
+        dataarray: horizon angles [rad], (azimuth, point)
+    """
+    if 'point_name' not in da_horizon.dims:
+        return da_horizon.sel(x=xr.DataArray(df_points.x.values, dims='point'),
+                              y=xr.DataArray(df_points.y.values, dims='point'), method='nearest')
+    if not horizon_matches_points(da_horizon, df_points):
+        raise ValueError('The horizons were computed for other points (names or positions differ): delete the '
+                         'horizon file (outputs/da_horizon.nc) and run compute_horizon() again')
+    names = as_str(df_points.point_name.values)
+    hor = da_horizon.assign_coords(point_name=as_str(da_horizon.point_name.values)).sel(point_name=names)
+    return hor.rename(point_name='point')
+
+
 def open_downscaled_store(store):
     """
     Open the zarr store of downscaled points (dimensions point_name, time), lazily with Dask.

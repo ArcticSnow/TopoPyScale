@@ -606,32 +606,44 @@ class Topoclass(object):
 
     def compute_horizon(self):
         """
-        Function to compute horizon angle and sample values for list of points
-        """
-        fname = self.config.outputs.path / self.config.outputs.file.da_horizon
-        if fname.is_file():
-            self.da_horizon = xr.open_dataarray(fname, engine='h5netcdf')
-            print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
-        else:
-            self.da_horizon = tp.compute_horizon(self.config.dem.filepath,
-                                                 self.config.dem.horizon_increments,
-                                                 self.config.project.parallelization.setting.multicore.CPU_cores,
-                                                 self.config.outputs.file.da_horizon,
-                                                 self.config.outputs.path)
-        tgt_x = tp.xr.DataArray(self.toposub.df_centroids.x.values, dims="points")
-        tgt_y = tp.xr.DataArray(self.toposub.df_centroids.y.values, dims="points")
+        Horizon angles of the points (df_centroids), every dem.horizon_increments degrees, along straight rays
+        from each point (topo_param.compute_horizon_points). Saved to outputs/da_horizon.nc and as the columns
+        hori_azi_<azimuth> of df_centroids.
 
-        # In case horizon angles are computed after clustering
-        if self.toposub.df_centroids is not None:
-            for az in self.da_horizon.azimuth.values:
-                self.toposub.df_centroids['hori_azi_' + str(az)] = self.da_horizon.sel(x=tgt_x,
-                                                                                       y=tgt_y,
-                                                                                       azimuth=az,
-                                                                                       method='nearest').values.flatten()
-            # update df_centroid file with horizons angle
-            self.toposub.df_centroids.to_pickle(
-                self.config.outputs.path / self.config.outputs.file.df_centroids)
-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
+        An existing horizon file is loaded if it holds these points, and recomputed otherwise. A full-grid
+        horizon file from an earlier version is still used (nearest pixel), with a warning.
+        """
+        df = self.toposub.df_centroids
+        if df is None:
+            raise ValueError('Horizons are computed at the points: run extract_topo_param() first')
+        fname = self.config.outputs.path / self.config.outputs.file.da_horizon
+        da = None
+        if fname.is_file():
+            da = xr.open_dataarray(fname, engine='h5netcdf').load()
+            da.close()
+            if 'point_name' not in da.dims:
+                print(f'-> WARNING: {self.config.outputs.file.da_horizon} holds horizons of the full DEM grid, '
+                      f'computed by an earlier version of TopoPyScale with topocalc, whose lines of sight leave '
+                      f'streaks for azimuths a few degrees off the grid axes. Delete it to recompute the horizons '
+                      f'at the points along straight rays.')
+            elif not tu.horizon_matches_points(da, df):
+                print(f'---> Horizon file {self.config.outputs.file.da_horizon} holds other points: recomputing')
+                da = None
+            else:
+                print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+        if da is None:
+            da = tp.compute_horizon_points(self.config.dem.filepath, df, self.config.dem.horizon_increments,
+                                           fname=self.config.outputs.file.da_horizon,
+                                           output_directory=self.config.outputs.path,
+                                           n_threads=self.config.project.parallelization.setting.multicore.CPU_cores)
+        self.da_horizon = da
+
+        hp = tu.horizon_at_points(da, df)
+        for az in hp.azimuth.values:
+            df['hori_azi_' + str(az)] = hp.sel(azimuth=az).values
+        # update df_centroid file with horizons angle
+        df.to_pickle(self.config.outputs.path / self.config.outputs.file.df_centroids)
+        print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
         """

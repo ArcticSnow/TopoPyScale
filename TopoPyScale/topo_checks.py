@@ -457,12 +457,12 @@ def check_centroid_aspect(df_centroids, min_slope_deg=5., tol_deg=10.):
 
 
 def check_dem_orientation(ds_param):
-    """slope/aspect (gradient_d8 with dy < 0) and horizons (topocalc) assume a north-up raster."""
+    """slope/aspect (gradient_d8 with dy < 0) assume a north-up raster."""
     if ds_param is None or 'y' not in ds_param.coords:
         return [_skip('dem_orientation', 'y', 'needs ds_param')]
     dy = float(ds_param.y.diff('y').median())
     return [_row('dem_orientation', 'y', int(dy > 0), 1, 'error', worst=dy,
-                 note='y must decrease with row index (north-up raster), else aspect and horizons flip N/S')]
+                 note='y must decrease with row index (north-up raster), else aspect flips N/S')]
 
 
 def check_snow_partition(method='continuous', n_draws=2000):

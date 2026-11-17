@@ -77,7 +77,8 @@ class ClimateDownscaler:
         era5_zarr_path (str): path to the ERA5 zarr store (see fetch_era5.netcdf_to_zarr)
         output_path (str): directory of the output store
         df_centroids (dataframe): points with point_name, x, y, lat, lon, elevation, slope, aspect, svf
-        da_horizon (dataarray): horizon angles (azimuth, y, x) [rad]
+        da_horizon (dataarray): horizon angles [rad] of the points (azimuth, point_name), from
+            topo_param.compute_horizon_points, or of the DEM grid (azimuth, y, x), taken at the nearest pixel
         ds_solar (dataset): solar geometry (point_name, time), from solar_geom.get_solar_geom
         target_EPSG (int): EPSG code of x, y
         start_date, end_date (str): period to downscale (end_date included)
@@ -146,9 +147,8 @@ class ClimateDownscaler:
                                                               self.ERA.longitude.values, transformer, interp_method)
         self.points = {k: self.df[k].values.astype(float) for k in ['elevation', 'slope', 'aspect', 'svf']}
 
-        # horizon profile of each point (nearest DEM pixel), sorted by azimuth
-        hp = da_horizon.sel(x=xr.DataArray(self.df.x.values, dims='point'),
-                            y=xr.DataArray(self.df.y.values, dims='point'), method='nearest').sortby('azimuth')
+        # horizon profile of each point, sorted by azimuth
+        hp = tu.horizon_at_points(da_horizon, self.df).sortby('azimuth')
         self.horizon_azimuth = hp.azimuth.values
         self.horizon_profiles = np.asarray(hp.transpose('point', 'azimuth').values, dtype=float)
 

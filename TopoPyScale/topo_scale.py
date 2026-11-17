@@ -302,7 +302,9 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     down_pt['cos_illumination'][illumination_mask] = 0
 
     # Binary shadow masks.
-    horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth), method='nearest')
+    pt = pd.DataFrame({'point_name': [row.point_name], 'x': [row.x], 'y': [row.y]})
+    horizon = tu.horizon_at_points(horizon_da, pt).isel(point=0).sel(azimuth=np.rad2deg(ds_solar.azimuth),
+                                                                     method='nearest')
     shade = (horizon > ds_solar.elevation)
     down_pt['SW_direct_tmp'] = down_pt.t * 0
     down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
@@ -380,7 +382,7 @@ def downscale_climate(project_directory,
         climate_directory (str):
         output_directory (path):
         df_centroids (dataframe): containing a list of point for which to downscale (includes all terrain data)
-        horizon_da (dataarray): horizon angles for a list of azimuth
+        horizon_da (dataarray): horizon angles [rad] of the points (azimuth, point_name) or of the DEM grid (azimuth, y, x)
         target_EPSG (int): EPSG code of the DEM
         start_date:
         end_date:

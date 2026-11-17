@@ -281,7 +281,12 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
 
 def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc', output_directory=Path('./outputs')):
     """
-    Function to compute horizon angles for
+    Horizon angles of every pixel of the DEM, with topocalc (e.g. for maps).
+
+    topocalc follows lines of sight that are staircases stepping at the same columns (or rows) for all
+    pixels. For azimuths a few degrees off the grid axes, the pixels just before a step read their nearest
+    terrain from the adjacent row, which leaves streaks in the horizon maps. Topoclass uses
+    compute_horizon_points() instead, which traces a straight ray from each point.
 
     Args:
         dem_file (str): path and filename of the dem
@@ -337,3 +342,148 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
     return da
 
 
+
+
+def _bilinear(z, r, c):
+    """Bilinear interpolation of the 2D array z at fractional row and column indices within the grid."""
+    ny, nx = z.shape
+    i = np.clip(np.floor(r).astype(np.intp), 0, ny - 2)
+    j = np.clip(np.floor(c).astype(np.intp), 0, nx - 2)
+    wr, wc = r - i, c - j
+    return ((1 - wr) * ((1 - wc) * z[i, j] + wc * z[i, j + 1])
+            + wr * ((1 - wc) * z[i + 1, j] + wc * z[i + 1, j + 1]))
+
+
+def horizon_rays(elevation, x, y, px, py, azimuths, max_rays=2_000_000, n_threads=1, prune=True):
+    """
+    Horizon angles of points along straight rays, for a list of azimuths.
+
+    From each point, a ray is followed in each direction one cell at a time along the major grid axis, the
+    DEM being interpolated bilinearly at each sample. The horizon is the steepest elevation angle to a
+    sample, or 0 if no sample is higher than the point (as topocalc). The observer is on the DEM surface,
+    interpolated at the point. Rays stop at the edge of the DEM, or as soon as no sample further away can
+    be steeper than the horizon found ((max DEM elevation - point elevation) / distance), which does not
+    change the result. No-data cells (NaN) never form a horizon.
+
+    Args:
+        elevation (2D array): DEM (y, x)
+        x, y (1D arrays): coordinates of the DEM columns and rows (regular grid, either orientation)
+        px, py (1D arrays): coordinates of the points, in the projection of the DEM
+        azimuths (1D array): directions [deg]: 0 = south, 90 = east, -90 = west, +-180 = north
+        max_rays (int): number of rays (azimuths x points) in memory at once
+        n_threads (int): number of threads tracing blocks of points. The result does not depend on it
+        prune (bool): stop the rays when no further sample can be steeper. Only for testing
+
+    Returns:
+        array: horizon elevation angles [rad], (azimuth, point)
+    """
+    z = np.asarray(elevation, dtype=np.float64)
+    if z.ndim != 2 or min(z.shape) < 2:
+        raise ValueError('elevation must be a 2D array of at least 2 x 2 cells')
+    ny, nx = z.shape
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    dx, dy = x[1] - x[0], y[1] - y[0]
+    if not (np.allclose(np.diff(x), dx) and np.allclose(np.diff(y), dy)):
+        raise ValueError('the DEM must be a regular grid')
+
+    c = (np.asarray(px, dtype=float) - x[0]) / dx
+    r = (np.asarray(py, dtype=float) - y[0]) / dy
+    outside = (c < -0.5) | (c > nx - 0.5) | (r < -0.5) | (r > ny - 0.5)
+    if outside.any():
+        raise ValueError(f'{outside.sum()} points are outside the DEM, e.g. x={np.asarray(px)[outside][0]}, '
+                         f'y={np.asarray(py)[outside][0]}')
+    c, r = np.clip(c, 0, nx - 1), np.clip(r, 0, ny - 1)
+
+    # elevation of the observers: bilinear, or the nearest cell next to no data
+    z0 = _bilinear(z, r, c)
+    near = np.isnan(z0)
+    z0[near] = z[np.rint(r[near]).astype(np.intp), np.rint(c[near]).astype(np.intp)]
+    if np.isnan(z0).any():
+        print(f'-> WARNING: {np.isnan(z0).sum()} points on no-data cells of the DEM get a horizon of 0')
+
+    zmax = np.nanmax(z)
+    zf = np.where(np.isnan(z), np.nanmin(z) - 1e4, z)    # no data never forms a horizon
+
+    az = np.deg2rad(np.asarray(azimuths, dtype=float))
+    ux, uy = np.sin(az), -np.cos(az)                      # map direction (east, north)
+    ux[np.abs(ux) < 1e-12], uy[np.abs(uy) < 1e-12] = 0., 0.  # exact grid axes (sin(pi) is not 0)
+    ds = 1. / np.maximum(np.abs(ux / dx), np.abs(uy / dy))  # one cell along the major axis per step
+    dc, dr = ux * ds / dx, uy * ds / dy
+
+    n_az, n_pt = az.size, r.size
+    n_threads = max(1, int(n_threads or 1))
+
+    def trace(pts):
+        ia = np.repeat(np.arange(n_az), pts.size)
+        ip = np.tile(pts, n_az)
+        r0, c0, zz0 = r[ip], c[ip], z0[ip]
+        rdr, rdc, rds = dr[ia], dc[ia], ds[ia]
+        out = np.zeros(ip.size)
+        live = np.arange(ip.size)
+        b = np.zeros(ip.size)
+        s = 0
+        while live.size:
+            s += 1
+            rr, cc = r0 + s * rdr, c0 + s * rdc
+            inside = (rr >= -1e-9) & (rr <= ny - 1 + 1e-9) & (cc >= -1e-9) & (cc <= nx - 1 + 1e-9)
+            dist = s * rds
+            zs = _bilinear(zf, rr, cc)   # indices are clipped: samples outside are masked below
+            b = np.fmax(b, np.where(inside, (zs - zz0) / dist, -np.inf))
+            keep = inside & ((zmax - zz0) / dist > b) if prune else inside
+            if not keep.all():
+                out[live[~keep]] = b[~keep]
+                live = live[keep]
+                r0, c0, zz0, rdr, rdc, rds, b = (a[keep] for a in (r0, c0, zz0, rdr, rdc, rds, b))
+        return ia, ip, out
+
+    # blocks of points, small enough to bound memory and to keep the threads busy
+    block = max(1, min(max_rays // (max(n_az, 1) * n_threads), -(-n_pt // n_threads)))
+    blocks = [np.arange(p0, min(p0 + block, n_pt)) for p0 in range(0, n_pt, block)]
+    best = np.zeros((n_az, n_pt))
+    if n_threads > 1 and len(blocks) > 1:
+        with ThreadPool(n_threads) as pool:
+            results = pool.map(trace, blocks)
+    else:
+        results = map(trace, blocks)
+    for ia, ip, out in results:
+        best[ia, ip] = out
+    return np.arctan(best)
+
+
+def compute_horizon_points(dem_file, df_points, azimuth_inc=10, fname='da_horizon.nc',
+                           output_directory=Path('./outputs'), n_threads=1):
+    """
+    Horizon angles of a list of points, along straight rays from each point (see horizon_rays).
+
+    Args:
+        dem_file (str): path and filename of the dem
+        df_points (dataframe): points with columns x, y (projection of the DEM) and point_name
+        azimuth_inc (int): angle increment of the azimuths [deg], centred in their bins as compute_horizon()
+        fname (str): filename of the netcdf file written in output_directory. None to skip writing
+        output_directory (Path): output directory
+        n_threads (int): number of threads
+
+    Returns:
+        dataarray: horizon angles [rad], (azimuth, point_name), with the point coordinates x, y
+    """
+    df_points = df_points.reset_index(drop=True)
+    print(f'\n---> Computing horizons of {len(df_points)} points with {azimuth_inc} degree increments')
+    ds = open_dem(dem_file)
+    azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
+    hor = horizon_rays(ds.elevation.values, ds.x.values, ds.y.values, df_points.x.values, df_points.y.values,
+                       azimuth, n_threads=n_threads)
+    names = df_points.point_name if 'point_name' in df_points else df_points.index
+    names = np.array([str(v) for v in names])
+    if np.unique(names).size != names.size:
+        raise ValueError('point names must be unique')
+    da = xr.DataArray(hor, dims=['azimuth', 'point_name'], name='horizon',
+                      coords={'azimuth': azimuth, 'point_name': names,
+                              'x': ('point_name', df_points.x.values.astype(float)),
+                              'y': ('point_name', df_points.y.values.astype(float))},
+                      attrs={'long_name': 'Horizon angles', 'units': 'rad',
+                             'method': 'straight rays from each point, bilinear interpolation of the DEM',
+                             'azimuth_convention': 'deg, 0 = south, 90 = east, +-180 = north'})
+    da.azimuth.attrs = {'units': 'degree', 'long_name': 'centre of the azimuth bin'}
+    if fname is not None:
+        da.to_dataset().to_netcdf(Path(output_directory) / fname)
+    return da
