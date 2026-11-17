@@ -14,6 +14,8 @@ Using the setting spatial in `toposub` will lead you using the clustering method
 
 ## Fetching ERA5 data from CDS
 
+ERA5 can also be fetched from NCAR GDEX instead of the CDS (`climate.era5.data_repository: gdex`), see [Dataset Sources](04_datasetSources.md#from-ncar-gdex).
+
 As of now, TPS includes a class to implementing all the functionalities in dealing with the ERA5 data independent from `Topoclass`. This makes the process, now very long, of fetching data more flexible and robuts. The class eith inherits the config from `Topoclass`, or can be directly pointed towards the `config.yml` file.
 
 ```python

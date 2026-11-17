@@ -151,11 +151,21 @@ class FetchERA5():
                 download_format = 'unarchived'
 
             # Check data repository is currently supported
-            data_repository = self.config.climate[self.config.project.climate].data_repository
-            if data_repository == 'cds':
-                pass
-            else:
-                raise ValueError(f"Data repository {data_repository} not yet supported.")
+            clim = self.config.climate[self.config.project.climate]
+            data_repository = self.config.climate[self.config.project.climate].data_repository or 'cds'
+            if data_repository == 'gdex':
+                if clim.realtime:
+                    raise ValueError('realtime needs ERA5T from the CDS: GDEX is updated months later')
+                if clim.product not in [None, {}, 'reanalysis']:
+                    raise ValueError(f'GDEX only holds the ERA5 reanalysis, not {clim.product}')
+                retrieve_era5_gdex(self.config.project.start, self.config.project.end, self.config.climate.path,
+                                   latN, latS, lonE, lonW, step=clim.timestep or '1h', surf_plev=surf_plev.lower(),
+                                   plevels=clim.plevels, num_processes=clim.download_threads or 4,
+                                   root=self.config.climate[self.config.project.climate].gdex_root,
+                                   rm_daily=bool(clim.rm_daily))
+                return
+            elif data_repository != 'cds':
+                raise ValueError(f"Data repository {data_repository} not supported: use cds or gdex")
 
             if self.get_surf:
                 # retreive ERA5 surface data
@@ -424,6 +434,236 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
     ds_surf.to_zarr('SURF.zarr')
 
 
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# NCAR GDEX (Geoscience Data Exchange), dataset d633000: ERA5 on the 0.25 deg grid, the same data as the CDS.
+# Surface analyses are zarr stores. Pressure levels (daily files), accumulated fluxes (half-month files of forecasts)
+# and the surface geopotential are netCDF4 files: they are read in place, only the box is kept.
+# ---------------------------------------------------------------------------------------------------------------
+GDEX_POSIX_ROOT = '/gdex/data/d633000'                                   # NCAR systems
+GDEX_OSDF_ROOT = 'https://osdf-director.osg-htc.org/ncar/gdex/d633000'   # anywhere, over HTTPS (OSDF)
+
+GDEX_PLEV = {'z': '128_129_z.ll025sc', 't': '128_130_t.ll025sc', 'u': '128_131_u.ll025uv',
+             'v': '128_132_v.ll025uv', 'q': '128_133_q.ll025sc'}
+GDEX_SURF_AN = {'t2m': ('2t', '128_167_2t.ll025sc'), 'd2m': ('2d', '128_168_2d.ll025sc'),
+                'sp': ('sp', '128_134_sp.ll025sc')}
+# accumulations over the hour ending at the valid time (forecast start + step, steps 1 to 12), as on the CDS
+GDEX_SURF_ACCUMU = {'ssrd': '128_169_ssrd.ll025sc', 'strd': '128_175_strd.ll025sc', 'tp': '128_228_tp.ll025sc'}
+GDEX_INVARIANT_Z = 'e5.oper.invariant/197901/e5.oper.invariant.128_129_z.ll025sc.1979010100_1979010100.nc'
+
+
+def gdex_root(root=None):
+    """Root of GDEX dataset d633000: root if given, else the local mount on NCAR systems, else OSDF over HTTPS."""
+    if root not in [None, {}, '']:
+        return str(root).rstrip('/')
+    return GDEX_POSIX_ROOT if os.path.isdir(GDEX_POSIX_ROOT) else GDEX_OSDF_ROOT
+
+
+def _is_remote(path):
+    return str(path).startswith(('http://', 'https://'))
+
+
+def _require_aiohttp():
+    try:
+        import aiohttp  # noqa: F401
+    except ImportError:
+        raise ImportError('Reading GDEX over HTTPS needs aiohttp: pip install aiohttp')
+
+
+def _data_var(ds):
+    """The variable of a GDEX file (each file or store holds one, plus utc_date)."""
+    names = [v for v in ds.data_vars if v != 'utc_date']
+    if len(names) != 1:
+        raise ValueError(f'Expected one data variable, found {names}')
+    return ds[names[0]]
+
+
+def _gdex_load(path, select):
+    """Open a GDEX netCDF4 file (local path or URL), apply select to its variable, load the result, close the file."""
+    if _is_remote(path):
+        _require_aiohttp()
+        import fsspec
+        with fsspec.open(path, 'rb') as f, xr.open_dataset(f, engine='h5netcdf') as ds:
+            return select(_data_var(ds)).load()
+    with xr.open_dataset(path, engine='h5netcdf') as ds:
+        return select(_data_var(ds)).load()
+
+
+def _gdex_box(da, latN, latS, lonW, lonE):
+    """Subset to the box. GDEX longitudes are 0..360; returned in -180..180, ascending, as the CDS does."""
+    lat = da.latitude.values
+    da = da.sel(latitude=slice(latN, latS) if lat[0] > lat[-1] else slice(latS, latN))
+    w, e = lonW % 360, lonE % 360
+    if w <= e:
+        da = da.sel(longitude=slice(w, e))
+    else:  # across the Greenwich meridian
+        da = xr.concat([da.sel(longitude=slice(w, None)), da.sel(longitude=slice(None, e))], dim='longitude')
+    lon = da.longitude.values
+    lon = np.where(lon > 180, lon - 360, lon)
+    if np.any(np.diff(lon) <= 0):
+        raise ValueError('Domains across the 180 deg meridian are not supported')
+    return da.assign_coords(longitude=lon)
+
+
+def _accumu_init_step(times):
+    """Forecast start (06 or 18 UTC) and step (1 to 12 h) giving each valid time, as ECMWF maps CDS times to MARS."""
+    t = pd.DatetimeIndex(times)
+    offset = np.where(t.hour >= 19, 18, np.where(t.hour >= 7, 6, -6))
+    init = t.floor('D') + pd.to_timedelta(offset, unit='h')
+    return init, ((t - init) / pd.Timedelta('1h')).astype(int)
+
+
+def _accumu_file(root, stem, init):
+    """Half-month file holding the forecasts started at init."""
+    m = init.strftime('%Y%m')
+    if init.day <= 15:
+        span = f'{m}0106_{m}1606'
+    else:
+        span = f'{m}1606_{(init + pd.offsets.MonthBegin(1)).strftime("%Y%m")}0106'
+    return f'{root}/e5.oper.fc.sfc.accumu/{m}/e5.oper.fc.sfc.accumu.{stem}.{span}.nc'
+
+
+def _gdex_accumu(root, stem, times, box):
+    init, step = _accumu_init_step(times)
+    files = pd.Series([_accumu_file(root, stem, i) for i in init])
+    parts = []
+    for path in files.unique():
+        k = np.flatnonzero(files.values == path)
+        sel = dict(forecast_initial_time=xr.DataArray(init[k].values, dims='time'),
+                   forecast_hour=xr.DataArray(step[k], dims='time'))
+        da = _gdex_load(path, lambda d: _gdex_box(d.sel(**sel), *box))
+        parts.append(da.drop_vars(['forecast_initial_time', 'forecast_hour'], errors='ignore')
+                     .assign_coords(time=pd.DatetimeIndex(times)[k]))
+    return xr.concat(parts, dim='time').sortby('time')
+
+
+def _gdex_surf_an(root, short, stem, times, box):
+    """Surface analysis from the zarr store, or from the monthly netCDF4 file where the store ends."""
+    store = f'{root}/e5.oper.an.sfc.zarr/e5.oper.an.sfc.{short}.zarr'
+    if _is_remote(store):
+        _require_aiohttp()
+    times = pd.DatetimeIndex(times)
+    try:
+        with xr.open_zarr(store, chunks=None) as ds:
+            da = _data_var(ds)
+            if da.time.values[-1] >= times[-1].to_datetime64():
+                return _gdex_box(da.sel(time=times), *box).load()
+    except FileNotFoundError:
+        pass
+    day = times[0]
+    last = (day + pd.offsets.MonthEnd(0)).day
+    path = (f'{root}/e5.oper.an.sfc/{day:%Y%m}/e5.oper.an.sfc.{stem}.'
+            f'{day:%Y%m}0100_{day:%Y%m}{last:02d}23.nc')
+    return _gdex_load(path, lambda d: _gdex_box(d.sel(time=times), *box))
+
+
+def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
+    """Write the daily file of one day (dSURF_ or dPLEV_), with the variables and layout of the CDS files."""
+    times = pd.date_range(day, periods=24, freq='1h')[::int(pd.Timedelta(step) / pd.Timedelta('1h'))]
+    if kind == 'plev':
+        out = {}
+        for name, stem in GDEX_PLEV.items():
+            path = (f'{root}/e5.oper.an.pl/{day:%Y%m}/e5.oper.an.pl.{stem}.'
+                    f'{day:%Y%m%d}00_{day:%Y%m%d}23.nc')
+            out[name] = _gdex_load(path, lambda d: _gdex_box(d.sel(time=times, level=list(plevels)), *box))
+        ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact').sortby('level')
+    else:
+        out = {name: _gdex_surf_an(root, short, stem, times, box) for name, (short, stem) in GDEX_SURF_AN.items()}
+        out.update({name: _gdex_accumu(root, stem, times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
+        out['z'] = z_surf.expand_dims(time=times)
+        ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact')
+    ds = ds.drop_vars([c for c in ds.coords if c not in ('time', 'level', 'latitude', 'longitude')])
+    ds.attrs = {'source': f'NCAR GDEX d633000 (ERA5), {root}'}
+    tmp = Path(str(target) + '.part')
+    ds.to_netcdf(tmp, encoding={v: {'dtype': 'float32', 'zlib': True, 'complevel': 4} for v in ds.data_vars})
+    os.replace(tmp, target)
+    return str(target)
+
+
+def _gdex_day_star(args):
+    return _gdex_day(*args)
+
+
+def retrieve_era5_gdex(startDate, endDate, eraDir, latN, latS, lonE, lonW, step='1h', surf_plev='all',
+                       plevels=None, num_processes=4, root=None, rm_daily=False):
+    """
+    Fetch ERA5 from NCAR GDEX (dataset d633000) instead of the CDS, into the same daily and yearly files.
+
+    Writes eraDir/daily/dSURF_YYYYMMDD.nc and dPLEV_YYYYMMDD.nc, then eraDir/yearly/SURF_YYYY.nc and PLEV_YYYY.nc,
+    with the variables, units and layout of the CDS files: z, t, u, v, q on pressure levels (ascending) and z, t2m,
+    d2m, sp, ssrd, strd, tp at the surface; latitude descending, longitude in -180..180. Accumulated fluxes are
+    over the hour ending at the time stamp, as on the CDS. Days already in eraDir/daily are skipped.
+
+    On NCAR systems the files are read from /gdex/data. Elsewhere they are read over HTTPS (OSDF), which needs
+    aiohttp. Pressure-level files are chunked as one global field per hour and per variable: whatever the size of
+    the box, about 1 GB per variable and day is transferred.
+
+    Args:
+        startDate, endDate: first and last day
+        eraDir (Path): climate folder
+        latN, latS, lonE, lonW (float): box [deg]
+        step (str): '1h', '3h' or '6h'
+        surf_plev (str): 'surf', 'plev' or 'all'
+        plevels (list): pressure levels [hPa]
+        num_processes (int): days fetched in parallel (processes, as HDF5 reads hold a global lock)
+        root (str): GDEX root (path or URL). Default: /gdex/data/d633000 if it exists, else OSDF over HTTPS
+        rm_daily (bool): remove the daily folder once merged into yearly files
+    """
+    root = gdex_root(root)
+    eraDir = Path(eraDir)
+    kinds = ['surf', 'plev'] if surf_plev == 'all' else [surf_plev.lower()]
+    if 'plev' in kinds and not plevels:
+        raise ValueError('plevels are required for pressure-level data')
+    days = pd.date_range(pd.Timestamp(startDate).normalize(), pd.Timestamp(endDate).normalize(), freq='D')
+    (eraDir / 'daily').mkdir(parents=True, exist_ok=True)
+    (eraDir / 'yearly').mkdir(parents=True, exist_ok=True)
+    box = (latN, latS, lonW, lonE)
+
+    jobs = [(kind, day, eraDir / 'daily' / f'd{kind.upper()}_{day:%Y%m%d}.nc') for kind in kinds for day in days]
+    todo = [j for j in jobs if not j[2].is_file()]
+    print(f'---> ERA5 from NCAR GDEX ({root}): {len(todo)} daily files to fetch, {len(jobs) - len(todo)} present')
+    if _is_remote(root) and any(k == 'plev' for k, _, _ in todo):
+        n = sum(k == 'plev' for k, _, _ in todo) / (pd.Timedelta(step) / pd.Timedelta('1h'))
+        print(f'     Pressure levels are stored as global hourly fields: about {5 * n:.0f} GB to transfer '
+              f'whatever the size of the domain. On NCAR systems they are read locally')
+
+    z_surf = None
+    if any(k == 'surf' for k, _, _ in todo):
+        z_surf = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
+                            lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
+    args = [(root, kind, day, step, box, plevels, z_surf, target) for kind, day, target in todo]
+    if num_processes and num_processes > 1 and len(args) > 1:
+        from multiprocessing import get_context
+        with get_context('spawn').Pool(min(num_processes, len(args))) as pool:
+            for f in pool.imap_unordered(_gdex_day_star, args):
+                print(f'     {Path(f).name}')
+    else:
+        for a in args:
+            print(f'     {Path(_gdex_day(*a)).name}')
+
+    for kind in kinds:
+        for year in sorted(set(days.year)):
+            _merge_daily_year(eraDir, kind, year)
+    if rm_daily:
+        shutil.rmtree(eraDir / 'daily')
+        print('---> Daily files removed')
+    print('===> ERA5 netcdf files ready')
+
+
+def _merge_daily_year(eraDir, kind, year):
+    """Concatenate the daily files of one year into yearly/SURF_YYYY.nc or PLEV_YYYY.nc, file by file."""
+    prefix = kind.upper()
+    files = sorted((Path(eraDir) / 'daily').glob(f'd{prefix}_{year:04d}*.nc'))
+    if not files:
+        return
+    parts = []
+    for f in files:
+        with xr.open_dataset(f) as ds:
+            parts.append(_standardize_era5(ds).load())
+    out = Path(eraDir) / 'yearly' / f'{prefix}_{year:04d}.nc'
+    xr.concat(parts, dim='time').sortby('time').to_netcdf(out)
+    print(f'---> {out.name} written from {len(files)} daily files')
 
 
 def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 

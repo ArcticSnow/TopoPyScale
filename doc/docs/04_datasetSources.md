@@ -15,6 +15,26 @@ ERA5 comes in two parts:
 
 Copernicus whom generate the ERA5 data is also a portal to download the data. TopoPyScale has a routine to download the data given identification to the cds system has been done.
 
+#### From NCAR GDEX
+
+The [NCAR Geoscience Data Exchange](https://gdex.ucar.edu/datasets/d633000/) (dataset d633000) holds the same ERA5 data as the CDS, with no account, licence or queue. TopoPyScale reads it in place and writes the same files as with the CDS, so the rest of the workflow is unchanged.
+
+```yaml
+climate:
+  era5:
+    data_repository: gdex
+    download_threads: 8      # days fetched in parallel
+```
+
+Setup:
+
+- On NCAR systems (Derecho, Casper), nothing: the data are read from `/gdex/data/d633000`.
+- Elsewhere, the data are read over HTTPS from the Open Science Data Federation (OSDF). Install `aiohttp` (`pip install aiohttp`).
+
+Which one is faster depends on where TopoPyScale runs. GDEX stores pressure levels as one global field per hour and per variable, and accumulated fluxes as global forecast blocks. Whatever the size of the domain, about 6 GB per day (2 TB per year) must be read. On NCAR systems this is a local read, faster than waiting for the CDS. Over the network, the CDS, which cuts the domain on its side, is usually faster, so it stays the default.
+
+Limits: the ERA5 reanalysis only (no ensemble), no `realtime` (GDEX is updated months after ERA5T), and domains across the 180° meridian are not supported. Surface analyses come from the GDEX zarr stores; pressure levels, accumulated fluxes and the surface geopotential from its netCDF4 files.
+
 #### From Google Cloud Storage repository
 
 Google Cloud Storage maintains a publicly accessible repository of the ERA5 data. TopoPyScale includes a routine to download data from there given authentification to Google Cloud has been done has explained by Google: https://cloud.google.com/sdk/docs/install
