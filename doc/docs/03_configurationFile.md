@@ -54,9 +54,6 @@ project:
   # (optional) [latN, latS, lonW, lonE] in degrees. Box of the ERA5 download. Default: extent of the DEM
   extent: [60.8, 60.4, 7.1, 7.7]
 
-  split:
-    IO: False       # must be False with the zarr pipeline. Use toposcale.time_block instead
-    time: 1         # (optional) number of years per time chunk, only with IO: True
 
   # indicate which climate data to use. Currently only era5 available (see climate section below)
   climate: era5
@@ -141,7 +138,6 @@ outputs:
     ds_solar: ds_solar.nc               # (netcdf)  solar geometry
     da_horizon: da_horizon.nc           # (netcdf)  horizon angles of the points
     zarr_store: down.zarr               # (optional) store of the downscaled timeseries in outputs/downscaled/. Default down.zarr
-    downscaled_pt: down_pt_*.nc         # (optional) only for the deprecated netcdf backend
 
 clean_up:
   rm_tmp_dirs: True                     # (optional) remove the tmp directories after downscaling
@@ -164,10 +160,6 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | end         | 2018-12-31            | yes      | %Y-%m-%d        | end date of the downscaling, included: time steps run up to the last one of that day. ERA5 must cover it |
 | extent      | [60.8, 60.4, 7.1, 7.7] | no      | [latN, latS, lonW, lonE] | lat/lon box in degrees. The ERA5 download adds a 0.4° margin. If the DEM file does not exist, an interactive prompt offers to download one for this box. Default: extent of the DEM |
 | climate     | era5                  | yes      | era5            | source of climate data, the name of the section in `climate`. ERA5 is the only supported dataset at the moment |
-| **split**   |                       |          |                 |             |
-| IO          | False                 | no       | False           | Splitting the downscaling in time is not compatible with the zarr pipeline: `downscale_climate()` raises with `True`. Long periods are processed by blocks of time steps, see `toposcale.time_block` |
-| time        | 1                     | no       | integer         | number of years per time chunk, only with `split.IO: True` |
-| space       |                       | no       |                 | not implemented |
 | ***parallelization*** |             |          |                 | |
 | **setting**   |                     |          |                 | |
 | *multicore*   |                     |          |                 | |
@@ -250,7 +242,6 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 | ds_solar      | ds_solar.nc        | yes      | `*.nc`              | filename of the solar geometry of the points. Saved in `outputs/` |
 | da_horizon    | da_horizon.nc      | yes      | `*.nc`              | filename of the horizon angles of the points (`azimuth`, `point_name`). Saved in `outputs/`, recomputed when the points change |
 | zarr_store    | down.zarr          | no       | string              | name of the zarr store of the downscaled timeseries, in `outputs/downscaled/`. Default down.zarr |
-| downscaled_pt | down_pt_*.nc       | no       | `*.nc` with a `*`   | file pattern of the deprecated netcdf backend (`topo_scale.downscale_climate()`), where `*` is the point name. Not used by the zarr pipeline |
 
 The cluster map is written by `mp.toposub.write_landform()` to `outputs/landform.tif`; the former key `outputs.file.landform` is not read.
 
@@ -286,8 +277,8 @@ Keys renamed or no longer read:
 |-------------|-----|
 | `climate.era5.timestep: 1H` | `1h` (pandas no longer accepts `H`; upper case is converted) |
 | `project.parallelization.downscaling_method`, `project.parallelization.setting.dask` | not read: downscaling runs `CPU_cores` threads over blocks of points |
-| `project.split.IO: True` | not compatible with the zarr pipeline. Use `toposcale.time_block` |
-| `outputs.file.downscaled_pt` | only for the deprecated netcdf backend. The zarr pipeline writes `outputs.file.zarr_store` |
+| `project.split` (`IO`, `time`, `space`) | removed: long periods are processed by blocks of time steps, `toposcale.time_block` |
+| `outputs.file.downscaled_pt` | removed with the netcdf downscaling: the points are written to `outputs.file.zarr_store` |
 | `outputs.file.landform` | not read: `outputs/landform.tif` |
 | `sampling.points.epsg` | not read: `x,y` must be in the DEM projection |
 | `sampling.points.ID_col` | `sampling.points.name_column` |
@@ -309,4 +300,3 @@ Downscaling reads ERA5 from a zarr store, `inputs/climate/ERA5.zarr`, and writes
 - Downscaling processes blocks of points (`toposcale.point_block`) and of time steps (`toposcale.time_block`) at once. The ERA5 nodes around the points are read once per time block, and all points of a block are downscaled together as arrays.
 - The output store has dimensions `(point_name, time)`. See [Output Formats](05_outputs.md).
 
-The former netcdf backend, `topo_scale.downscale_climate()`, still works but is deprecated.

@@ -11,7 +11,6 @@ project/
     -> output/
 
 """
-import glob
 import os
 import pdb
 import shutil
@@ -32,9 +31,9 @@ from TopoPyScale import topo_export as te
 from TopoPyScale import topo_obs as tpo
 from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_plot as tpl
-from TopoPyScale import topo_scale as ta
 from TopoPyScale import topo_sub as ts
 from TopoPyScale import topo_scale_zarr as tz
+from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_checks as tc
 
@@ -166,12 +165,6 @@ class Topoclass(object):
         if self.config.project.climate.lower() == 'ifs_forecast':
             self.get_ifs_forecast()
 
-        if self.config.project.split.IO:
-            self.time_splitter = self.TimeSplitter(self.config.project.start,
-                                                   self.config.project.end,
-                                                   self.config.project.split.time,
-                                                   self.config.outputs.file.ds_solar,
-                                                   self.config.outputs.file.downscaled_pt)
         if not self.config.dem.solar_position_method:
             self.config.dem.solar_position_method = 'nrel_numpy'
 
@@ -211,12 +204,6 @@ class Topoclass(object):
         if store.exists():
             self.downscaled_pts = tu.open_downscaled_store(store)
             print(f'---> Downscaled points {store.name} exists and loaded')
-        elif self.config.outputs.file.downscaled_pt and \
-                glob.glob(f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}'):
-            # netcdf files written by the deprecated netcdf backend
-            self.downscaled_pts = tu.read_downscaled(
-                f'{self.config.outputs.downscaled}/{self.config.outputs.file.downscaled_pt}')
-            print(f'---> Downscaled point files {self.config.outputs.file.downscaled_pt} loaded')
         else:
             print(f'-> WARNING: Downscaled points {store.name} not found')
 
@@ -244,7 +231,8 @@ class Topoclass(object):
         self.toposub.ds_param = tp.compute_dem_param(self.config.dem.filepath,
                                                      fname=self.config.outputs.file.ds_param,
                                                      project_directory=self.config.project.directory,
-                                                     output_folder=self.config.outputs.path)
+                                                     output_folder=self.config.outputs.path,
+                                                     n_processes=self.config.project.parallelization.setting.multicore.CPU_cores)
 
     def search_optimum_number_of_clusters(self,
                                           cluster_range=np.arange(100, 1000, 200),
@@ -532,28 +520,6 @@ class Topoclass(object):
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
 
-    class TimeSplitter():
-        def __init__(self, start, end, period, ds_solar_fname, downscale_fname):
-            self.start = start
-            self.end = end
-            self.period = period
-
-            s = pd.date_range(self.start, self.end, freq=f'{self.period}YS')
-            self.start_list = list(s.astype(str))
-            self.end_list = list((s - pd.Timedelta('1D')).astype(str))[1:]
-            self.end_list.append(end.strftime('%Y-%m-%d'))
-
-            self.ds_solar_flist = self._flist_generator(ds_solar_fname)
-            self.downscaled_flist = self._flist_generator(downscale_fname)
-
-        def _flist_generator(self, fname):
-            # function to creat list of filename
-            fcom = fname.split('.')
-            flist = []
-            for i, start in enumerate(self.start_list):
-                flist.append(f'{fcom[0]}_{start}_{self.end_list[i]}.{fcom[1]}')
-            return flist
-
     def _accumulation_window(self):
         # radiation accumulation window of the climate forcing (ERA5: 1 h, whatever the sampling time step)
         return self.config.climate[self.config.project.climate].accumulation_window or '1h'
@@ -581,37 +547,21 @@ class Topoclass(object):
                                  n_substeps=self.config.toposcale.solar_substeps or 6)
 
     def compute_solar_geometry(self):
-
-        if self.config.project.split.IO:
-            for i, start in enumerate(self.time_splitter.start_list):
-                end = self.time_splitter.end_list[i]
-                fname = self.config.outputs.path / self.time_splitter.ds_solar_flist[i]
-
-                if fname.is_file():
-                    self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
-                    print(f'---> Solar file {self.time_splitter.ds_solar_flist[i]} exists and loaded')
-                    self._warn_old_solar_file(self.ds_solar, fname.name)
-                else:
-                    self.ds_solar = self._solar_geometry(start, end, self.time_splitter.ds_solar_flist[i])
-
+        fname = self.config.outputs.path / self.config.outputs.file.ds_solar
+        if fname.is_file():
+            self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
+            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+            self._warn_old_solar_file(self.ds_solar, fname.name)
         else:
-            fname = self.config.outputs.path / self.config.outputs.file.ds_solar
-            if fname.is_file():
-                self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
-                print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
-                self._warn_old_solar_file(self.ds_solar, fname.name)
-            else:
-                self.ds_solar = self._solar_geometry(self.config.project.start, self.config.project.end,
-                                                     self.config.outputs.file.ds_solar)
+            self.ds_solar = self._solar_geometry(self.config.project.start, self.config.project.end,
+                                                 self.config.outputs.file.ds_solar)
 
     def compute_horizon(self):
         """
         Horizon angles of the points (df_centroids), every dem.horizon_increments degrees, along straight rays
         from each point (topo_param.compute_horizon_points). Saved to outputs/da_horizon.nc and as the columns
-        hori_azi_<azimuth> of df_centroids.
-
-        An existing horizon file is loaded if it holds these points, and recomputed otherwise. A full-grid
-        horizon file from an earlier version is still used (nearest pixel), with a warning.
+        hori_azi_<azimuth> of df_centroids. An existing horizon file is loaded if it holds these points (names and
+        positions), and recomputed otherwise.
         """
         df = self.toposub.df_centroids
         if df is None:
@@ -621,16 +571,11 @@ class Topoclass(object):
         if fname.is_file():
             da = xr.open_dataarray(fname, engine='h5netcdf').load()
             da.close()
-            if 'point_name' not in da.dims:
-                print(f'-> WARNING: {self.config.outputs.file.da_horizon} holds horizons of the full DEM grid, '
-                      f'computed by an earlier version of TopoPyScale with topocalc, whose lines of sight leave '
-                      f'streaks for azimuths a few degrees off the grid axes. Delete it to recompute the horizons '
-                      f'at the points along straight rays.')
-            elif not tu.horizon_matches_points(da, df):
+            if tu.horizon_matches_points(da, df):
+                print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+            else:
                 print(f'---> Horizon file {self.config.outputs.file.da_horizon} holds other points: recomputing')
                 da = None
-            else:
-                print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         if da is None:
             da = tp.compute_horizon_points(self.config.dem.filepath, df, self.config.dem.horizon_increments,
                                            fname=self.config.outputs.file.da_horizon,
@@ -647,86 +592,10 @@ class Topoclass(object):
 
     def downscale_climate(self):
         """
-        Function to execute downscaling
+        Downscale the climate forcing to the points, into the zarr store outputs/downscaled/<zarr_store>
+        (topo_scale_zarr.ClimateDownscaler).
         """
-
-        downscaled_dir = self.config.outputs.downscaled
-        f_pattern = self.config.outputs.file.downscaled_pt
-        output_folder = self.config.outputs.path.name
-
-        if (f_pattern is not None) and ('*' not in f_pattern):
-            raise ValueError(
-                f'ERROR: The filepattern for the downscaled files does need to have a * in the name. You provided {f_pattern}')
-
-            # clean directory from files with the same downscaled output file pattern (so they get replaced)
-            existing_files = sorted(downscaled_dir.glob(f_pattern))
-            for file in existing_files:
-                file.unlink()
-                print(f'existing file {file.name} removed.')
-
-        if self.config.project.split.IO:
-            raise Warning("This section of the code has been tested for a while. It may be prone to bugs. Not compatible with Zarr system.")
-            for i, start in enumerate(self.time_splitter.start_list):
-                print()
-                end = self.time_splitter.end_list[i]
-                fname = self.time_splitter.downscaled_flist[i]
-
-                self.ds_solar = None
-                self.ds_solar = xr.open_dataset(
-                    self.config.outputs.path / self.time_splitter.ds_solar_flist[i])
-
-                ta.downscale_climate(self.config.project.directory,
-                                     self.config.climate.path,
-                                     self.config.outputs.path,
-                                     self.toposub.df_centroids,
-                                     self.da_horizon,
-                                     self.ds_solar,
-                                     self.config.dem.epsg,
-                                     start,
-                                     end,
-                                     self.config.climate[self.config.project.climate].timestep,
-                                     self.config.toposcale.interpolation_method,
-                                     self.config.toposcale.LW_terrain_contribution,
-                                     self.config.climate.precip_lapse_rate,
-                                     fname,
-                                     self.config.project.parallelization.setting.multicore.CPU_cores,
-                                     precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor
-                                     or ta.PRECIP_LAPSE_MAX_FACTOR)
-
-            for pt_id in self.toposub.df_centroids.point_name.values:
-                print(f'Concatenating point {pt_id}')
-                filename = Path(f_pattern.replace('*', pt_id))
-                flist = sorted([file for file in downscaled_dir.rglob(f'{filename.stem}_*')])
-                ds_list = [xr.open_dataset(file, engine='h5netcdf') for file in flist]
-
-                fout = Path(downscaled_dir, filename)
-                ds = xr.concat(ds_list, dim='time')
-                ds.to_netcdf(fout, engine='h5netcdf')
-                del ds
-
-            # Delete time slice files.
-            for fpat in self.time_splitter.downscaled_flist:
-                flist = glob.glob(f'{self.config.outputs.downscaled}/{fpat}')
-                for file in flist:
-                    os.remove(file)
-
-            # concatenate ds solar
-            print('concatenating solar files')
-            out_solar_name = Path(self.config.outputs.file.ds_solar)
-            solar_pattern = f'{out_solar_name.stem}_*{out_solar_name.suffix}'
-            solar_flist = sorted(self.config.outputs.path.glob(solar_pattern))
-            ds_solar_list = [xr.open_dataset(file, engine='h5netcdf') for file in solar_flist]
-            fout = Path(self.config.outputs.path, out_solar_name)
-            ds = xr.concat(ds_solar_list, dim='time')
-            ds.to_netcdf(fout, engine='h5netcdf')
-            [f.unlink() for f in solar_flist]  # delete tmp solar files
-            print('solar files concatenated')
-            del ds
-
-        else:
-            self.downscaled_pts = self._downscale_zarr(downscaled_dir)
-        if self.config.project.split.IO:
-            self.downscaled_pts = tu.read_downscaled(f'{downscaled_dir}/{f_pattern}')
+        self.downscaled_pts = self._downscale_zarr(self.config.outputs.downscaled)
         # update plotting class variables
         self.plot.ds_down = self.downscaled_pts
 
@@ -786,7 +655,7 @@ class Topoclass(object):
             lw_terrain_flag=self.config.toposcale.LW_terrain_contribution,
             precip_lapse_rate_flag=self.config.climate.precip_lapse_rate,
             store_name=self._downscaled_store_name(),
-            precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or ta.PRECIP_LAPSE_MAX_FACTOR,
+            precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or core.PRECIP_LAPSE_MAX_FACTOR,
             point_block=self.config.toposcale.point_block or 100,
             time_block=self.config.toposcale.time_block)
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1

@@ -7,7 +7,6 @@ The solar position follows the NREL Solar Position Algorithm (Reda and Andreas, 
 ascension and declination) does not depend on the location: it is computed once for all time steps, and only the
 location-dependent part is evaluated for each point, as arrays (time x point).
 """
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -126,7 +125,6 @@ def get_solar_geom(df_position,
                    end_date,
                    tstep,
                    sr_epsg="4326",
-                   num_threads=None,
                    fname='ds_solar.nc',
                    project_ouput=Path('./'),
                    method_solar='nrel_numpy',
@@ -143,7 +141,6 @@ def get_solar_geom(df_position,
         end_date (str): end date   "2015-05-10"
         tstep (str): time step, ex: '6h'
         sr_epsg (str): EPSG code of x, y, used when longitude/latitude are not given
-        num_threads (int): deprecated, not used (the computation is vectorized)
         fname (str): name of netcdf file to store solar geometry
         project_ouput (str): path to project root directory
         method_solar (str): pvlib solar position method. 'nrel_numpy' (default) is vectorized over points
@@ -157,8 +154,6 @@ def get_solar_geom(df_position,
         dataset: zenith, azimuth, elevation [rad], mu0, SWtoa [W m-2], sunset (point_name, time)
     """
     print('\n---> Computing solar geometry')
-    if num_threads is not None:
-        warnings.warn('num_threads is no longer used: the solar geometry is vectorized over points', FutureWarning)
     df = df_position.copy()
     if {'longitude', 'latitude'} <= set(df.columns):
         lon, lat = df.longitude.values, df.latitude.values

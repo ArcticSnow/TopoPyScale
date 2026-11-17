@@ -1,8 +1,8 @@
 """
 Physics-consistency tests for the TopoPyScale downscaling chain.
 
-The pipeline tests run the real downscaling functions of both backends (topo_scale.py = 'netcdf',
-topo_scale_zarr.py = 'zarr') on synthetic ERA5 fields with a known answer (see synthetic_era5.py).
+The pipeline tests run the real downscaling engine (topo_scale_zarr.py) on synthetic ERA5 fields with a known
+answer (see synthetic_era5.py).
 
 Tests marked `known_violation` document constraints the current code breaks. They are strict xfails: once the
 underlying issue is fixed the test XPASSes, which fails the suite, as a reminder to remove the marker.
@@ -21,9 +21,6 @@ import synthetic_era5 as syn
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_checks as tc
 
-BACKENDS = ['netcdf', 'zarr']
-
-
 def known_violation(reason):
     return pytest.mark.xfail(strict=True, reason=reason)
 
@@ -33,16 +30,12 @@ def quiet(fun, *args, **kwargs):
         return fun(*args, **kwargs)
 
 
-def downscale(case, rows, backend, workdir, horizon_deg=0., **kwargs):
+def downscale(case, rows, workdir, horizon_deg=0., **kwargs):
     rows = rows if isinstance(rows, list) else [rows]
     workdir.mkdir(parents=True, exist_ok=True)
     ds_solar = quiet(syn.solar_geometry, case, rows, workdir)
     hor = syn.horizon_da(rows, horizon_deg)
-    if backend == 'zarr':
-        return quiet(syn.run_zarr, case, rows, ds_solar, hor, workdir, **kwargs), ds_solar
-    out = [quiet(syn.run, case, r, ds_solar, hor, workdir, backend=backend, **kwargs) for r in rows]
-    ds = xr.concat(out, dim='point_name') if len(out) > 1 else out[0].expand_dims('point_name')
-    return ds, ds_solar
+    return quiet(syn.run_zarr, case, rows, ds_solar, hor, workdir, **kwargs), ds_solar
 
 
 def statuses(rows):
@@ -144,11 +137,10 @@ def test_mixing_ratio_and_vapor_pressure_accuracy():
 # ---------------------------------------------------------------------------------------------------------------------
 #  2. downscaling: identity, interpolation, vertical structure
 # ---------------------------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_null_downscaling_reproduces_era5(summer, backend, tmp_path):
+def test_null_downscaling_reproduces_era5(summer, tmp_path):
     """Flat, unobstructed point at the ERA5 node and orography: output must equal the ERA5 surface forcing."""
     row = syn.make_point(summer, elevation=summer.z_surf)
-    ds, _ = downscale(summer, row, backend, tmp_path)
+    ds, _ = downscale(summer, row, tmp_path)
     ds = ds.isel(point_name=0)
     era = summer.surf.isel(latitude=1, longitude=1)
     np.testing.assert_allclose(ds.p, era.sp, rtol=1e-3)
@@ -160,26 +152,24 @@ def test_null_downscaling_reproduces_era5(summer, backend, tmp_path):
     np.testing.assert_allclose(sw_day, era_day, rtol=1e-3)  # daily shortwave energy conserved
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
 @pytest.mark.parametrize('method', ['idw', 'linear'])
-def test_point_on_era5_node_is_finite(summer, backend, method, tmp_path):
+def test_point_on_era5_node_is_finite(summer, method, tmp_path):
     row = syn.make_point(summer, dx=0., dy=0.)
-    ds, _ = downscale(summer, row, backend, tmp_path, interp_method=method)
+    ds, _ = downscale(summer, row, tmp_path, interp_method=method)
     for var in ['t', 'q', 'p', 'tp', 'SW', 'LW']:
         assert np.isfinite(ds[var]).all(), var
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
 @pytest.mark.parametrize('method', ['idw', 'linear'])
-def test_nearest_era5_node_dominates(delta_tp, backend, method, tmp_path):
+def test_nearest_era5_node_dominates(delta_tp, method, tmp_path):
     row = syn.make_point(delta_tp, dx=500.)
-    ds, _ = downscale(delta_tp, row, backend, tmp_path, interp_method=method)
+    ds, _ = downscale(delta_tp, row, tmp_path, interp_method=method)
     assert float(ds.tp.mean()) > 0.9  # weight of the central node, in mm/h
 
 
 def test_bilinear_weights_reproduce_linear_field():
     from types import SimpleNamespace
-    from TopoPyScale.topo_scale import horizontal_weights
+    from TopoPyScale.toposcale_core import horizontal_weights
     lats, lons = np.array([60.75, 60.5, 60.25]), np.array([7.25, 7.5, 7.75])
     field = 3 * lats[:, None] - 2 * lons[None, :]
     for lat, lon in [(60.5, 7.5), (60.61, 7.43), (60.3, 7.7)]:
@@ -189,7 +179,7 @@ def test_bilinear_weights_reproduce_linear_field():
 
 
 def test_precip_lapse_factor_symmetric_and_bounded():
-    from TopoPyScale.topo_scale import precip_lapse_factor
+    from TopoPyScale.toposcale_core import precip_lapse_factor
     dz = np.linspace(-6000, 6000, 241)
     f = precip_lapse_factor(dz, np.full(dz.size, 1), max_factor=5.)
     assert np.all(np.isfinite(f)) and f.min() >= 1 / 5 - 1e-12 and f.max() <= 5 + 1e-12
@@ -197,40 +187,36 @@ def test_precip_lapse_factor_symmetric_and_bounded():
     np.testing.assert_allclose(f * f[::-1], 1)  # f(-dz) = 1 / f(dz)
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_vertical_profile_temperature_and_pressure(summer, backend, tmp_path):
+def test_vertical_profile_temperature_and_pressure(summer, tmp_path):
     z = summer.z_surf + 1500.
     row = syn.make_point(summer, elevation=z)
-    ds, _ = downscale(summer, row, backend, tmp_path)
+    ds, _ = downscale(summer, row, tmp_path)
     ds = ds.isel(point_name=0)
     np.testing.assert_allclose(ds.t, summer.T0 - summer.gamma * z, atol=0.05)
     np.testing.assert_allclose(ds.p, syn.p_of_z(summer.T0, z, summer.gamma, summer.p0), rtol=1e-3)
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_no_supersaturation_from_vertical_interpolation(saturated, backend, tmp_path):
+def test_no_supersaturation_from_vertical_interpolation(saturated, tmp_path):
     rows = [syn.make_point(saturated, name=f'00{i}', elevation=saturated.z_surf + dz)
             for i, dz in enumerate([300., 900., 1700.], start=1)]
-    ds, _ = downscale(saturated, rows, backend, tmp_path)
+    ds, _ = downscale(saturated, rows, tmp_path)
     report = statuses(tc.check_humidity(tc._prepare(ds)))
     assert report[('supersaturation', 'q')] == 'pass'
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_specific_humidity_precision_in_cold_air(cold_dry, backend, tmp_path):
+def test_specific_humidity_precision_in_cold_air(cold_dry, tmp_path):
     z = cold_dry.z_surf + 1000.
     row = syn.make_point(cold_dry, elevation=z)
-    ds, _ = downscale(cold_dry, row, backend, tmp_path)
+    ds, _ = downscale(cold_dry, row, tmp_path)
     lev = cold_dry.plev.isel(latitude=1, longitude=1)
     # what the method intends: linear interpolation in z of the pressure-level q
     q_lin = [np.interp(z, zl[::-1], ql[::-1]) for zl, ql in zip(lev.z.values, lev.q.values)]
     np.testing.assert_allclose(ds.q.isel(point_name=0), q_lin, rtol=0.01)
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_precip_lapse_factor_bounded(winter, backend, tmp_path):
+def test_precip_lapse_factor_bounded(winter, tmp_path):
     row = syn.make_point(winter, elevation=winter.z_surf + 3000.)
-    ds, _ = downscale(winter, row, backend, tmp_path, precip_lapse=True)
+    ds, _ = downscale(winter, row, tmp_path, precip_lapse=True)
     report = statuses(tc.check_precipitation(tc._prepare(ds), max_factor=10.))
     assert report[('tp_non_negative', 'tp')] == 'pass'
     assert report[('precip_factor_bounded', 'precip_lapse_rate')] == 'pass'
@@ -239,21 +225,19 @@ def test_precip_lapse_factor_bounded(winter, backend, tmp_path):
 # ---------------------------------------------------------------------------------------------------------------------
 #  3. radiation
 # ---------------------------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_direct_beam_transmissivity_increases_with_altitude(summer, backend, tmp_path):
+def test_direct_beam_transmissivity_increases_with_altitude(summer, tmp_path):
     rows = [syn.make_point(summer, name='001', elevation=summer.z_surf),
             syn.make_point(summer, name='002', elevation=summer.z_surf + 1500.)]
-    ds, _ = downscale(summer, rows, backend, tmp_path)
+    ds, _ = downscale(summer, rows, tmp_path)
     low, high = ds.SW_direct.isel(point_name=0).sum(), ds.SW_direct.isel(point_name=1).sum()
     assert float(high / low) > 1.02
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_shortwave_closure_beam_bound_and_night(summer, backend, tmp_path):
+def test_shortwave_closure_beam_bound_and_night(summer, tmp_path):
     rows = [syn.make_point(summer, name='001', elevation=1500., slope_deg=40., aspect_deg=0., svf=0.85),
             syn.make_point(summer, name='002', elevation=1500., slope_deg=40., aspect_deg=90., svf=0.85),
             syn.make_point(summer, name='003', elevation=1500., slope_deg=60., aspect_deg=-120., svf=0.7)]
-    ds, ds_solar = downscale(summer, rows, backend, tmp_path)
+    ds, ds_solar = downscale(summer, rows, tmp_path)
     df = syn.centroids_frame(rows)
     ds = tc._prepare(ds)
     report = statuses(tc.check_shortwave(ds, tc._align_solar(ds, ds_solar), tc._terrain(df, ds.point_name.values)))
@@ -262,20 +246,18 @@ def test_shortwave_closure_beam_bound_and_night(summer, backend, tmp_path):
         assert report[key] == 'pass', key
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_no_direct_beam_behind_horizon(summer, backend, tmp_path):
+def test_no_direct_beam_behind_horizon(summer, tmp_path):
     row = syn.make_point(summer, elevation=1500.)
-    ds, ds_solar = downscale(summer, row, backend, tmp_path, horizon_deg=25.)
+    ds, ds_solar = downscale(summer, row, tmp_path, horizon_deg=25.)
     elev = np.rad2deg(ds_solar.elevation.sel(point_name=row.point_name).values)
     sw_dir = ds.SW_direct.isel(point_name=0).values
     assert (sw_dir[(elev > 0) & (elev < 25.)] < 1.).all()
     assert (sw_dir[elev > 30.] > 1.).any()  # not vacuous: the sun is above the horizon at noon
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_shortwave_timing_matches_solar_geometry(summer, backend, tmp_path):
+def test_shortwave_timing_matches_solar_geometry(summer, tmp_path):
     row = syn.make_point(summer, elevation=summer.z_surf)
-    ds, ds_solar = downscale(summer, row, backend, tmp_path)
+    ds, ds_solar = downscale(summer, row, tmp_path)
     df = syn.centroids_frame([row])
     ds = tc._prepare(ds)
     rows = tc.check_shortwave_timing(ds, tc._align_solar(ds, ds_solar), tc._terrain(df, ds.point_name.values),
@@ -283,31 +265,21 @@ def test_shortwave_timing_matches_solar_geometry(summer, backend, tmp_path):
     assert rows[0]['status'] == 'pass', rows[0]['worst']
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_longwave_emissivity_bounds(summer, backend, tmp_path):
+def test_longwave_emissivity_bounds(summer, tmp_path):
     rows = [syn.make_point(summer, name='001', elevation=1500., slope_deg=35., svf=0.75)]
-    ds, _ = downscale(summer, rows, backend, tmp_path, lw_terrain=True)
+    ds, _ = downscale(summer, rows, tmp_path, lw_terrain=True)
     report = statuses(tc.check_longwave(tc._prepare(ds), tc._terrain(syn.centroids_frame(rows), ['001'])))
     assert report[('lw_emissivity_upper', 'LW')] == 'pass'
     assert report[('lw_emissivity_lower', 'LW')] == 'pass'
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-#  4. metadata, backends, full report
+#  4. metadata, full report
 # ---------------------------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize('backend', BACKENDS)
-def test_units_attributes_match_values(summer, backend, tmp_path):
-    ds, _ = downscale(summer, syn.make_point(summer), backend, tmp_path)
+def test_units_attributes_match_values(summer, tmp_path):
+    ds, _ = downscale(summer, syn.make_point(summer), tmp_path)
     report = tc.check_unit_attributes(tc._prepare(ds))
     assert all(r['status'] == 'pass' for r in report), [r for r in report if r['status'] != 'pass']
-
-
-def test_backends_agree(summer, tmp_path):
-    row = syn.make_point(summer, elevation=2000., slope_deg=25., aspect_deg=30., svf=0.9)
-    a, _ = downscale(summer, row, 'netcdf', tmp_path / 'nc')
-    b, _ = downscale(summer, row, 'zarr', tmp_path / 'zarr')
-    for var in ['t', 'p', 'u', 'v', 'ws', 'wd', 'tp', 'SW', 'SW_direct', 'SW_diffuse', 'LW', 'q']:
-        np.testing.assert_allclose(a[var], b[var], atol=1e-4, rtol=1e-5, err_msg=var)
 
 
 KNOWN_FAILING_CHECKS = set()
@@ -317,7 +289,7 @@ def test_full_report_has_no_unexpected_failures(summer, tmp_path):
     rows = [syn.make_point(summer, name='001', elevation=1200.),
             syn.make_point(summer, name='002', elevation=1900., slope_deg=30., aspect_deg=0., svf=0.9),
             syn.make_point(summer, name='003', elevation=2600., slope_deg=35., aspect_deg=-90., svf=0.8)]
-    ds, ds_solar = downscale(summer, rows, 'netcdf', tmp_path)
+    ds, ds_solar = downscale(summer, rows, tmp_path)
     report = tc.run_all_checks(ds, ds_solar=ds_solar, df_centroids=syn.centroids_frame(rows),
                                snow_partition_method=None)
     print(tc.summarize(report))
@@ -331,23 +303,25 @@ def test_full_report_has_no_unexpected_failures(summer, tmp_path):
 def test_aspect_and_horizon_conventions_match_solar_azimuth():
     """compute_dem_param calls gradient_d8 with dy < 0 (north-up raster): aspect must be 0 = south, +90 = east,
     the convention of solar_geom.py azimuth (180 - pvlib azimuth). Horizons must use the same azimuths."""
-    pytest.importorskip('topocalc')
-    from topocalc import gradient, horizon
+    from TopoPyScale import topo_param as tp
     dx, n = 30., 60
     i, j = np.mgrid[0:n, 0:n]  # i increases southward in a north-up raster
     s = np.tan(np.deg2rad(30))
     planes = {0.: 2000 - i * dx * s, 90.: 2000 - j * dx * s, -90.: 2000 + j * dx * s, 180.: 2000 + i * dx * s}
     for expected, dem in planes.items():
-        _, asp = gradient.gradient_d8(dem, dx, -dx)
+        _, asp = tp.gradient_d8(dem, dx, -dx)
         got = np.angle(np.exp(1j * np.deg2rad(np.median(asp))), deg=True)
         assert abs(np.angle(np.exp(1j * np.deg2rad(got - expected)), deg=True)) < 1, (expected, got)
     dem = np.full((n, n), 1000.)
     dem[45:, :] = 1600.  # ridge to the south
-    assert horizon.horizon(0., dem, dx)[30, 30] > 0.5 > horizon.horizon(180., dem, dx)[30, 30]
+    x, y = dx * np.arange(n), -dx * np.arange(n)
+    rays = tp.horizon_rays(dem, x, y, [x[30]], [y[30]], [0., 180.])[:, 0]
+    sweep = [tp.horizon_sweep(dem, dx, -dx, a)[30, 30] for a in [0., 180.]]
+    for h in [rays, sweep]:
+        assert h[0] > 0.5 > h[1]
 
 
 def test_cluster_centroid_aspect_is_circular_mean(tmp_path):
-    pytest.importorskip('topocalc')
     pytest.importorskip('sklearn')
     import rasterio
     from munch import DefaultMunch
@@ -384,9 +358,9 @@ def test_cluster_centroid_aspect_is_circular_mean(tmp_path):
 #  6. exports
 # ---------------------------------------------------------------------------------------------------------------------
 def _three_hourly(summer, tmp_path):
-    ds, _ = downscale(summer, syn.make_point(summer), 'netcdf', tmp_path)
+    ds, _ = downscale(summer, syn.make_point(summer), tmp_path)
     ds = ds.isel(time=slice(0, None, 3))
-    ds['tp'] = ds.tp * 3  # what topo_scale writes for 3h data: mm per 3 h step
+    ds['tp'] = ds.tp * 3  # what the downscaling writes for 3h data: mm per 3 h step
     ds['tp'] = ds.tp.where(ds.tp > 0, 0) + 0.3  # make sure precipitation occurs
     return ds
 
@@ -403,7 +377,7 @@ def test_fsm_export_conserves_precipitation_3h(summer, tmp_path):
 def test_snowpack_export_wind_direction_in_degrees(summer, tmp_path):
     from TopoPyScale import topo_export as te
     row = syn.make_point(summer)
-    ds, _ = downscale(summer, row, 'netcdf', tmp_path)
+    ds, _ = downscale(summer, row, tmp_path)
     quiet(te.to_snowpack, ds, fname_format=str(tmp_path / 'smet_pt_*.txt'))
     out = pd.read_csv(next(tmp_path.glob('smet_pt_*.txt')), sep=' ', header=None)
     assert pd.to_datetime(out[0], format='%Y-%m-%dT%H:%M:%S').notna().all()  # ISO time stamps, one column
@@ -418,7 +392,7 @@ def test_topoclass_check_physics_writes_report(summer, tmp_path):
     from TopoPyScale.topoclass import Topoclass
     rows = [syn.make_point(summer, name='001', elevation=1200.),
             syn.make_point(summer, name='002', elevation=2000., slope_deg=30., svf=0.9)]
-    ds, ds_solar = downscale(summer, rows, 'netcdf', tmp_path)
+    ds, ds_solar = downscale(summer, rows, tmp_path)
     ds_param = xr.Dataset({'point_name': (('y', 'x'), np.array([['001', '001'], ['002', '002']]))},
                           coords={'y': [10., 0.], 'x': [0., 10.]})
     obj = SimpleNamespace(downscaled_pts=ds, ds_solar=ds_solar,

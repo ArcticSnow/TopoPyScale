@@ -26,7 +26,7 @@ or simply `mp.check_physics()` from a Topoclass object.
 import numpy as np
 import pandas as pd
 
-# Constants consistent with topo_scale.py / meteo_util.py / solar_geom.py
+# Constants consistent with toposcale_core.py / meteo_util.py / solar_geom.py
 G = 9.81            # gravity [m s-2]
 R_D = 287.05        # gas constant dry air [J K-1 kg-1]
 EPS = 0.622         # Mw / Md [-]
@@ -38,7 +38,7 @@ T_TERRAIN = 273.15  # temperature of surrounding terrain used in the LW terrain 
 STATUS_ORDER = {'pass': 0, 'info': 1, 'warning': 2, 'error': 3}
 REPORT_COLUMNS = ['check', 'variable', 'status', 'n_fail', 'n_total', 'frac_fail', 'worst', 'note']
 
-# Plausible physical ranges, in the units produced by topo_scale.py
+# Plausible physical ranges, in the units produced by the downscaling (topo_scale_zarr.py)
 DEFAULT_BOUNDS = {
     't': (180., 335.),                 # K
     'p': (2.5e4, 1.1e5),               # Pa

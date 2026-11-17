@@ -1,9 +1,10 @@
 """
-Set of functions to work with DEMs
+Set of functions to work with DEMs: slope, aspect, sky view factor and horizons.
 S. Filhol, Oct 2021
 
-TODO:
-- an improvement could be to first copmute horizons, and then SVF to avoid computing horizon twice
+Horizons at points are traced along straight rays (horizon_rays). Horizons of every cell, used for the sky view
+factor (sky_view_factor) and maps (compute_horizon), are computed with a line sweep (horizon_sweep). Both are
+described in the documentation (Features > Slope, aspect and sky view factor; Features > Horizons).
 """
 
 import rasterio
@@ -11,11 +12,7 @@ from pyproj import Transformer
 import numpy as np
 from scipy.ndimage import gaussian_filter, laplace
 import xarray as xr
-from topocalc import gradient
-from topocalc import viewf
-from topocalc import horizon
 from multiprocessing.dummy import Pool as ThreadPool
-import multiprocessing as mproc
 import shutil
 from TopoPyScale import topo_export as te
 from pathlib import Path
@@ -172,12 +169,18 @@ def open_dem(dem_file):
 
 
 
-def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'), output_folder='outputs'):
+def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'), output_folder='outputs',
+                      n_processes=1):
     """
-    Function to compute and derive DEM parameters: slope, aspect, sky view factor
+    Function to compute and derive DEM parameters: slope, aspect (gradient_d8), sky view factor (sky_view_factor).
+    An existing file is loaded as is.
 
     Args:
         dem_file (str): path to raster file (geotif). Raster must be in local cartesian coordinate system (e.g. UTM)
+        fname (str): netcdf file name
+        project_directory (Path): project directory
+        output_folder (str): folder of fname, in project_directory
+        n_processes (int): number of processes computing the sky view factor
 
     Returns:  
         dataset: x, y, elev, slope, aspect, svf
@@ -244,7 +247,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
 
     if ('slope' not in var_in) or ('aspect' not in var_in):
         print('Computing slope and aspect ...')
-        slope, aspect = gradient.gradient_d8(dem_arr, dx, dy)
+        slope, aspect = gradient_d8(dem_arr, dx, dy)
         ds['slope'] = (["y", "x"], slope)
         ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
         if 'aspect_cos' not in var_in:
@@ -254,7 +257,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
 
     if 'svf' not in var_in:
         print('Computing svf ...')
-        svf = viewf.viewf(np.double(dem_arr), dx)[0]
+        svf = sky_view_factor(np.double(dem_arr), dx, dy, n_processes=n_processes)
         ds['svf'] = (["y", "x"], svf)
 
     ds.attrs = dict(description="DEM input parameters to TopoSub",
@@ -279,69 +282,291 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     return ds
 
 
-def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizon.nc', output_directory=Path('./outputs')):
+def compute_horizon(dem_file, azimuth_inc=30, n_processes=1, fname='da_horizon_grid.nc',
+                    output_directory=Path('./outputs'), near=32):
     """
-    Horizon angles of every pixel of the DEM, with topocalc (e.g. for maps).
-
-    topocalc follows lines of sight that are staircases stepping at the same columns (or rows) for all
-    pixels. For azimuths a few degrees off the grid axes, the pixels just before a step read their nearest
-    terrain from the adjacent row, which leaves streaks in the horizon maps. Topoclass uses
-    compute_horizon_points() instead, which traces a straight ray from each point.
+    Horizon angles of every cell of the DEM (e.g. for maps), with the line sweep of horizon_sweep().
+    Topoclass computes the horizons of the points with compute_horizon_points() instead.
 
     Args:
         dem_file (str): path and filename of the dem
         azimuth_inc (int): angle increment to compute horizons at, in Degrees [0-359]
-        num_threads (int): number of threads to parallize on
+        n_processes (int): number of processes, one azimuth each
+        fname (str): netcdf file written in output_directory. None to skip writing
+        output_directory (Path): output directory
+        near (int): cells traced exactly along each ray before the sweep takes over
 
-    Returns: 
-        dataarray: all horizon angles for x,y,azimuth coordinates
-         
+    Returns:
+        dataarray: horizon angles [rad], (azimuth, y, x)
     """
-    print('\n---> Computing horizons with {} degree increments'.format(azimuth_inc))
+    print('\n---> Computing horizons of every cell with {} degree increments'.format(azimuth_inc))
     ds = open_dem(dem_file)
-    dx = ds.x.diff('x').median().values
-
-    azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc) # center the azimuth in middle of the bin
-    arr_val = np.empty((azimuth.shape[0], ds.elevation.shape[0], ds.elevation.shape[1]))
-
-    if num_threads is None:
-        pool = ThreadPool(mproc.cpu_count() - 2)
-    else:
-        pool = ThreadPool(num_threads)
-
-    elev = []
-    dxs = []
-    for azi in azimuth:
-        elev.append(ds.elevation.values)
-        dxs.append(dx)
-
-    arr = pool.starmap(horizon.horizon, zip(list(azimuth),
-                                                   elev,
-                                                   dxs))
-    pool.close()
-    pool.join()
-
-    for i, a in enumerate(arr):
-        arr_val[i,:,:] = a
-
-    da = xr.DataArray(data=np.pi/2 - np.arccos(arr_val),
-                      coords={
-                          "y": ds.y.values,
-                          "x": ds.x.values,
-                          "azimuth": azimuth
-                      },
-                      dims=["azimuth", "y", "x"],
-                      name='horizon',
-                      attrs={
-                          'long_name': 'Horizon angles',
-                          'units':'rad'
-                      }
-                      )
-    #te.to_netcdf(da.to_dataset(), fname=output_directory / fname)
-    da.to_dataset().to_netcdf(output_directory / fname)
+    azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
+    z = ds.elevation.values.astype(np.float64)
+    dx, dy = float(ds.x.diff('x').median()), float(ds.y.diff('y').median())
+    hor = np.stack(list(_map_azimuths(_sweep_task, azimuth, (z, dx, dy, near), n_processes)))
+    da = xr.DataArray(data=hor, coords={"y": ds.y.values, "x": ds.x.values, "azimuth": azimuth},
+                      dims=["azimuth", "y", "x"], name='horizon',
+                      attrs={'long_name': 'Horizon angles', 'units': 'rad',
+                             'azimuth_convention': 'deg, 0 = south, 90 = east, +-180 = north'})
+    if fname is not None:
+        da.to_dataset().to_netcdf(Path(output_directory) / fname)
     return da
 
 
+def gradient_d8(dem, dx, dy, aspect_rad=False):
+    """
+    Slope and aspect from the 3x3 neighbourhood (Horn's finite differences), port of topocalc.gradient.gradient_d8
+    (USDA ARS NWRC, public domain). Edges are extrapolated linearly.
+
+    For a cell e and its neighbours
+        | a | b | c |
+        | d | e | f |
+        | g | h | i |
+    dz/dx = ((c + 2f + i) - (a + 2d + g)) / (8 dx) and dz/dy = ((g + 2h + i) - (a + 2b + c)) / (8 dy).
+
+    Args:
+        dem (array): elevation (y, x)
+        dx, dy (float): cell size along x and y (dy < 0 for a north-up raster)
+        aspect_rad (bool): return the aspect in IPW radians (0 = south, positive east) instead of degrees
+
+    Returns:
+        slope [rad], aspect [deg clockwise from north, or IPW rad]
+    """
+    p = np.pad(dem, pad_width=1, mode='edge')
+    p[0, :] = p[1, :] + (p[1, :] - p[2, :])
+    p[-1, :] = p[-2, :] + (p[-2, :] - p[-3, :])
+    p[:, 0] = p[:, 1] + (p[:, 1] - p[:, 2])
+    p[:, -1] = p[:, -2] - (p[:, -3] - p[:, -2])
+    dz_dy = ((p[2:, :-2] + 2 * p[2:, 1:-1] + p[2:, 2:]) - (p[:-2, :-2] + 2 * p[:-2, 1:-1] + p[:-2, 2:])) / (8 * dy)
+    dz_dx = ((p[:-2, 2:] + 2 * p[1:-1, 2:] + p[2:, 2:]) - (p[:-2, :-2] + 2 * p[1:-1, :-2] + p[2:, :-2])) / (8 * dx)
+    slope = np.arctan(np.sqrt(dz_dx ** 2 + dz_dy ** 2))
+    a = 180 * np.arctan2(dz_dy, -dz_dx) / np.pi
+    aspect = 90 - a
+    aspect[a < 0] = 90 - a[a < 0]
+    aspect[a > 90] = 360 - a[a > 90] + 90
+    aspect[(dz_dy == 0) & (dz_dx == 0)] = 180   # flat: south, as IPW
+    if aspect_rad:
+        aspect = np.pi - aspect * np.pi / 180
+    return slope, aspect
+
+
+def _aspect_south(dem, dx, dy):
+    """Aspect [rad] in the convention of the horizon azimuths (0 = south, 90 = east), from map gradients."""
+    p = np.pad(dem, pad_width=1, mode='edge')
+    p[0, :] = p[1, :] + (p[1, :] - p[2, :])
+    p[-1, :] = p[-2, :] + (p[-2, :] - p[-3, :])
+    p[:, 0] = p[:, 1] + (p[:, 1] - p[:, 2])
+    p[:, -1] = p[:, -2] - (p[:, -3] - p[:, -2])
+    dz_drow = ((p[2:, :-2] + 2 * p[2:, 1:-1] + p[2:, 2:]) - (p[:-2, :-2] + 2 * p[:-2, 1:-1] + p[:-2, 2:])) / 8
+    dz_dcol = ((p[:-2, 2:] + 2 * p[1:-1, 2:] + p[2:, 2:]) - (p[:-2, :-2] + 2 * p[1:-1, :-2] + p[2:, :-2])) / 8
+    # steepest descent (-dz/dx east, -dz/dy north) as an azimuth from south
+    return np.arctan2(-dz_dcol / dx, dz_drow / dy)
+
+
+def _lerp(a, b, w):
+    """(1 - w) a + w b, where a or b may be -inf (no data): -inf unless its weight is zero."""
+    with np.errstate(invalid='ignore'):
+        v = (1 - w) * a + w * b
+    v = np.where(w == 0, a, np.where(w == 1, b, v))
+    return np.where(np.isnan(v), -np.inf, v)
+
+
+def _sweep(z, t, ds, near):
+    """
+    Horizon elevation angle [rad] of every cell of z (ny, nx), looking towards increasing columns, the ray drifting
+    by t rows per column (|t| <= 1); ds is the distance of one column step.
+
+    1. Parallel straight lines cross the grid, one per row: line l is at row l + j t in column j. Their elevations
+       are interpolated linearly between the two rows around them, at each column.
+    2. Along each line, from the last column back to the first, the horizon of node j is found by following the
+       chain of horizons already known: j+1, H[j+1], H[H[j+1]], ... These nodes form the upper convex hull of the
+       line ahead of j, along which the slope seen from j rises to its maximum and then falls, so the walk stops at
+       the first decrease. H[j] = j when nothing ahead is higher. Each line costs O(number of columns).
+    3. Each cell looks along its own straight ray: exactly, with linear interpolation between rows, for the first
+       `near` cells; beyond, through the two lines around its ray, from its own elevation, with the same walk along
+       their hulls, weighted by the distance of the ray to each line. The horizon is the steeper of the two parts.
+       On rays along the grid axes or diagonals, the lines go through the cells and the result is exact.
+    """
+    ny, nx = z.shape
+    lo = int(np.floor(min(0., -(nx - 1) * t))) - 1
+    hi = int(np.ceil(max(ny - 1., ny - 1 - (nx - 1) * t))) + 1
+    nl = hi - lo + 1
+    zf = np.where(np.isnan(z), -np.inf, z)          # no data never forms a horizon
+    lines = lo + np.arange(nl)
+
+    # 1. elevations of the lines; -inf outside the grid
+    Z = np.full((nl, nx), -np.inf)
+    first = np.full(nl, nx, dtype=np.int64)         # first column of each line inside the grid
+    for j in range(nx):
+        pos = lines + j * t
+        ok = (pos >= -1e-9) & (pos <= ny - 1 + 1e-9)
+        i0 = np.clip(np.floor(pos).astype(np.int64), 0, ny - 2)
+        w = pos - i0
+        Z[ok, j] = _lerp(zf[i0, j], zf[i0 + 1, j], w)[ok]
+        first[ok & (first == nx)] = j
+
+    # 2. hull pointers: H[l, j] = steepest node ahead of node j (the nearest on ties), or j if none is higher
+    H = np.empty((nl, nx), dtype=np.int32)
+    H[:, nx - 1] = nx - 1
+    for j in range(nx - 2, -1, -1):
+        obs = np.where(np.isfinite(Z[:, j]), Z[:, j], np.inf)
+        H[:, j] = _hull_walk(Z, H, np.arange(nl), obs, np.full(nl, j + 1), j, positive_only=True)
+
+    # 3. every cell: exact near field, then the two lines around its ray
+    out = np.zeros((ny, nx))
+    r = np.arange(ny)
+    for j in range(nx - 1):
+        zp = z[:, j]
+        kk = np.arange(1, min(near, nx - 1 - j) + 1)
+        near_slope = np.zeros(ny)
+        if kk.size:
+            pos = r[None, :] + kk[:, None] * t
+            ok = (pos >= -1e-9) & (pos <= ny - 1 + 1e-9)
+            i0 = np.clip(np.floor(pos).astype(np.int64), 0, ny - 2)
+            w = pos - i0
+            cols = (j + kk)[:, None]
+            zk = _lerp(zf[i0, cols], zf[i0 + 1, cols], w)
+            near_slope = np.maximum(np.max(np.where(ok, (zk - zp) / kk[:, None], -np.inf), axis=0), 0)
+        c = -j * t                                   # the ray of row r crosses column 0 at row r + c
+        l0 = int(np.floor(c))
+        f = c - l0                                   # distance of the ray to the line below it, in rows
+        far = []
+        for li in (r + l0 - lo, r + l0 + 1 - lo):
+            k0 = np.maximum(j + 1 + kk.size, first[li])
+            has = k0 < nx
+            sk = _hull_walk(Z, H, li, zp, np.minimum(k0, nx - 1), j, positive_only=False, has=has)
+            far.append(np.arctan(np.maximum(sk, 0) / ds))
+        out[:, j] = np.maximum((1 - f) * far[0] + f * far[1], np.arctan(near_slope / ds))
+    out[np.isnan(z)] = np.nan
+    return out
+
+
+def _hull_walk(Z, H, li, obs, k, j, positive_only, has=None):
+    """
+    From observers at column j (elevation obs) on lines li, walk the hull chains from node k: move to H[k] while
+    it is steeper. Returns the hull pointers (positive_only) or the steepest slope per column step.
+    """
+    k = k.copy()
+    s = (Z[li, k] - obs) / (k - j)
+    if has is not None:
+        s = np.where(has, s, -np.inf)
+        act = np.flatnonzero(has & (H[li, k] != k))
+    else:
+        act = np.flatnonzero(H[li, k] != k)
+    while act.size:
+        hk = H[li[act], k[act]]
+        sh = (Z[li[act], hk] - obs[act]) / (hk - j)
+        mv = sh > s[act]
+        act, hk, sh = act[mv], hk[mv], sh[mv]
+        k[act], s[act] = hk, sh
+        act = act[H[li[act], hk] != hk]
+    if positive_only:
+        return np.where(s > 0, k, j)
+    return s
+
+
+def horizon_sweep(elevation, dx, dy, azimuth, near=32):
+    """
+    Horizon elevation angle [rad] of every cell for one azimuth, by a line sweep (see _sweep).
+
+    Args:
+        elevation (2D array): DEM (y, x), NaN for no data
+        dx, dy (float): cell size along x and y, signed as the coordinates (dy < 0 for a north-up raster)
+        azimuth (float): direction [deg]: 0 = south, 90 = east, -90 = west, +-180 = north
+        near (int): cells traced exactly along each ray before the sweep takes over
+
+    Returns:
+        array: horizon angles [rad] (>= 0), NaN on no-data cells
+    """
+    a = np.deg2rad(azimuth)
+    ux, uy = np.sin(a), -np.cos(a)                   # map direction (east, north)
+    ux = 0. if abs(ux) < 1e-12 else ux
+    uy = 0. if abs(uy) < 1e-12 else uy
+    cx, cy = ux / dx, uy / dy                        # columns and rows per metre
+    transpose = abs(cy) > abs(cx)
+    if transpose:                                    # rows are the major axis: work on the transposed grid
+        cx, cy = cy, cx
+    ds = 1. / abs(cx)                                # one cell along the major axis per step
+    z = np.asarray(elevation, dtype=np.float64)
+    z = z.T if transpose else z
+    flip = cx < 0
+    z = z[:, ::-1] if flip else z
+    h = _sweep(np.ascontiguousarray(z), cy * ds, ds, near)
+    h = h[:, ::-1] if flip else h
+    return h.T if transpose else h
+
+
+def _sweep_task(azimuth, z, dx, dy, near):
+    return horizon_sweep(z, dx, dy, azimuth, near).astype(np.float32)
+
+
+def _svf_task(azimuth, z, dx, dy, near, slope, aspect):
+    """Positive part of the sky view factor integrand of Dozier and Frew (1990, eq. 7b) for one azimuth."""
+    hcos = np.sin(horizon_sweep(z, dx, dy, azimuth, near))   # cosine of the horizon angle from zenith
+    sin2 = (1 - hcos) * (1 + hcos)
+    h_mult = np.arccos(hcos) - np.sqrt(sin2) * hcos
+    v = np.cos(slope) * sin2 + np.sin(slope) * np.cos(np.deg2rad(azimuth) - aspect) * h_mult
+    return np.maximum(v, 0.).astype(np.float32)          # NaN where the slope is undefined
+
+
+_POOL_ARGS = None
+
+
+def _pool_init(args):
+    global _POOL_ARGS
+    _POOL_ARGS = args
+
+
+def _pool_call(item):
+    fun, azimuth = item
+    return fun(azimuth, *_POOL_ARGS)
+
+
+def _map_azimuths(fun, azimuths, args, n_processes=1):
+    """fun(azimuth, *args) for each azimuth, in order, in n_processes processes."""
+    n_processes = max(1, int(n_processes or 1))
+    if n_processes == 1 or len(azimuths) == 1:
+        for a in azimuths:
+            yield fun(a, *args)
+        return
+    from multiprocessing import get_context
+    with get_context('spawn').Pool(min(n_processes, len(azimuths)), initializer=_pool_init,
+                                   initargs=(args,)) as pool:
+        yield from pool.imap(_pool_call, [(fun, a) for a in azimuths])
+
+
+def sky_view_factor(elevation, dx, dy, n_angles=72, near=32, n_processes=1):
+    """
+    Sky view factor of every cell, from horizons computed by a line sweep (horizon_sweep).
+
+    The sky view factor integrates the sky visible above the local horizon, weighted for a tilted surface
+    (Dozier and Frew, 1990, eq. 7b):
+        svf = 1/(2 pi) * integral over azimuth phi of [cos(S) sin^2(H) + sin(S) cos(phi - A) (H - sin(H) cos(H))]
+    with S the slope, A the aspect and H the horizon angle from zenith in direction phi. It is evaluated at n_angles
+    azimuths, keeping the positive part of the integrand, as topocalc did. Azimuths are added in order whatever
+    the number of processes, so the result does not depend on it.
+
+    Args:
+        elevation (2D array): DEM (y, x)
+        dx, dy (float): cell size along x and y, signed as the coordinates (dy < 0 for a north-up raster)
+        n_angles (int): number of azimuths, from -180 deg every 360 / n_angles
+        near (int): cells traced exactly along each ray before the sweep takes over
+        n_processes (int): number of processes, one azimuth each
+
+    Returns:
+        array: sky view factor (0 to 1), NaN on no-data cells and their neighbours (slope undefined, as topocalc)
+    """
+    z = np.asarray(elevation, dtype=np.float64)
+    slope = gradient_d8(z, dx, dx)[0]
+    aspect = _aspect_south(z, dx, dy)
+    angles = np.linspace(-180, 180, num=n_angles, endpoint=False)
+    svf = np.zeros(z.shape)
+    for term in _map_azimuths(_svf_task, angles, (z, dx, dy, near, slope, aspect), n_processes):
+        svf += term
+    svf /= n_angles
+    svf[np.isnan(z)] = np.nan
+    return svf
 
 
 def _bilinear(z, r, c):

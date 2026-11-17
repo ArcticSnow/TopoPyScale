@@ -1,6 +1,6 @@
 """
 Horizons at the points along straight rays (topo_param.horizon_rays / compute_horizon_points) and their use
-through the pipeline (topo_utils.horizon_at_points, Topoclass.compute_horizon, both downscaling backends).
+through the pipeline (topo_utils.horizon_at_points, Topoclass.compute_horizon).
 """
 import contextlib
 import io
@@ -10,7 +10,6 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-import synthetic_era5 as syn
 from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_utils as tu
 
@@ -73,15 +72,29 @@ def test_wall(az):
     assert hor[1, 0] == 0                            # nothing higher to the west
 
 
-def test_grid_axes_match_topocalc():
-    from topocalc.horizon import horizon
-    z = fractal()
+def exhaustive_axis_horizon(z, az):
+    """Horizon of every cell along rows or columns, by checking every cell ahead (north-up raster, square cells)."""
+    step = {0.: (1, 0), 180.: (-1, 0), 90.: (0, 1), -90.: (0, -1)}[az]
+    ny, nx = z.shape
+    out = np.zeros(z.shape)
+    for r in range(ny):
+        for c in range(nx):
+            k = np.arange(1, max(ny, nx))
+            rr, cc = r + k * step[0], c + k * step[1]
+            ok = (rr >= 0) & (rr < ny) & (cc >= 0) & (cc < nx)
+            if ok.any():
+                out[r, c] = max(0., np.arctan(np.max((z[rr[ok], cc[ok]] - z[r, c]) / (k[ok] * DX))))
+    return out
+
+
+def test_grid_axes_match_exhaustive_search():
+    z = fractal(30, 40)
     x, y = grid(*z.shape)
     X, Y = np.meshgrid(x, y)
     for az in [0., 90., -90., 180.]:
-        tc = np.arcsin(horizon(az, np.ascontiguousarray(z), DX))
+        ref = exhaustive_axis_horizon(z, az)
         hr = tp.horizon_rays(z, x, y, X.ravel(), Y.ravel(), [az])[0].reshape(z.shape)
-        np.testing.assert_allclose(hr, tc, atol=1e-12, err_msg=f'azimuth {az}')
+        np.testing.assert_allclose(hr, ref, atol=1e-12, err_msg=f'azimuth {az}')
 
 
 def test_pruning_and_threads_do_not_change_result():
@@ -95,24 +108,34 @@ def test_pruning_and_threads_do_not_change_result():
 
 def test_no_streaks_at_skewed_azimuths():
     """
-    At azimuth 95, topocalc's lines of sight are staircases stepping every 1/tan(5 deg) ~ 11.4 columns; the
-    cells just before a step read their nearest terrain from the adjacent row, which leaves streaks. East-west
-    corrugations on a slope rising east make that error large and the natural column-to-column change small.
+    Lines of sight that step by whole rows (as topocalc's) leave streaks at azimuths a few degrees off the grid
+    axes: at azimuth 95, the cells just before each step, every 1/tan(5 deg) ~ 11.4 columns, read their nearest
+    terrain from the adjacent row. East-west corrugations on a slope rising east make that error large and the
+    natural column-to-column change small. Straight rays and the line sweep show no jump at those columns.
     """
-    from topocalc.horizon import horizon
     ny, nx = 80, 160
     x, y = grid(ny, nx)
     X, Y = np.meshgrid(x, y)
     z = 1000 + 100 * np.sin(2 * np.pi * np.arange(ny)[:, None] / 7) + 0.3 * DX * np.arange(nx)[None, :] + 0 * X
-    offset = (np.arange(nx) * np.tan(np.deg2rad(5)) + 0.5).astype(int)    # topocalc step columns
+    offset = (np.arange(nx) * np.tan(np.deg2rad(5)) + 0.5).astype(int)    # columns where staircases step
     step = np.diff(offset)[:-15] != 0                                     # away from the east edge
 
     def ratio(h):
         jump = np.abs(np.diff(h, axis=1))[:, :-15].mean(axis=0)
         return jump[step].mean() / jump[~step].mean()
 
-    assert ratio(np.arcsin(horizon(95., np.ascontiguousarray(z), DX))) > 5    # the terrain shows the streaks
+    # a staircase line of sight (integer row shifts) shows the streaks on this terrain
+    stair = np.zeros(z.shape)
+    for r in range(ny):
+        for c in range(nx):
+            k = np.arange(1, nx - c)
+            rows = r - (offset[c + k] - offset[c])
+            ok = (rows >= 0) & (rows < ny)
+            d = k * DX / np.cos(np.deg2rad(5))
+            stair[r, c] = max(0., np.arctan(np.max((z[rows[ok], c + k[ok]] - z[r, c]) / d[ok]))) if ok.any() else 0.
+    assert ratio(stair) > 5
     assert ratio(tp.horizon_rays(z, x, y, X.ravel(), Y.ravel(), [95.])[0].reshape(z.shape)) < 1.5
+    assert ratio(tp.horizon_sweep(z, DX, -DX, 95.)) < 1.5
 
 
 def test_no_data_and_outside_points():
@@ -152,13 +175,9 @@ def test_compute_horizon_points_and_lookup(tmp_path):
     with pytest.raises(ValueError, match='other points'):
         tu.horizon_at_points(da, moved)
 
-    # full-grid horizons of earlier versions: nearest pixel
-    gridded = xr.DataArray(np.random.default_rng(0).random((AZ.size, y.size, x.size)), dims=['azimuth', 'y', 'x'],
+    # full-grid horizons (e.g. from compute_horizon) are not horizons of the points
+    gridded = xr.DataArray(np.zeros((AZ.size, y.size, x.size)), dims=['azimuth', 'y', 'x'],
                            coords={'azimuth': AZ, 'y': y, 'x': x})
-    hp = tu.horizon_at_points(gridded, df)
-    ix = np.abs(x[None, :] - px[:, None]).argmin(1)
-    iy = np.abs(y[None, :] - py[:, None]).argmin(1)
-    np.testing.assert_array_equal(hp.values, gridded.values[:, iy, ix])
     assert not tu.horizon_matches_points(gridded, df)
 
 
@@ -196,7 +215,7 @@ def test_topoclass_compute_horizon(tmp_path, monkeypatch, capsys):
     assert 'recomputing' in out.getvalue()
     assert tu.horizon_matches_points(mp.da_horizon, mp.toposub.df_centroids)
 
-    # full-grid file of an earlier version: used, with a warning
+    # full-grid file of an earlier version: recomputed at the points
     fname = mp.config.outputs.path / mp.config.outputs.file.da_horizon
     ds_dem = tp.open_dem(mp.config.dem.filepath)
     old = xr.DataArray(np.full((AZ.size,) + ds_dem.elevation.shape, 0.1), dims=['azimuth', 'y', 'x'], name='horizon',
@@ -205,32 +224,5 @@ def test_topoclass_compute_horizon(tmp_path, monkeypatch, capsys):
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         mp.compute_horizon()
-    assert 'full DEM grid' in out.getvalue()
-    assert (mp.toposub.df_centroids['hori_azi_5.0'] == 0.1).all()
-
-
-@pytest.fixture(scope='module')
-def case():
-    return syn.make_era5(start='2020-06-18', n_days=2, cloud=[1, .6])
-
-
-def test_backends_accept_point_horizons(case, tmp_path):
-    """Point-format horizons equal to the grid values at the nearest pixel give the same outputs."""
-    rows = [syn.make_point(case, name='001', dx=800., elevation=1300.),
-            syn.make_point(case, name='002', dx=-3000., dy=2500., elevation=2100., slope_deg=30., aspect_deg=20.)]
-    ds_solar = quiet(syn.solar_geometry, case, rows, tmp_path)
-    gridded = syn.horizon_da(rows)
-    gridded.values[:] = np.deg2rad(np.random.default_rng(0).uniform(0, 40, gridded.shape))
-    df = pd.DataFrame([vars(r) for r in rows])
-    hp = tu.horizon_at_points(gridded, df)
-    points = xr.DataArray(hp.values, dims=['azimuth', 'point_name'], name='horizon',
-                          coords={'azimuth': hp.azimuth.values, 'point_name': df.point_name.values,
-                                  'x': ('point_name', df.x.values), 'y': ('point_name', df.y.values)})
-    a = quiet(syn.run_zarr, case, rows, ds_solar, gridded, tmp_path, store_name='g.zarr')
-    b = quiet(syn.run_zarr, case, rows, ds_solar, points, tmp_path, store_name='p.zarr')
-    for v in ['SW', 'SW_direct', 'SW_diffuse']:
-        np.testing.assert_array_equal(a[v].values, b[v].values, err_msg=v)
-    assert (a.SW_direct.values == 0).any()           # the horizons do shade some time steps
-    old = quiet(syn.run, case, rows[1], ds_solar, gridded, tmp_path / 'g', backend='netcdf')
-    new = quiet(syn.run, case, rows[1], ds_solar, points, tmp_path / 'p', backend='netcdf')
-    np.testing.assert_array_equal(old.SW_direct.values, new.SW_direct.values)
+    assert 'recomputing' in out.getvalue()
+    assert mp.da_horizon.dims == ('azimuth', 'point_name')

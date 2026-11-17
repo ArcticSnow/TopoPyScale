@@ -52,16 +52,6 @@ def test_blocks_and_threads_give_identical_results(case, rows, inputs, tmp_path)
             np.testing.assert_array_equal(ref[v].values, other[v].values, err_msg=f'{v} {kw}')
 
 
-def test_matches_legacy_netcdf_backend(case, rows, inputs, tmp_path):
-    wd, ds_solar, hor = inputs
-    new = quiet(syn.run_zarr, case, rows, ds_solar, hor, wd, lw_terrain=True, precip_lapse=True, store_name='n.zarr')
-    for r in rows:
-        old = quiet(syn.run, case, r, ds_solar, hor, tmp_path, backend='netcdf', lw_terrain=True, precip_lapse=True)
-        for v in VARS:
-            np.testing.assert_allclose(new[v].sel(point_name=r.point_name).values, old[v].values,
-                                       rtol=1e-5, atol=2e-4, err_msg=f'{r.point_name} {v}')
-
-
 def test_output_store_layout(case, rows, inputs):
     wd, ds_solar, hor = inputs
     ds = quiet(syn.run_zarr, case, rows, ds_solar, hor, wd, time_block=24, store_name='layout.zarr')
@@ -98,13 +88,8 @@ def test_read_downscaled(case, rows, inputs):
     quiet(syn.run_zarr, case, rows, ds_solar, hor, wd, store_name='read.zarr')
     ds = tu.read_downscaled(wd / 'downscaled' / 'read.zarr')
     assert ds.point_name.dtype.kind == 'U' and ds.sizes == {'point_name': 3, 'time': case.tvec.size}
-    files = []
-    for name in ['001', '002']:
-        f = wd / f'down_pt_{name}.nc'
-        ds.sel(point_name=name).load().to_netcdf(f)
-        files.append(f)
-    nc = tu.read_downscaled(str(wd / 'down_pt_*.nc'))
-    np.testing.assert_array_equal(nc.t.values, ds.t.sel(point_name=['001', '002']).values)
+    with pytest.raises(ValueError, match='not a zarr store'):
+        tu.read_downscaled(str(wd / 'down_pt_*.nc'))
 
 
 def test_topoclass_downscales_from_netcdf_through_zarr(case, rows, inputs, tmp_path):

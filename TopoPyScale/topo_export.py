@@ -1,5 +1,5 @@
 """
-Functions to export topo_scale output to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...)
+Functions to export the downscaled points to formats compatible with existing models (e.g. CROCUS, Cryogrid, Snowmodel, ...)
 
 S. Filhol, December 2021
 
@@ -312,7 +312,7 @@ def to_cryogrid(ds,
     Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model.
 
     Args:
-        ds (dataset): downscaled values from topo_scale
+        ds (dataset): downscaled points (Topoclass.downscaled_pts)
         df_pts (dataframe): with metadata of all point of downscaling
         fname_format (str): file name for output
         path (str): path where to export files

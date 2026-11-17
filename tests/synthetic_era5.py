@@ -1,6 +1,6 @@
 """
 Synthetic, physically consistent ERA5-like forcing on a 3x3 grid, used to run the real TopoPyScale downscaling
-functions (topo_scale.py and topo_scale_zarr.py) on cases with a known answer.
+engine (topo_scale_zarr.py) on cases with a known answer.
 
 Atmosphere: hydrostatic, constant lapse rate gamma, sea-level temperature with a diurnal cycle, constant RH.
 Fields are horizontally homogeneous unless `tp_weights` is given.
@@ -128,41 +128,23 @@ def solar_geometry(case, rows, workdir):
     from TopoPyScale import solar_geom as sg
     df = pd.DataFrame({'point_name': [r.point_name for r in rows], 'x': [r.x for r in rows],
                        'y': [r.y for r in rows], 'elevation': [r.elevation for r in rows]})
-    return sg.get_solar_geom(df, case.start, case.end, '1h', sr_epsg=str(EPSG), num_threads=2,
+    return sg.get_solar_geom(df, case.start, case.end, '1h', sr_epsg=str(EPSG),
                              fname='ds_solar.nc', project_ouput=Path(workdir))
 
 
 def horizon_da(rows, angle_deg=0.):
+    """Horizons of the points (azimuth, point_name), as written by topo_param.compute_horizon_points."""
     az = np.arange(-165, 180, 30.)
-    xs = np.unique(np.concatenate([[r.x - 100, r.x, r.x + 100] for r in rows]))
-    ys = np.unique(np.concatenate([[r.y - 100, r.y, r.y + 100] for r in rows]))[::-1]
-    return xr.DataArray(np.full((az.size, ys.size, xs.size), np.deg2rad(angle_deg)),
-                        coords={'azimuth': az, 'y': ys, 'x': xs}, dims=['azimuth', 'y', 'x'], name='horizon')
+    return xr.DataArray(np.full((az.size, len(rows)), np.deg2rad(angle_deg)), dims=['azimuth', 'point_name'],
+                        coords={'azimuth': az, 'point_name': [r.point_name for r in rows],
+                                'x': ('point_name', [r.x for r in rows]), 'y': ('point_name', [r.y for r in rows])},
+                        name='horizon')
 
 
-def run(case, row, ds_solar, hor, workdir, backend='netcdf', interp_method='idw', lw_terrain=False,
-        precip_lapse=False):
-    """Downscale one point with the real pipeline functions. Returns a loaded dataset with a point_name coord."""
-    meta = {'interp_method': interp_method, 'lw_terrain_flag': lw_terrain, 'tstep': 1, 'n_digits': 3,
-            'file_pattern': 'down_pt_*.nc', 'target_epsg': EPSG, 'precip_lapse_rate_flag': precip_lapse}
-    sol = ds_solar.sel(point_name=row.point_name)
-    if backend == 'netcdf':
-        from TopoPyScale import topo_scale as ta
-        out = Path(workdir) / f'out_{row.point_name}'
-        (out / 'tmp').mkdir(parents=True, exist_ok=True)
-        (out / 'downscaled').mkdir(parents=True, exist_ok=True)
-        meta.update(output_directory=out,
-                    transformer=Transformer.from_crs('epsg:4326', f'epsg:{EPSG}', always_xy=True))
-        ta.pt_downscale_interp(row, case.plev.copy(deep=True), case.surf.copy(deep=True), meta)
-        ta.pt_downscale_radiations(row, sol, hor, meta, out)
-        with xr.open_dataset(out / 'downscaled' / f'down_pt_{row.point_name}.nc', engine='h5netcdf') as ds:
-            ds = ds.load()
-    elif backend == 'zarr':
-        return run_zarr(case, [row], ds_solar, hor, workdir, interp_method=interp_method, lw_terrain=lw_terrain,
-                        precip_lapse=precip_lapse).isel(point_name=0)
-    else:
-        raise ValueError(backend)
-    return ds.assign_coords(point_name=row.point_name)
+def run(case, row, ds_solar, hor, workdir, interp_method='idw', lw_terrain=False, precip_lapse=False):
+    """Downscale one point with the zarr engine. Returns a loaded dataset with a point_name coord."""
+    return run_zarr(case, [row], ds_solar, hor, workdir, interp_method=interp_method, lw_terrain=lw_terrain,
+                    precip_lapse=precip_lapse, store_name=f'pt_{row.point_name}.zarr').isel(point_name=0)
 
 
 def era5_store(case, workdir):

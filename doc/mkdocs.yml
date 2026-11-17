@@ -18,7 +18,6 @@ nav:
     - API:
         - topoclass: TopoPyScale.topoclass.md
         - topo_sub: TopoPyScale.topo_sub.md
-        - topo_scale: TopoPyScale.topo_scale.md
         - topo_scale_zarr: TopoPyScale.topo_scale_zarr.md
         - toposcale_core: TopoPyScale.toposcale_core.md
         - solar_geom: TopoPyScale.solar_geom.md

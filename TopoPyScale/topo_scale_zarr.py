@@ -12,7 +12,6 @@ Create the ERA5 store from yearly netcdf files with fetch_era5.netcdf_to_zarr().
 """
 import threading
 import time
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -94,7 +93,6 @@ class ClimateDownscaler:
             Default: one year
         max_box_mb (float): the ERA5 nodes around all points are read once per time block if they fit in this
             memory (MB), otherwise once per point block
-        file_pattern: deprecated, ignored. Outputs are written to the zarr store only.
     """
 
     def __init__(self,
@@ -111,16 +109,12 @@ class ClimateDownscaler:
                  interp_method='idw',
                  lw_terrain_flag=True,
                  precip_lapse_rate_flag=False,
-                 file_pattern=None,
                  store_name='down.zarr',
                  precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR,
                  point_block=100,
                  time_block=None,
                  max_box_mb=2000):
 
-        if file_pattern is not None:
-            warnings.warn('file_pattern is ignored: downscaled points are written to the zarr store store_name.',
-                          FutureWarning)
         store_name = store_name or 'down.zarr'
         if not str(store_name).endswith('.zarr'):
             raise ValueError('store_name must end with .zarr')
@@ -297,18 +291,3 @@ class ClimateDownscaler:
         elapsed = time.time() - start
         print(f'---> Downscaling finished in {elapsed:.1f} s ({elapsed / len(self.df):.3f} s per point)')
         return tu.open_downscaled_store(self.store)
-
-    # -----------------------------------------------------------------------------------------------------------------
-    # deprecated entry points of the former point-by-point implementation
-    def multicore_parallel_process_multiple_subsets(self, n_core=4):
-        warnings.warn('Use ClimateDownscaler.downscale(n_core)', FutureWarning)
-        return self.downscale(n_core=n_core)
-
-    def dask_parallel_process_multiple_subsets(self, dask_worker=None):
-        warnings.warn('Use ClimateDownscaler.downscale(n_core); Dask workers are no longer used', FutureWarning)
-        n = (dask_worker or {}).get('n_workers', 1)
-        return self.downscale(n_core=n)
-
-    def downscale_parallel(self, parallel_method='multicore', n_core=4, dask_worker=None):
-        warnings.warn('Use ClimateDownscaler.downscale(n_core)', FutureWarning)
-        return self.downscale(n_core=n_core)

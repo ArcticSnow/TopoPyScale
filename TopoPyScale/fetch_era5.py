@@ -362,25 +362,6 @@ def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
     return pz
 
 
-def convert_netcdf_stack_to_zarr(path_to_netcdfs='inputs/climate/yearly',
-                                    zarrout='inputs/climate/ERA5.zarr',
-                                    chunks={'latitude':3, 'longitude':3, 'time':8760, 'level':13},
-                                    compressor=None,
-                                    plev_name='PLEV_*.nc',
-                                    surf_name='SURF_*.nc',
-                                    parallelize=False,
-                                    n_cores=4):
-    """
-    Deprecated, use netcdf_to_zarr(). Kept for backward compatibility: converts the files one pair at a time.
-    """
-    warnings.warn('convert_netcdf_stack_to_zarr() is deprecated, use netcdf_to_zarr()', FutureWarning)
-    chunks = dict(chunks or {})
-    time_chunk = chunks.pop('time', 720)
-    chunks.pop('level', None)
-    return netcdf_to_zarr(path_to_netcdfs, zarrout, plev_name, surf_name, time_chunk=time_chunk, chunks=chunks,
-                          compressor=compressor)
-
-
 def to_zarr(ds, fout, chuncks={'x':3, 'y':3, 'time':8760, 'level':7}, compressor=None, mode='w'):
     """
     Function to convert a dataset to a zarr store.
@@ -692,8 +673,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
         download_format (str): default "unarchived". Can be "zip"
         new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
         rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
-        surf_varoi: list of surface variable to download. Default is None, automatically assigning minimum required for topo_scale
-        plev_varoi: list of pressure level variables to download. . Default is None, automatically assigning minimum required for topo_scale
+        surf_varoi: list of surface variable to download. Default is None, automatically assigning minimum required for the downscaling
+        plev_varoi: list of pressure level variables to download. . Default is None, automatically assigning minimum required for the downscaling
         verify_flag: bypass ssl certifcate flag. Default must be True
         
     Returns:

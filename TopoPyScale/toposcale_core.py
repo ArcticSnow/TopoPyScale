@@ -4,8 +4,7 @@ TopoSCALE physics on numpy arrays, for many points at once.
 All functions are pure: they take numpy arrays and return numpy arrays, with no I/O. Arrays are time-major:
 (time, point) for point fields, (time, level, point) after horizontal interpolation of pressure levels.
 
-The formulas reproduce the point-by-point implementations of topo_scale.py and topo_scale_zarr.py
-(Fiddes and Gruber, 2014), so that both can be tested against each other.
+Formulas of TopoSCALE (Fiddes and Gruber, 2014), used by topo_scale_zarr.py.
 """
 import numpy as np
 
@@ -100,7 +99,7 @@ def neighbours(points, lats, lons, transformer, method='idw'):
         points (dataframe): with columns x, y (DEM projection), lat, lon, point_name
         lats, lons (array): ERA5 latitude and longitude coordinates (1D)
         transformer (pyproj.Transformer): WGS84 -> DEM projection
-        method (str): 'idw' or 'linear', see topo_scale.horizontal_weights()
+        method (str): 'idw' or 'linear', see horizontal_weights()
 
     Returns:
         ilat (int array, npts x 3), ilon (int array, npts x 3), weights (float array, npts x 3 x 3)

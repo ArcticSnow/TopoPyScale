@@ -23,7 +23,6 @@ def as_str(values):
 def horizon_matches_points(da_horizon, df_points, tol=1e-3):
     """
     True if da_horizon holds the horizons of exactly these points (names and positions within tol m).
-    False for the full-grid horizons of earlier versions (dims azimuth, y, x).
     """
     if 'point_name' not in da_horizon.dims:
         return False
@@ -43,16 +42,13 @@ def horizon_at_points(da_horizon, df_points):
     Horizon profile of each point of df_points, in the order of its rows.
 
     Args:
-        da_horizon (dataarray): horizon angles [rad], either computed at the points (azimuth, point_name),
-            or on the full DEM grid by earlier versions (azimuth, y, x), then taken at the nearest pixel
+        da_horizon (dataarray): horizon angles [rad] of the points (azimuth, point_name), from
+            topo_param.compute_horizon_points
         df_points (dataframe): points with columns point_name, x, y
 
     Returns:
         dataarray: horizon angles [rad], (azimuth, point)
     """
-    if 'point_name' not in da_horizon.dims:
-        return da_horizon.sel(x=xr.DataArray(df_points.x.values, dims='point'),
-                              y=xr.DataArray(df_points.y.values, dims='point'), method='nearest')
     if not horizon_matches_points(da_horizon, df_points):
         raise ValueError('The horizons were computed for other points (names or positions differ): delete the '
                          'horizon file (outputs/da_horizon.nc) and run compute_horizon() again')
@@ -97,16 +93,14 @@ def read_downscaled(path='outputs/downscaled/down.zarr'):
     Read downscaled points as one dataset, lazily with Dask.
 
     Args:
-        path (str): zarr store of downscaled points (*.zarr), or path pattern of per-point netcdf files written by
-            the deprecated netcdf backend (e.g. outputs/downscaled/down_pt_*.nc)
+        path (str): zarr store of downscaled points (*.zarr)
 
     Returns:
         dataset: dimensions point_name, time
     """
-    path = str(path)
-    if path.rstrip('/').endswith('.zarr'):
-        return open_downscaled_store(path)
-    return open_netcdf_stack(sorted(glob.glob(path)), concat_dim='point_name')
+    if not str(path).rstrip('/').endswith('.zarr'):
+        raise ValueError(f'{path} is not a zarr store: downscaled points are stored in outputs/downscaled/*.zarr')
+    return open_downscaled_store(path)
 
 
 def ds_to_indexed_dataframe(ds):

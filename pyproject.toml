@@ -34,7 +34,6 @@ dependencies = [
     "netcdf4",
     "h5netcdf",
     "pvlib",
-    "topocalc",
     "cdsapi",
     "rasterio",
     "pyproj",
