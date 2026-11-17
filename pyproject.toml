@@ -32,6 +32,8 @@ dependencies = [
     "pandas",
     "geopandas",
     "numpy",
+    "scipy",
+    "pyyaml",
     "netcdf4",
     "h5netcdf",
     "pvlib",

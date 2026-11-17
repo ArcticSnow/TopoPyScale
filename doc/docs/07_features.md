@@ -139,6 +139,36 @@ For the 50 centroids of the Davos example (747 × 500 cells), this takes 0.15 s 
 An existing `da_horizon.nc` is loaded if it holds the same points (names and positions), and recomputed otherwise, including files computed on the full DEM grid by earlier versions.
 
 
+## Surface-effect correction of air temperature
+
+TopoSCALE takes the air temperature and humidity of a point from the pressure levels: free-atmosphere air, without the inversions, cold-air pools and daily cycle that ERA5 resolves at its own surface. With `toposcale.surface_effect.method: redcapp` or `dreamit`, the downscaling adds back a terrain-weighted share of the ERA5 surface signal ΔT = t2m − T_pl(z_ERA5 surface):
+
+T = T_pl(z_point) + w ΔT + β(t), and Td = Td_pl(z_point) + w ΔTd, capped at T.
+
+w = 0 gives the plain TopoSCALE values; w = 1 transfers the whole grid-surface difference. The longwave is then computed from the corrected temperature and humidity (`lw_consistent`). The weight of each point comes from its terrain, computed once on `context_dem`, which must cover the points plus the window:
+
+| Method | Weight | Terrain | Published coefficients |
+| --- | --- | --- | --- |
+| `redcapp` ([Cao et al. 2017](https://doi.org/10.5194/gmd-10-2905-2017)) | w = α [H (1 − S) + S] + β V (1 − S), S = exp(−R / γ) | hypsometric position H and relief R in a 30 km wide circle; V = MRVBF / 8 | Swiss Alps: α 0.61, β 1.56, γ 465 m |
+| `dreamit` ([Pozsgay et al. 2026](https://doi.org/10.5194/gmd-19-7197-2026)) | w = α_intercept + exp(α_slope h) − 1, plus β(t) = β_amp cos(2π(t − t*)) + β_bias | hypsometric position h within 50 km | ERA5, Yukon: α_intercept 0.449, α_slope 0.732, β_amp 0.918, t* 0.958, β_bias 1.181 K |
+
+The hypsometric position is the fraction of the DEM cells in the window that are higher than the point: 0 on the highest summit, 1 at the bottom of the lowest valley. The indices and `w_surf` are added to `df_centroids`. DReaMIT defines ΔT against a lapse rate fitted above the inversion; TopoPyScale uses its own pressure-level interpolation, as REDCAPP does.
+
+Published coefficients may not transfer: at Davos (January 2020), the Yukon DReaMIT coefficients over-correct the Weissfluhjoch crest. `TopoPyScale.surface_calib` fits them for a new region from station records:
+
+```python
+from TopoPyScale import surface_calib as sc, surface_effect as se
+# 1. downscale the stations as a points project with surface_effect: {method: none, diagnostics: true}
+data = sc.pair(mp.downscaled_pts.load(), {name: sc.read_meteoswiss(file) for name, file in station_files.items()})
+indices = {r: se.terrain_indices(df_stations, 'glo90.tif', r, epsg=32632).set_index(df_stations.point_name)
+           for r in [5, 15, 30, 50]}
+res = sc.calibrate('dreamit', data, indices, fit_beta='bias')   # pooled fit, cross-validation, bootstrap
+sc.save_coefficients(res, 'surface_coeffs.yml')                  # then surface_effect.coefficients: surface_coeffs.yml
+```
+
+`calibrate` fits w per station (diagnostic), then the coefficients by pooled least squares over all stations and hours, keeps the window radius with the lowest cross-validated error (leave one station out, or contiguous time blocks with fewer than 3 stations), and gives moving-block bootstrap intervals. `fit_beta` is `none`, `bias` (regional offset) or `seasonal` (DReaMIT β(t), needs a year of data).
+
+
 ## Clustering
 
 Clustering offer a number of possibilities. First, any DEM can by segmented by clustering (k-means) using a list of features. These features can be topographic or anything which can be labeled to the pixel level (e.g. watershed, glaciated land, etc.). The clustering will return a list of groups of pixels that fall within the same "cluster". The method implemented is K-means from [Scikit-learn](https://sklearn.org/stable/getting_started.html). To speed up the processing, TPS will use the routine `minibatch_kmean()` to spread the computational load on multiple core. 

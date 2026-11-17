@@ -33,6 +33,7 @@ from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_sub as ts
 from TopoPyScale import topo_scale_zarr as tz
+from TopoPyScale import surface_effect as se
 from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_checks as tc
@@ -647,6 +648,10 @@ class Topoclass(object):
     def _downscale_zarr(self, downscaled_dir):
         """Downscale all points from the climate zarr store into one zarr store of downscaled points."""
         variables = self.config.outputs.variables
+        df = self.toposub.df_centroids
+        surface = se.setup(df, self.config.toposcale.surface_effect, self.config.dem.filepath, self.config.dem.epsg)
+        if surface is not None and surface.get('weight') is not None:
+            df.to_pickle(self.config.outputs.path / self.config.outputs.file.df_centroids)
         cda = tz.ClimateDownscaler(
             era5_zarr_path=self._climate_store(),
             output_path=downscaled_dir,
@@ -664,7 +669,8 @@ class Topoclass(object):
             store_name=self._downscaled_store_name(),
             precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or core.PRECIP_LAPSE_MAX_FACTOR,
             point_block=self.config.toposcale.point_block or 100,
-            time_block=self.config.toposcale.time_block)
+            time_block=self.config.toposcale.time_block,
+            surface_effect=surface)
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
         return cda.downscale(n_core=n_core)
 

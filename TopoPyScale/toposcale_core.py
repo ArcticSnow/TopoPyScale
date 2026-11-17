@@ -222,6 +222,56 @@ def q_from_dewpoint(d2m, sp):
     return wsl / (1 + wsl)
 
 
+def vapor_pressure_from_q(q, p):
+    """Vapour pressure [Pa] from specific humidity and pressure (exact inverse of q_from_dewpoint)."""
+    return q * p / (EPS + (1 - EPS) * q)
+
+
+def dewpoint_from_vp(vp):
+    """Dew point [K] from vapour pressure [Pa] (inverse of the Magnus formula of q_from_dewpoint)."""
+    lnr = np.log(np.maximum(vp, 1e-3) / 610.94)
+    return 273.15 + 243.04 * lnr / (17.625 - lnr)
+
+
+def surface_signal(plev, surf, level_hpa):
+    """
+    ERA5 surface effect at the grid surface: 2 m temperature and dew point minus their pressure-level values at the
+    elevation of the ERA5 surface (inversions, cold-air pools, diurnal cycle missing from free-atmosphere air).
+
+    Args:
+        plev (dict): pressure-level fields as in interpolate_vertical, geopotential height 'z' in m
+        surf (dict): 'z_surf' (m2 s-2), 't2m', 'd2m', each (time, point)
+
+    Returns:
+        dT, dTd [K], both (time, point)
+    """
+    grid = interpolate_vertical(plev, surf['z_surf'][0] / G, level_hpa)
+    td_grid = dewpoint_from_vp(vapor_pressure_from_q(grid['q'], grid['p']))
+    return surf['t2m'] - grid['t'], surf['d2m'] - td_grid
+
+
+def surface_correction(t, q, p, dT, dTd, weight, beta=0., dewpoint=True):
+    """
+    Add the terrain-weighted surface effect to pressure-level temperature and humidity (REDCAPP, DReaMIT):
+    T = T_pl + w dT + beta and Td = Td_pl + w dTd, with Td capped at T. w = 0 and beta = 0 return t and q.
+
+    Args:
+        t, q, p: pressure-level temperature [K], specific humidity [kg kg-1] and pressure [Pa] at the points
+        dT, dTd: surface_signal() at the points, (time, point)
+        weight (array): surface-coupling weight w, (point,)
+        beta (array or float): additive offset [K], (time, 1) or scalar
+        dewpoint (bool): correct the humidity too
+
+    Returns:
+        corrected t, q
+    """
+    t_new = t + weight * dT + beta
+    if not dewpoint:
+        return t_new, q
+    td = dewpoint_from_vp(vapor_pressure_from_q(q, p)) + weight * dTd
+    return t_new, q_from_dewpoint(np.minimum(td, t_new), p)
+
+
 def mixing_ratio(q):
     """As meteo_util.mixing_ratio."""
     return 0.5 * (1 - np.sqrt(1 - 4 * q))
@@ -329,7 +379,7 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade):
 #  full chain for one block of time steps and points
 # ---------------------------------------------------------------------------------------------------------------------
 def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h, lw_terrain_flag,
-                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR):
+                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None):
     """
     Downscale one block of time steps for a set of points.
 
@@ -344,21 +394,35 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
         solar (dict): see shortwave(), each (time, point)
         shade (bool array): (time, point)
         tstep_h (int): time step of the data in hours
+        surface (dict): optional surface-effect correction (surface_effect.py): 'weight' (point,) or None for the
+            diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the
+            corrected temperature and humidity). None: no correction, outputs unchanged
 
     Returns:
         dict of (time, point) arrays: t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW,
-        SW, SW_direct, SW_diffuse, cos_illumination
+        SW, SW_direct, SW_diffuse, cos_illumination; with surface, also t_pl, dT_surf, dTd_surf
     """
     plev = dict(plev, z=plev['z'] / G)
     elev = points['elevation']
     out = interpolate_vertical(plev, elev, level_hpa)
+    t_lw, q_lw = out['t'], out['q']
+    if surface is not None:
+        out['t_pl'] = out['t']
+        out['dT_surf'], out['dTd_surf'] = surface_signal(plev, surf, level_hpa)
+        if surface.get('weight') is not None:
+            beta = np.reshape(surface.get('beta', 0.), (-1, 1))
+            out['t'], out['q'] = surface_correction(out['t'], out['q'], out['p'], out['dT_surf'], out['dTd_surf'],
+                                                    surface['weight'], beta, surface.get('dewpoint', True))
+            if surface.get('lw_consistent', True):
+                t_lw, q_lw = out['t'], out['q']
     out['ws'], out['wd'] = wind_speed_direction(out['u'], out['v'])
     out['tp'], out['precip_lapse_rate'] = precipitation(surf['tp'], elev[None, :] - surf['z_surf'] / G, months,
                                                         tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor)
     out['w'] = mixing_ratio(out['q'])
     out['vp'] = vapor_pressure(out['p'], out['w'])
     vp_surf = vapor_pressure(surf['sp'], mixing_ratio(q_from_dewpoint(surf['d2m'], surf['sp'])))
-    out['LW'], out['cse'] = longwave(out['t'], out['vp'], surf['t2m'], vp_surf, surf['strd'], points['svf'],
+    vp_lw = out['vp'] if q_lw is out['q'] else vapor_pressure(out['p'], mixing_ratio(q_lw))
+    out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
                                      points['slope'], lw_terrain_flag)
     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
                          points['svf'], shade))

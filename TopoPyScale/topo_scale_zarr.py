@@ -30,6 +30,7 @@ except ImportError:
 
 from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
+from TopoPyScale import surface_effect as se
 from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
 
 PLEV_VARS = ['z', 't', 'q', 'u', 'v']
@@ -59,7 +60,11 @@ VAR_ATTRS = {
     'SW_direct': {'units': 'W m**-2', 'long_name': 'Surface direct solar radiation downwards'},
     'SW_diffuse': {'units': 'W m**-2', 'long_name': 'Surface diffuse solar radiation downwards'},
     'cos_illumination': {'units': '1', 'long_name': 'Cosine of the solar illumination angle on the slope'},
+    't_pl': {'units': 'K', 'long_name': 'Pressure-level temperature before the surface-effect correction'},
+    'dT_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on temperature: t2m - T_pl at the ERA5 surface'},
+    'dTd_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on dew point: d2m - Td_pl at the ERA5 surface'},
 }
+SURFACE_DIAGNOSTICS = ['t_pl', 'dT_surf', 'dTd_surf']
 
 
 def tp_attrs(tstep_h):
@@ -86,6 +91,8 @@ class ClimateDownscaler:
         interp_method (str): 'idw' or 'linear'
         lw_terrain_flag (bool): add the longwave emitted by the surrounding terrain
         precip_lapse_rate_flag (bool): apply the precipitation elevation factor
+        surface_effect (dict): surface-effect correction, from surface_effect.setup() (None: off). Its diagnostics
+            t_pl, dT_surf and dTd_surf are added to the outputs when 'diagnostics' is true
         store_name (str): name of the output zarr store, default 'down.zarr'
         precip_lapse_rate_max_factor (float): bound of the precipitation elevation factor
         point_block (int): number of points processed together, also the shard size of the output store along points
@@ -113,7 +120,8 @@ class ClimateDownscaler:
                  precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR,
                  point_block=100,
                  time_block=None,
-                 max_box_mb=2000):
+                 max_box_mb=2000,
+                 surface_effect=None):
 
         store_name = store_name or 'down.zarr'
         if not str(store_name).endswith('.zarr'):
@@ -159,6 +167,11 @@ class ClimateDownscaler:
         self.precip_lapse_rate_flag = precip_lapse_rate_flag
         self.precip_lapse_rate_max_factor = precip_lapse_rate_max_factor or PRECIP_LAPSE_MAX_FACTOR
         self.varout = list(varout) if varout not in (None, 'all') else list(varout_default)
+        self.surface = None if surface_effect is None else dict(surface_effect)
+        if self.surface is not None and self.surface.get('beta_coef'):
+            self.surface['beta'] = se.beta_t(self.tvec, **self.surface['beta_coef'])
+        if surface_effect is not None and surface_effect.get('diagnostics'):
+            self.varout += [v for v in SURFACE_DIAGNOSTICS if v not in self.varout]
         self.point_block = int(point_block)
         self.time_block = int(time_block) if time_block else int(round(365 * 24 / self.tstep_h))
         self.time_block = min(self.time_block, self.tvec.size)
@@ -259,9 +272,14 @@ class ClimateDownscaler:
         shade = core.horizon_at_sun(self.horizon_profiles[p0:p1], self.horizon_azimuth, solar['azimuth']) > \
             solar['elevation']
         points = {k: v[p0:p1] for k, v in self.points.items()}
+        surface = None
+        if self.surface is not None:
+            beta = self.surface.get('beta', 0.)
+            surface = dict(self.surface, beta=beta[t0:t1] if np.ndim(beta) else beta,
+                           weight=None if self.surface.get('weight') is None else self.surface['weight'][p0:p1])
         out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
                                    self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
-                                   self.precip_lapse_rate_max_factor)
+                                   self.precip_lapse_rate_max_factor, surface)
         group = zarr.open_group(str(self.store), mode='r+')
         for v in self.varout:
             group[v][p0:p1, t0:t1] = out[v].T.astype('float32')

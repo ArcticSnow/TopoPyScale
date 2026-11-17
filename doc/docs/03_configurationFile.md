@@ -125,6 +125,14 @@ toposcale:
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
   solar_substeps: 6                       # (optional) sub-steps used to average the top-of-atmosphere irradiance over the accumulation window. Default 6
+  surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
+    method: none                          # none, redcapp or dreamit
+    coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
+    context_dem:                          # (optional) DEM covering the points plus the window (30 km wide for redcapp, 50 km radius for dreamit). Default: project DEM
+    dewpoint: True                        # (optional) correct the humidity too. Default True
+    lw_consistent: True                   # (optional) longwave from the corrected temperature and humidity. Default True
+    allow_partial_window: False           # (optional) accept windows leaving the context DEM. Default False
+    diagnostics: False                    # (optional) store t_pl, dT_surf and dTd_surf (also with method none, for the calibration). Default False
 
 #.....................................................................................................
 outputs:

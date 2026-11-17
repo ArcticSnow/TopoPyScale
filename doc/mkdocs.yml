@@ -20,6 +20,8 @@ nav:
         - topo_sub: TopoPyScale.topo_sub.md
         - topo_scale_zarr: TopoPyScale.topo_scale_zarr.md
         - toposcale_core: TopoPyScale.toposcale_core.md
+        - surface_effect: TopoPyScale.surface_effect.md
+        - surface_calib: TopoPyScale.surface_calib.md
         - solar_geom: TopoPyScale.solar_geom.md
         - topo_param: TopoPyScale.topo_param.md
         - fetch_era5: TopoPyScale.fetch_era5.md
