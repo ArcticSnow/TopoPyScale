@@ -72,7 +72,38 @@ Cosine of the geocentric solar zenith angle, (time, point): cheap, used to avera
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L123"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L114"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `sun_geocentric`
+
+```python
+sun_geocentric(terms, latitude, longitude)
+```
+
+Geocentric solar elevation and azimuth, (time, point): cheap, used for the shading sub-steps. It neglects the parallax (< 0.003 deg) and the atmospheric refraction. 
+
+
+
+**Returns:**
+  elevation [rad], azimuth [rad, 0 towards south, positive towards east, as ds_solar] 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L132"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `substep_offsets`
+
+```python
+substep_offsets(accumulation_window, n_substeps)
+```
+
+Offsets of the centres of n_substeps equal parts of the window (t - window, t], from the time stamp t. 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L147"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `get_solar_geom`
 

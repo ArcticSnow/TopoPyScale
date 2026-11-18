@@ -31,6 +31,7 @@ except ImportError:
 from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import surface_effect as se
+from TopoPyScale import solar_geom as sg
 from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
 
 PLEV_VARS = ['z', 't', 'q', 'u', 'v']
@@ -100,6 +101,9 @@ class ClimateDownscaler:
             Default: one year
         max_box_mb (float): the ERA5 nodes around all points are read once per time block if they fit in this
             memory (MB), otherwise once per point block
+        shading_substeps (int): sub-steps of the radiation accumulation window at which terrain shading is tested;
+            the direct beam is scaled by the sunlit fraction of the window (1: one test at the centre, all or
+            nothing). Default: the solar_substeps of ds_solar, else 6
     """
 
     def __init__(self,
@@ -121,7 +125,8 @@ class ClimateDownscaler:
                  point_block=100,
                  time_block=None,
                  max_box_mb=2000,
-                 surface_effect=None):
+                 surface_effect=None,
+                 shading_substeps=None):
 
         store_name = store_name or 'down.zarr'
         if not str(store_name).endswith('.zarr'):
@@ -144,6 +149,7 @@ class ClimateDownscaler:
 
         self.df = df_centroids.reset_index(drop=True).copy()
         self.df['point_name'] = self.df.point_name.astype(str)
+        self.target_EPSG = target_EPSG
         transformer = Transformer.from_crs('epsg:4326', f'epsg:{target_EPSG}', always_xy=True)
         self.ilat, self.ilon, self.weights = core.neighbours(self.df, self.ERA.latitude.values,
                                                               self.ERA.longitude.values, transformer, interp_method)
@@ -162,6 +168,7 @@ class ClimateDownscaler:
         self.solar_point_index = pd.Index(sol.point_name.values).get_indexer(self.df.point_name)
         self.solar_time_index = self._time_index(pd.DatetimeIndex(sol.time.values), 'ds_solar')
         self._solar_lock = threading.Lock()  # HDF5 files are not safe to read from several threads
+        self._setup_shading(sol, shading_substeps)
 
         self.lw_terrain_flag = lw_terrain_flag
         self.precip_lapse_rate_flag = precip_lapse_rate_flag
@@ -224,6 +231,55 @@ class ClimateDownscaler:
                         'shards': (self.point_block, self.time_block)} for v in self.varout}
         ds.to_zarr(self.store, mode='w', compute=False, zarr_format=3, encoding=encoding)
 
+    def _setup_shading(self, ds_solar, n_substeps):
+        """Sun positions of the shading sub-steps: time terms for every time step, point coordinates."""
+        if 'accumulation_window' in ds_solar.attrs:
+            window = pd.Timedelta(ds_solar.attrs['accumulation_window'])
+        elif 'solar_geometry_time_offset' in ds_solar.attrs:
+            window = 2 * pd.Timedelta(str(ds_solar.attrs['solar_geometry_time_offset']).lstrip('-'))
+        else:
+            window = pd.Timedelta(0)
+        if n_substeps is None:
+            n_substeps = int(ds_solar.attrs.get('solar_substeps', 6))
+        self.shading_substeps = int(n_substeps) if window > pd.Timedelta(0) else 1
+        if self.shading_substeps < 2:
+            return
+        if {'lat', 'lon'} <= set(self.df.columns):
+            self.lat, self.lon = self.df.lat.values.astype(float), self.df.lon.values.astype(float)
+        else:
+            tr = Transformer.from_crs(f'epsg:{self.target_EPSG}', 'epsg:4326', always_xy=True)
+            self.lon, self.lat = tr.transform(self.df.x.values, self.df.y.values)
+        offsets = sg.substep_offsets(window, self.shading_substeps)
+        t = self.tvec.tz_localize('UTC')
+        t_sub = pd.DatetimeIndex((t.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
+        terms = sg.spa_time_terms(t_sub)
+        self.shading_terms = {k: np.asarray(terms[k]).reshape(t.size, self.shading_substeps)
+                              for k in ['v', 'alpha', 'delta']}
+
+    def _shade(self, p0, p1, t0, t1, solar):
+        """
+        Shaded fraction of the direct beam, (time, point): share of the accumulation window during which the sun is
+        behind the local horizon, each sub-step weighted by the direct beam it brings to the slope. Only terrain
+        shading: sub-steps with the sun below the astronomical horizon do not count.
+        """
+        prof = self.horizon_profiles[p0:p1]
+        mid = core.horizon_at_sun(prof, self.horizon_azimuth, solar['azimuth']) > solar['elevation']
+        if self.shading_substeps < 2:
+            return mid
+        slope, aspect = self.points['slope'][p0:p1], self.points['aspect'][p0:p1]
+        lat, lon = self.lat[p0:p1], self.lon[p0:p1]
+        wsum = np.zeros(mid.shape)
+        wlit = np.zeros(mid.shape)
+        for k in range(self.shading_substeps):
+            terms = {v: a[t0:t1, k] for v, a in self.shading_terms.items()}
+            elev, az = sg.sun_geocentric(terms, lat, lon)
+            cos_i = np.sin(elev) * np.cos(slope) + np.cos(elev) * np.sin(slope) * np.cos(az - aspect)
+            w = np.where(elev > 0, np.maximum(cos_i, 0.), 0.)
+            wsum += w
+            wlit += w * (elev > core.horizon_at_sun(prof, self.horizon_azimuth, az))
+        with np.errstate(invalid='ignore', divide='ignore'):
+            return np.where(wsum > 0, 1. - wlit / wsum, mid.astype(float))
+
     def _read_solar(self, p0, p1, t0, t1):
         tsl = self.solar_time_index[t0:t1]
         with self._solar_lock:
@@ -269,8 +325,7 @@ class ClimateDownscaler:
         plev = {v: core.apply_weights(fields[v], W) for v in PLEV_VARS}
         surf = {v: core.apply_weights(fields[v], W) for v in SURF_VARS}
         solar = self._read_solar(p0, p1, t0, t1)
-        shade = core.horizon_at_sun(self.horizon_profiles[p0:p1], self.horizon_azimuth, solar['azimuth']) > \
-            solar['elevation']
+        shade = self._shade(p0, p1, t0, t1, solar)
         points = {k: v[p0:p1] for k, v in self.points.items()}
         surface = None
         if self.surface is not None:

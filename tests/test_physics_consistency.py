@@ -251,8 +251,13 @@ def test_no_direct_beam_behind_horizon(summer, tmp_path):
     ds, ds_solar = downscale(summer, row, tmp_path, horizon_deg=25.)
     elev = np.rad2deg(ds_solar.elevation.sel(point_name=row.point_name).values)
     sw_dir = ds.SW_direct.isel(point_name=0).values
-    assert (sw_dir[(elev > 0) & (elev < 25.)] < 1.).all()
+    # behind the 25 deg horizon over the whole hour: the sun stays below it from the previous to the next centre
+    behind = (elev < 25.) & (np.r_[elev[0], elev[:-1]] < 25.) & (np.r_[elev[1:], elev[-1]] < 25.) & (elev > 0)
+    assert behind.any() and (sw_dir[behind] < 1.).all()
     assert (sw_dir[elev > 30.] > 1.).any()  # not vacuous: the sun is above the horizon at noon
+    # hours in which the sun clears the horizon get part of the beam
+    crossing = (elev > 0) & ((elev < 25.) != (np.r_[elev[1:], elev[-1]] < 25.))
+    assert crossing.any() and (sw_dir[crossing] > 1.).any()
 
 
 def test_shortwave_timing_matches_solar_geometry(summer, tmp_path):

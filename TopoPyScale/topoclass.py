@@ -670,7 +670,8 @@ class Topoclass(object):
             precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or core.PRECIP_LAPSE_MAX_FACTOR,
             point_block=self.config.toposcale.point_block or 100,
             time_block=self.config.toposcale.time_block,
-            surface_effect=surface)
+            surface_effect=surface,
+            shading_substeps=self.config.toposcale.solar_substeps or None)
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
         return cda.downscale(n_core=n_core)
 

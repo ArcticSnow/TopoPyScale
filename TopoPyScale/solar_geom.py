@@ -111,6 +111,30 @@ def cos_zenith_geocentric(terms, latitude, longitude):
     return np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(H)
 
 
+def sun_geocentric(terms, latitude, longitude):
+    """
+    Geocentric solar elevation and azimuth, (time, point): cheap, used for the shading sub-steps. It neglects the
+    parallax (< 0.003 deg) and the atmospheric refraction.
+
+    Returns:
+        elevation [rad], azimuth [rad, 0 towards south, positive towards east, as ds_solar]
+    """
+    H = np.deg2rad(np.asarray(terms['v'])[:, None] + np.asarray(longitude, float)[None, :]
+                   - np.asarray(terms['alpha'])[:, None])
+    lat = np.deg2rad(np.asarray(latitude, float))[None, :]
+    dec = np.deg2rad(np.asarray(terms['delta']))[:, None]
+    elevation = np.arcsin(np.clip(np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(H), -1, 1))
+    # astronomers' azimuth of the SPA (from south, positive towards west); ds_solar uses the opposite sign
+    gamma = np.arctan2(np.sin(H), np.cos(H) * np.sin(lat) - np.tan(dec) * np.cos(lat))
+    return elevation, -gamma
+
+
+def substep_offsets(accumulation_window, n_substeps):
+    """Offsets of the centres of n_substeps equal parts of the window (t - window, t], from the time stamp t."""
+    window = pd.Timedelta(accumulation_window)
+    return pd.to_timedelta(((np.arange(n_substeps) + 0.5) / n_substeps - 1) * window.total_seconds(), unit='s')
+
+
 def _positions(times, terms, lat, lon, elev, method):
     if method == 'nrel_numpy':
         return spa_positions(terms, lat, lon, elev)
@@ -172,7 +196,7 @@ def get_solar_geom(df_position,
     n_sub = int(n_substeps) if (window > pd.Timedelta(0) and n_substeps and n_substeps > 1) else 1
     if n_sub > 1:
         # centres of n_sub equal parts of the window (t - window, t]
-        offsets = pd.to_timedelta(((np.arange(n_sub) + 0.5) / n_sub - 1) * window.total_seconds(), unit='s')
+        offsets = substep_offsets(window, n_sub)
         t_sub = pd.DatetimeIndex((times.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
     else:
         t_sub = t_mid
@@ -212,6 +236,8 @@ def get_solar_geom(df_position,
     ds.attrs['solar_geometry_note'] = ('solar angles evaluated at time - offset, the centre of the '
                                        f'{accumulation_window} radiation accumulation window ending at time')
     ds.attrs['solar_constant'] = float(solar_constant)
+    ds.attrs['accumulation_window'] = str(accumulation_window)
+    ds.attrs['solar_substeps'] = n_sub
     ds.attrs['solar_position_method'] = method_solar
     ds.zenith.attrs = {'units': 'rad', 'long_name': 'Solar zenith angle at the centre of the accumulation window'}
     ds.azimuth.attrs = {'units': 'rad', 'long_name': 'Solar azimuth, 0 towards south, positive towards east'}

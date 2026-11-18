@@ -339,10 +339,15 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
         azi = np.asarray(sol.azimuth.transpose('point_name', 'time').values, dtype=float)
         hor = _horizon_at_sun(terrain, azi)
         if hor is not None:
-            shade = (hor > elev) & ~sun_down
+            # behind the horizon at the previous, current and next evaluation times: shaded over the whole
+            # accumulation window (the direct beam is scaled by the sunlit fraction of the window)
+            behind = hor > elev
+            prev_b = np.concatenate([behind[:, :1], behind[:, :-1]], axis=1)
+            next_b = np.concatenate([behind[:, 1:], behind[:, -1:]], axis=1)
+            shade = behind & prev_b & next_b & ~sun_down
             rows.append(_row('direct_in_terrain_shadow', 'SW_direct', ((dr > tol) & shade).sum(), shade.sum(), 'error',
                              worst=np.nanmax(np.where(shade, dr, 0)),
-                             note='direct beam while sun is behind the local horizon'))
+                             note='direct beam while sun is behind the local horizon over the whole window'))
     return rows
 
 

@@ -124,7 +124,7 @@ toposcale:
   point_block: 100                        # (optional) number of points downscaled together. Default 100
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
-  solar_substeps: 6                       # (optional) sub-steps used to average the top-of-atmosphere irradiance over the accumulation window. Default 6
+  solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
   surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
     method: none                          # none, redcapp or dreamit
     coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
@@ -233,7 +233,7 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 | point_block             | 100           | no       | int             | number of points downscaled together (also the shard size of the output store). Default 100 |
 | time_block              | 8760          | no       | int             | number of time steps downscaled together (also the chunk size of the output store). Default: one year |
 | solar_constant          | 1361          | no       | float           | total solar irradiance at 1 AU [W m-2], scaled by the Earth-Sun distance to compute the top-of-atmosphere irradiance. Default 1361 |
-| solar_substeps          | 6             | no       | int             | number of sub-steps used to average the top-of-atmosphere irradiance over the radiation accumulation window. Default 6 |
+| solar_substeps          | 6             | no       | int             | number of sub-steps of the radiation accumulation window, used to average the top-of-atmosphere irradiance and to scale the direct beam by the part of the window the point is not shaded by terrain. 1: one shading test at the centre of the window. Default 6 |
 | physics_checks          | True          | no       | True, False, 'warning', 'error' | run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. Default False. See [Physics Checks](09_physics_checks.md) |
 | surface_effect          | {method: redcapp} | no   | dict            | surface-effect correction of air temperature and dew point: `method` none, redcapp or dreamit, plus `coefficients`, `context_dem`, `dewpoint`, `lw_consistent`, `allow_partial_window`, `diagnostics` (see the example above). Default off. See [Features](07_features.md#surface-effect-correction-of-air-temperature) |
 

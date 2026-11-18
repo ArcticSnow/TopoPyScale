@@ -92,6 +92,8 @@ TPS uses parallelization for a number of steps: threads to manage download reque
 
 `ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it.
 
+**Terrain shading within the window.** ERA5 shortwave is a mean over the accumulation window, so a point can be lit for part of it: the sun clears or drops behind a ridge during the hour. The downscaling tests the horizon at the same `toposcale.solar_substeps` sub-steps of the window and scales the direct beam by the sunlit fraction, each sub-step weighted by the beam it brings to the slope (cosine of the illumination angle). The sun positions of the sub-steps are geocentric (within 0.01° of the SPA); only terrain shading counts, not the sun below the astronomical horizon. With `solar_substeps: 1` the horizon is tested once, at the centre of the window, and the beam is kept or removed for the whole window. On the Davos points (January 2020), the 57 hours the sun crosses the horizon of DAV get an RMSE of 20.6 W m⁻² against the station instead of 30.3; the cost does not show in the downscaling time.
+
 
 ## Slope, aspect and sky view factor
 
@@ -130,7 +132,7 @@ For maps of horizons, `topo_param.compute_horizon(dem_file, azimuth_inc=30)` run
 
 ## Horizons
 
-`mp.compute_horizon()` computes the horizon angle of each point in the directions `dem.horizon_increments` degrees apart (the centres of the bins: -175, -165, ..., 175 for 10°; 0 = south, 90 = east, ±180 = north). The downscaling sets the direct beam to zero when the sun is below the horizon of the nearest direction. The horizons are saved to `outputs/da_horizon.nc`, with dimensions (`azimuth`, `point_name`), and as the columns `hori_azi_<azimuth>` of `df_centroids`.
+`mp.compute_horizon()` computes the horizon angle of each point in the directions `dem.horizon_increments` degrees apart (the centres of the bins: -175, -165, ..., 175 for 10°; 0 = south, 90 = east, ±180 = north). The downscaling removes the direct beam while the sun is below the horizon of the nearest direction, in proportion to the part of the accumulation window it spends there (Solar geometry). The horizons are saved to `outputs/da_horizon.nc`, with dimensions (`azimuth`, `point_name`), and as the columns `hori_azi_<azimuth>` of `df_centroids`.
 
 From each point, `topo_param.horizon_rays()` follows a straight ray in each direction, one cell at a time along the major grid axis, interpolating the DEM bilinearly. The observer is on the DEM surface at the exact position of the point, not at the centre of the nearest cell. The horizon is the steepest elevation angle to the terrain along the ray, or 0 if no terrain is higher than the point. A ray stops at the edge of the DEM, or as soon as no terrain further away could be steeper than the horizon already found: the highest elevation of the DEM seen from that distance is below it. This shortcut does not change the result. No-data cells never form a horizon. Earth curvature is ignored.
 
