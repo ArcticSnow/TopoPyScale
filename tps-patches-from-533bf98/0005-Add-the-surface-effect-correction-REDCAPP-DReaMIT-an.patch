@@ -1,0 +1,2416 @@
+From c5b03638c4ceb843c92578d69392db5bb19b70f6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 22:18:15 +0100
+Subject: [PATCH 5/8] Add the surface-effect correction (REDCAPP, DReaMIT) and
+ its calibration
+
+TopoSCALE takes air temperature from the pressure levels: free-atmosphere
+air, without the inversions, cold-air pools and daily cycle that ERA5
+resolves at its surface. The option toposcale.surface_effect adds back a
+terrain-weighted share of the ERA5 surface signal dT = t2m - T_pl(z_grid):
+T = T_pl + w dT + beta(t), the same for the dew point (capped at T), and
+the longwave uses the corrected values. Off by default: outputs unchanged.
+
+- surface_effect.py: hypsometric position, relief and MRVBF on a context
+  DEM, the REDCAPP (Cao et al. 2017) and DReaMIT (Pozsgay et al. 2026)
+  weights with their published coefficients, coefficients files, setup
+  for the downscaler.
+- surface_calib.py: station loaders (MeteoSwiss, generic csv), pairing
+  with a run made with the diagnostics, per-station weights, pooled fit,
+  cross-validation (by station or time block), bootstrap, YAML output.
+- toposcale_core / topo_scale_zarr / topoclass: the correction and the
+  diagnostics t_pl, dT_surf, dTd_surf.
+- Synthetic tests: off unchanged, limits, humidity bounds, indices on
+  synthetic DEMs, parameter recovery, downscaler integration.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012FMkEYDUJxvxmd3SbUsJfP
+---
+ TopoPyScale/surface_calib.py            | 282 +++++++++++++++++++
+ TopoPyScale/surface_effect.py           | 278 +++++++++++++++++++
+ TopoPyScale/topo_scale_zarr.py          |  22 +-
+ TopoPyScale/topoclass.py                |   8 +-
+ TopoPyScale/toposcale_core.py           |  70 ++++-
+ doc/docs/03_configurationFile.md        |   8 +
+ doc/docs/07_features.md                 |  30 ++
+ doc/docs/TopoPyScale.surface_calib.md   | 233 ++++++++++++++++
+ doc/docs/TopoPyScale.surface_effect.md  | 186 +++++++++++++
+ doc/docs/TopoPyScale.topo_scale_zarr.md |  25 +-
+ doc/docs/TopoPyScale.topoclass.md       | 348 ++++++++++++------------
+ doc/docs/TopoPyScale.toposcale_core.md  | 100 ++++++-
+ doc/mkdocs.yml                          |   2 +
+ pyproject.toml                          |   2 +
+ tests/test_surface_effect.py            | 206 ++++++++++++++
+ 15 files changed, 1603 insertions(+), 197 deletions(-)
+ create mode 100644 TopoPyScale/surface_calib.py
+ create mode 100644 TopoPyScale/surface_effect.py
+ create mode 100644 doc/docs/TopoPyScale.surface_calib.md
+ create mode 100644 doc/docs/TopoPyScale.surface_effect.md
+ create mode 100644 tests/test_surface_effect.py
+
+diff --git a/TopoPyScale/surface_calib.py b/TopoPyScale/surface_calib.py
+new file mode 100644
+index 0000000..c912dd0
+--- /dev/null
++++ b/TopoPyScale/surface_calib.py
+@@ -0,0 +1,282 @@
++"""
++Calibration of the surface-effect correction (surface_effect.py) from station records.
++
++1. Run TopoPyScale on the stations as a points project with toposcale.surface_effect: {method: none,
++   diagnostics: true}: the store then holds t_pl, dT_surf and dTd_surf at each station.
++2. Read the observations (read_meteoswiss, read_csv) and pair them with the store (pair).
++3. calibrate(): per-station weights (diagnostic), coefficients of the method by pooled least squares,
++   cross-validation (leave one station out, or contiguous time blocks with fewer than 3 stations) and
++   moving-block bootstrap intervals.
++4. save_coefficients(): YAML file for toposcale.surface_effect.coefficients.
++
++Model fitted, per station s and hour t:  T_obs - T_pl = w(theta; indices_s) dT + beta(t) [+ c_s]
++"""
++import numpy as np
++import pandas as pd
++import yaml
++
++from TopoPyScale import surface_effect as se
++from TopoPyScale import toposcale_core as core
++
++DREAMIT_SLOPES = np.round(np.arange(-4., 4.0001, 0.01), 3)
++REDCAPP_GAMMAS = np.logspace(1, 4, 301)
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  observations
++# ---------------------------------------------------------------------------------------------------------------------
++def dewpoint_from_rh(t, rh):
++    """Dew point [K] from temperature [K] and relative humidity [%] (Magnus, as toposcale_core)."""
++    tc = np.asarray(t) - 273.15
++    es = 610.94 * np.exp(17.625 * tc / (243.04 + tc))
++    return core.dewpoint_from_vp(np.clip(rh, 1, 100) / 100. * es)
++
++
++def read_meteoswiss(path):
++    """
++    MeteoSwiss open-data hourly file (ogd-smn_<sta>_h_*.csv): t [K] and td [K], indexed by the END of the hour (UTC).
++    """
++    df = pd.read_csv(path, sep=';', usecols=['reference_timestamp', 'tre200h0', 'ure200h0'])
++    df.index = pd.to_datetime(df.pop('reference_timestamp'), format='%d.%m.%Y %H:%M')
++    t = pd.to_numeric(df.tre200h0, errors='coerce') + 273.15
++    return pd.DataFrame({'t': t, 'td': dewpoint_from_rh(t, pd.to_numeric(df.ure200h0, errors='coerce'))})
++
++
++def read_csv(path, time, t, rh=None, td=None, celsius=True, **kwargs):
++    """Generic station file: column names of time, temperature and relative humidity [%] or dew point."""
++    df = pd.read_csv(path, **kwargs)
++    out = pd.DataFrame(index=pd.to_datetime(df[time]))
++    out['t'] = df[t].values + (273.15 if celsius else 0.)
++    if td is not None:
++        out['td'] = df[td].values + (273.15 if celsius else 0.)
++    elif rh is not None:
++        out['td'] = dewpoint_from_rh(out['t'].values, df[rh].values)
++    return out
++
++
++def pair(ds_down, obs, hour_ending=True):
++    """
++    Pair station observations with a downscaled store run with surface-effect diagnostics.
++
++    Args:
++        ds_down (dataset): downscaled points (point_name, time) with t_pl, dT_surf, dTd_surf, q, p
++        obs (dict): point_name -> dataframe of t and td [K] (read_meteoswiss, read_csv)
++        hour_ending (bool): observations are means over the hour ending at the time stamp; the model is then
++            averaged over the two time steps bracketing that hour
++
++    Returns:
++        dataframe with point_name, time, y (t obs - t_pl), dT, yd (td obs - td_pl), dTd
++    """
++    rows = []
++    for name, o in obs.items():
++        m = ds_down.sel(point_name=name)[['t_pl', 'dT_surf', 'dTd_surf', 'q', 'p']].to_dataframe()
++        m['td_pl'] = core.dewpoint_from_vp(core.vapor_pressure_from_q(m.q.values, m.p.values))
++        m = m[['t_pl', 'dT_surf', 'td_pl', 'dTd_surf']]
++        if hour_ending:
++            m = m.rolling(2).mean()
++        d = m.join(o, how='inner').dropna(subset=['t', 't_pl', 'dT_surf'])
++        rows.append(pd.DataFrame({'point_name': name, 'time': d.index, 't_pl': d.t_pl.values,
++                                  'y': (d.t - d.t_pl).values, 'dT': d.dT_surf.values,
++                                  'yd': (d.td - d.td_pl).values if 'td' in d else np.nan,
++                                  'dTd': d.dTd_surf.values}))
++    return pd.concat(rows, ignore_index=True)
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  fits
++# ---------------------------------------------------------------------------------------------------------------------
++def fit_stations(data, min_abs_dT=1.):
++    """Per-station weight: slope of T_obs - T_pl on dT (with intercept), over hours with |dT| > min_abs_dT."""
++    out = {}
++    for name, d in data.groupby('point_name'):
++        d = d[np.abs(d.dT) > min_abs_dT]
++        A = np.c_[d.dT, np.ones(len(d))]
++        (w, c), *_ = np.linalg.lstsq(A, d.y, rcond=None)
++        out[name] = {'w': w, 'intercept': c, 'n': len(d), 'r': np.corrcoef(d.y, d.dT)[0, 1]}
++    return pd.DataFrame(out).T
++
++
++def _beta_columns(time, fit_beta):
++    if fit_beta in (None, 'none'):
++        return np.empty((len(time), 0))
++    cols = [np.ones(len(time))]
++    if fit_beta == 'seasonal':
++        frac = (se.beta_t(time, beta_amp=1., t_star=0.), se.beta_t(time, beta_amp=1., t_star=0.25))  # cos, sin
++        cols += list(frac)
++    return np.column_stack(cols)
++
++
++def _design(method, data, idx, fit_beta, station_offsets):
++    """Columns of the linear part and the function giving, for a nonlinear parameter, the fixed term and w columns."""
++    ix = idx.loc[data.point_name.values]
++    extra = [_beta_columns(pd.DatetimeIndex(data.time), fit_beta)]
++    if station_offsets:
++        extra.append(pd.get_dummies(data.point_name).values.astype(float))
++    extra = np.column_stack(extra) if extra else np.empty((len(data), 0))
++    dT = data.dT.values
++    h = ix.hypso_pos.values
++    if method == 'dreamit':
++        def terms(k):  # w = a + expm1(k h): fixed part expm1(k h) dT, linear column dT for a
++            return np.expm1(k * h) * dT, np.c_[dT]
++        return DREAMIT_SLOPES, terms, extra
++    s_of = lambda g: np.exp(-ix.relief.values / g)  # noqa: E731
++
++    def terms(g):  # w = alpha (h (1-s) + s) + beta V (1-s)
++        s = s_of(g)
++        return np.zeros_like(dT), np.c_[(h * (1 - s) + s) * dT, ix.mrvbf.values / 8. * (1 - s) * dT]
++    return REDCAPP_GAMMAS, terms, extra
++
++
++def fit(method, data, idx, fit_beta='none', station_offsets=False):
++    """
++    Coefficients of a method by pooled least squares over all stations and hours: profile over the nonlinear
++    parameter (DReaMIT alpha_slope, REDCAPP gamma), linear least squares for the others.
++
++    Args:
++        method (str): 'dreamit' or 'redcapp'
++        data (dataframe): pair() output
++        idx (dataframe): terrain indices of the stations (surface_effect.terrain_indices), indexed by point_name
++        fit_beta (str): 'none', 'bias' (constant offset) or 'seasonal' (DReaMIT beta(t)); else beta = 0
++        station_offsets (bool): one free offset per station (fits w on the variation of dT only)
++
++    Returns:
++        dict of coefficients (and 'offsets' per station if station_offsets)
++    """
++    grid, terms, extra = _design(method, data, idx, fit_beta, station_offsets)
++    y = data.y.values
++    best = (np.inf, None, None)
++    for g in grid:
++        fixed, cols = terms(g)
++        A = np.c_[cols, extra]
++        coef, *_ = np.linalg.lstsq(A, y - fixed, rcond=None)
++        sse = np.sum((y - fixed - A @ coef) ** 2)
++        if sse < best[0]:
++            best = (sse, g, coef)
++    _, g, coef = best
++    if method == 'dreamit':
++        out = {'alpha_slope': float(g), 'alpha_intercept': float(coef[0])}
++        rest = coef[1:]
++    else:
++        out = {'gamma': float(g), 'alpha': float(coef[0]), 'beta': float(coef[1])}
++        rest = coef[2:]
++    out.update({'beta_amp': 0., 't_star': 0., 'beta_bias': 0.})
++    nb = _beta_columns(pd.DatetimeIndex(data.time[:1]), fit_beta).shape[1]
++    if nb:
++        out['beta_bias'] = float(rest[0])
++    if nb == 3:
++        a, b = rest[1], rest[2]
++        out['beta_amp'] = float(np.hypot(a, b))
++        out['t_star'] = float(np.mod(np.arctan2(b, a) / (2 * np.pi), 1.))
++    if station_offsets:
++        names = sorted(data.point_name.unique())
++        out['offsets'] = dict(zip(names, map(float, rest[nb:])))
++    return out
++
++
++def predict(method, coef, data, idx):
++    """Corrected temperature minus T_pl for the rows of data (offsets per station if present in coef)."""
++    ix = idx.loc[data.point_name.values].reset_index(drop=True)
++    w = se.weight(method, ix, coef)
++    out = w * data.dT.values + se.beta_t(pd.DatetimeIndex(data.time), **coef)
++    if 'offsets' in coef:
++        out = out + data.point_name.map(coef['offsets']).fillna(0.).values
++    return out
++
++
++def scores(sim, obs):
++    """Bias, RMSE and correlation."""
++    sim, obs = np.asarray(sim), np.asarray(obs)
++    return {'bias': np.mean(sim - obs), 'rmse': np.sqrt(np.mean((sim - obs) ** 2)), 'r': np.corrcoef(sim, obs)[0, 1]}
++
++
++def cross_validate(method, data, idx, by='station', n_blocks=2, **kw):
++    """
++    Out-of-sample predictions of T_obs - T_pl: leave one station out (by='station'), or leave one of n_blocks
++    contiguous time blocks out (by='time').
++
++    Returns:
++        series of predictions aligned with data
++    """
++    pred = pd.Series(np.nan, index=data.index)
++    if by == 'station':
++        folds = [data.point_name == s for s in data.point_name.unique()]
++    else:
++        t = pd.DatetimeIndex(data.time)
++        edges = pd.date_range(t.min(), t.max() + pd.Timedelta('1h'), periods=n_blocks + 1)
++        folds = [(t >= a) & (t < b) for a, b in zip(edges[:-1], edges[1:])]
++    for test in folds:
++        test = np.asarray(test)
++        coef = fit(method, data[~test], idx, **kw)
++        coef.pop('offsets', None)
++        pred[test] = predict(method, coef, data[test], idx)
++    return pred
++
++
++def bootstrap(method, data, idx, n=200, block='5D', seed=0, **kw):
++    """Moving-block bootstrap over time (blocks shared by all stations): 2.5 and 97.5 % percentiles."""
++    rng = np.random.default_rng(seed)
++    t = pd.DatetimeIndex(data.time)
++    blocks = t.floor(block)
++    keys = blocks.unique()
++    by_block = {k: np.flatnonzero(blocks == k) for k in keys}
++    samples = []
++    for _ in range(n):
++        pick = rng.choice(keys, size=len(keys), replace=True)
++        rows = np.concatenate([by_block[k] for k in pick])
++        c = fit(method, data.iloc[rows].reset_index(drop=True), idx, **kw)
++        c.pop('offsets', None)
++        samples.append(c)
++    df = pd.DataFrame(samples)
++    return {k: [float(df[k].quantile(0.025)), float(df[k].quantile(0.975))] for k in df.columns}
++
++
++def calibrate(method, data, indices, fit_beta='none', station_offsets=False, n_boot=200, cv_by=None):
++    """
++    Full calibration: per-station weights, pooled fit, cross-validation and bootstrap, for each window radius.
++
++    Args:
++        method (str): 'dreamit' or 'redcapp'
++        data (dataframe): pair() output
++        indices (dict): radius_km -> terrain indices of the stations (indexed by point_name); the radius with the
++            lowest cross-validated RMSE is kept
++        cv_by (str): 'station' or 'time'; default 'station' with 3 stations or more, else 'time'
++
++    Returns:
++        dict: method, radius_km, coefficients, intervals_95, cv (scores per station, out of sample),
++        fit (scores in sample), stations (per-station weights), cv_by
++    """
++    cv_by = cv_by or ('station' if data.point_name.nunique() >= 3 else 'time')
++    kw = {'fit_beta': fit_beta, 'station_offsets': station_offsets}
++    best = None
++    for radius, idx in indices.items():
++        pred = cross_validate(method, data, idx, by=cv_by, **kw)
++        rmse = np.sqrt(np.mean((pred - data.y) ** 2))
++        if best is None or rmse < best[0]:
++            best = (rmse, radius, idx, pred)
++    _, radius, idx, pred = best
++    coef = fit(method, data, idx, **kw)
++    insample = predict(method, coef, data, idx)
++    per = lambda p: pd.DataFrame({s: scores(p[g.index] + data.t_pl[g.index], g.y + g.t_pl)  # noqa: E731
++                                  for s, g in data.groupby('point_name')}).T
++    return {'method': method, 'radius_km': float(radius), 'coefficients': coef,
++            'intervals_95': bootstrap(method, data, idx, n=n_boot, **kw) if n_boot else {},
++            'cv': per(pd.Series(pred, index=data.index)), 'fit': per(pd.Series(insample, index=data.index)),
++            'stations': fit_stations(data), 'cv_by': cv_by,
++            'period': [str(pd.Timestamp(data.time.min())), str(pd.Timestamp(data.time.max()))]}
++
++
++def save_coefficients(result, path):
++    """Write a calibrate() result as a coefficients file for toposcale.surface_effect.coefficients."""
++    coef = {k: v for k, v in result['coefficients'].items() if k != 'offsets'}
++    d = {'method': result['method'], 'radius_km': result['radius_km'],
++         'coefficients': {k: round(float(v), 4) for k, v in coef.items()},
++         'intervals_95': {k: [round(float(a), 4), round(float(b), 4)] for k, (a, b) in result['intervals_95'].items()
++                          if k in coef},
++         'fit': {'stations': list(result['cv'].index), 'period': result['period'], 'cv_by': result['cv_by'],
++                 'cv_rmse_K': {k: round(float(v), 3) for k, v in result['cv'].rmse.items()},
++                 'cv_bias_K': {k: round(float(v), 3) for k, v in result['cv'].bias.items()}}}
++    if result['method'] == 'redcapp':
++        d['mrvbf_slope_threshold'] = se.DEFAULTS['redcapp']['mrvbf_slope_threshold']
++    with open(path, 'w') as f:
++        yaml.safe_dump(d, f, sort_keys=False)
++    return path
+diff --git a/TopoPyScale/surface_effect.py b/TopoPyScale/surface_effect.py
+new file mode 100644
+index 0000000..1a20f83
+--- /dev/null
++++ b/TopoPyScale/surface_effect.py
+@@ -0,0 +1,278 @@
++"""
++Surface-effect correction of the downscaled air temperature and dew point: REDCAPP and DReaMIT.
++
++TopoSCALE takes air temperature from pressure levels, i.e. free-atmosphere air, without the inversions, cold-air
++pools and diurnal cycle that ERA5 resolves at its own surface. Both methods add back a terrain-weighted share of the
++ERA5 surface signal dT = t2m - T_pl(z_grid) (toposcale_core.surface_signal):
++
++    T = T_pl(z_point) + w dT + beta(t),     Td = Td_pl(z_point) + w dTd  (capped at T)
++
++- REDCAPP (Cao et al. 2017, GMD 10, 2905): w = alpha [H (1 - S) + S] + beta V (1 - S), S = exp(-R / gamma),
++  with H the hypsometric position and R the elevation range within a 30 km wide circle, and V = MRVBF / 8
++  (Gallant and Dowling 2003). Published coefficients: Swiss Alps.
++- DReaMIT (Pozsgay et al. 2026, GMD 19, 7197): w = alpha_intercept + exp(alpha_slope h) - 1, with h the hypsometric
++  position within 50 km, and beta(t) = beta_amp cos(2 pi (t - t_star)) + beta_bias (t: fraction of the year).
++  Published coefficients: ERA5, Yukon and Northwest Territories (GlobSim). DReaMIT defines dT against a linear lapse
++  rate fitted above the inversion; here T_pl is the TopoSCALE pressure-level interpolation, as in REDCAPP.
++
++Hypsometric position = fraction of the DEM cells within the window that are higher than the point: 0 on the
++highest summit, 1 at the bottom of the lowest valley (both papers).
++
++Config (toposcale.surface_effect), off by default:
++    method: none | redcapp | dreamit
++    coefficients: file written by surface_calib.save_coefficients (default: published values)
++    context_dem: DEM for the terrain indices, covering the points plus the window (default: project DEM)
++    dewpoint: true               # correct the humidity too
++    lw_consistent: true          # longwave from the corrected temperature and humidity
++    allow_partial_window: false  # accept windows that leave the context DEM (flagged in df_centroids)
++    diagnostics: false           # store t_pl, dT_surf and dTd_surf (also with method: none)
++"""
++import numpy as np
++import pandas as pd
++import xarray as xr
++import yaml
++from scipy import ndimage
++
++METHODS = ('none', 'redcapp', 'dreamit')
++DEFAULTS = {
++    'redcapp': {'radius_km': 15., 'alpha': 0.61, 'beta': 1.56, 'gamma': 465., 'mrvbf_slope_threshold': 50.,
++                'source': 'Cao et al. 2017, Swiss Alps'},
++    'dreamit': {'radius_km': 50., 'alpha_intercept': 0.449, 'alpha_slope': 0.732, 'beta_amp': 0.918,
++                't_star': 0.958, 'beta_bias': 1.181,
++                'source': 'Pozsgay et al. 2026, ERA5, Yukon and Northwest Territories (GlobSim DReaMIT_params.csv)'},
++}
++INDEX_COLUMNS = ['hypso_pos', 'relief', 'mrvbf', 'window_coverage']
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  weights
++# ---------------------------------------------------------------------------------------------------------------------
++def weight_dreamit(hypso_pos, alpha_intercept, alpha_slope, **_):
++    """DReaMIT surface-coupling weight alpha(h) (Pozsgay et al. 2026, eq. 5)."""
++    return alpha_intercept + np.expm1(alpha_slope * np.asarray(hypso_pos, dtype=float))
++
++
++def weight_redcapp(hypso_pos, relief, mrvbf, alpha, beta, gamma, **_):
++    """REDCAPP land-surface correction factor LSCF (Cao et al. 2017)."""
++    s = np.exp(-np.asarray(relief, dtype=float) / gamma)
++    return alpha * (np.asarray(hypso_pos) * (1 - s) + s) + beta * np.asarray(mrvbf) / 8. * (1 - s)
++
++
++def weight(method, df, coef):
++    """Weight of each point (rows of df with the INDEX_COLUMNS) for a method and its coefficients."""
++    if method == 'dreamit':
++        return weight_dreamit(df['hypso_pos'].values, **coef)
++    if method == 'redcapp':
++        return weight_redcapp(df['hypso_pos'].values, df['relief'].values, df['mrvbf'].values, **coef)
++    raise ValueError(f'Unknown surface-effect method {method}, use one of {METHODS}')
++
++
++def beta_t(times, beta_amp=0., t_star=0., beta_bias=0., **_):
++    """DReaMIT seasonal offset beta(t) [K] (Pozsgay et al. 2026, eq. 6), t the fraction of the year."""
++    t = pd.DatetimeIndex(times)
++    y0 = pd.to_datetime(t.year.astype(str), format='%Y')
++    y1 = pd.to_datetime((t.year + 1).astype(str), format='%Y')
++    frac = np.asarray((t - y0) / (y1 - y0), dtype=float)
++    return beta_amp * np.cos(2 * np.pi * (frac - t_star)) + beta_bias
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  coefficients
++# ---------------------------------------------------------------------------------------------------------------------
++def load_coefficients(method, path=None):
++    """Published coefficients of a method, updated with a coefficients file (surface_calib.save_coefficients)."""
++    if method not in DEFAULTS:
++        raise ValueError(f'Unknown surface-effect method {method}, use one of {METHODS}')
++    coef = dict(DEFAULTS[method])
++    if path:
++        with open(path) as f:
++            d = yaml.safe_load(f)
++        if d.get('method', method) != method:
++            raise ValueError(f'{path} holds coefficients of {d.get("method")}, not {method}')
++        coef.update(d.get('coefficients', {}))
++        for k in ['radius_km', 'mrvbf_slope_threshold']:
++            if k in d:
++                coef[k] = d[k]
++        coef['source'] = str(path)
++    return coef
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  terrain indices
++# ---------------------------------------------------------------------------------------------------------------------
++def _n(x, t, p):
++    """Gallant and Dowling (2003) transform of x > 0 onto [0, 1]: 1 for x << t, 0 for x >> t."""
++    return 1. / (1. + (x / t) ** p)
++
++
++def _disk(radius):
++    r = int(np.ceil(radius))
++    yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
++    return [(dy, dx) for dy, dx in zip(yy.ravel(), xx.ravel()) if dy * dy + dx * dx <= radius * radius]
++
++
++def _shift(z, dy, dx):
++    out = np.full_like(z, np.nan)
++    ny, nx = z.shape
++    out[max(0, -dy):ny - max(0, dy), max(0, -dx):nx - max(0, dx)] = \
++        z[max(0, dy):ny - max(0, -dy), max(0, dx):nx - max(0, -dx)]
++    return out
++
++
++def _lowness_pctl(z, radius):
++    """Fraction of the cells within a circle of radius (cells) lower than the centre cell."""
++    lower = np.zeros_like(z)
++    valid = np.zeros_like(z)
++    for dy, dx in _disk(radius):
++        zs = _shift(z, dy, dx)
++        ok = np.isfinite(zs)
++        lower += ok & (zs < z)
++        valid += ok
++    with np.errstate(invalid='ignore'):
++        return np.where(np.isfinite(z), lower / valid, np.nan)
++
++
++def _slope_pct(z, res):
++    gy, gx = np.gradient(z, res)
++    return 100. * np.hypot(gx, gy)
++
++
++def _resize(a, shape):
++    return ndimage.zoom(np.nan_to_num(a), (shape[0] / a.shape[0], shape[1] / a.shape[1]), order=1)[:shape[0], :shape[1]]
++
++
++def mrvbf(z, res, slope_threshold=16., max_steps=8, pctl_radius=6):
++    """
++    Multiresolution index of valley bottom flatness (Gallant and Dowling 2003, Water Resour. Res. 39, 1347).
++
++    Steps 1 and 2 at the DEM resolution, then the DEM is smoothed and coarsened 3 times per step and the slope
++    threshold halved. Steps stop when the coarse DEM is smaller than the lowness window.
++
++    Args:
++        z (2d array): elevation [m], nan for no data
++        res (float): cell size [m]
++        slope_threshold (float): slope threshold of the first step [%]; 16 for a 25 m DEM (Gallant and Dowling),
++            REDCAPP uses 50 for a smoother index
++        max_steps (int): number of steps (8: index up to about 8)
++        pctl_radius (int): radius of the elevation-percentile window [cells] from step 2 (3 at step 1)
++
++    Returns:
++        mrvbf (2d array), number of steps computed
++    """
++    z = np.asarray(z, dtype=float)
++    f1 = _n(_slope_pct(z, res), slope_threshold, 4)
++    vf1 = 1 - _n(f1 * _n(_lowness_pctl(z, pctl_radius / 2), 0.4, 3), 0.3, 4)
++    f2 = _n(_slope_pct(z, res), slope_threshold / 2, 4)
++    cf = f1 * f2
++    vf2 = 1 - _n(cf * _n(_lowness_pctl(z, pctl_radius), 0.4, 3), 0.3, 4)
++    w2 = 1 - _n(vf2, 0.4, np.log10(1.5 / 0.1) / np.log10(1.5))
++    m = w2 * (1 + vf2) + (1 - w2) * vf1
++    zc, resc, steps = z, res, 2
++    for step in range(3, max_steps + 1):
++        mask = np.isfinite(zc)
++        smooth = ndimage.gaussian_filter(np.where(mask, zc, 0.), 1.5)
++        norm = ndimage.gaussian_filter(mask.astype(float), 1.5)
++        with np.errstate(invalid='ignore'):
++            zs = np.where(norm > 0.5, smooth / norm, np.nan)
++        zc, resc = zs[1::3, 1::3], resc * 3
++        if min(zc.shape) < 2 * pctl_radius + 1:
++            break
++        f = _n(_slope_pct(zc, resc), slope_threshold / 2 ** (step - 1), 4)
++        low = _n(_lowness_pctl(zc, pctl_radius), 0.4, 3)
++        cf = cf * _resize(f, z.shape)
++        vf = 1 - _n(cf * _resize(low, z.shape), 0.3, 4)
++        w = 1 - _n(vf, 0.4, np.log10((step - 0.5) / 0.1) / np.log10(1.5))
++        m = w * (step - 1 + vf) + (1 - w) * m
++        steps = step
++    return np.where(np.isfinite(z), m, np.nan), steps
++
++
++def _open_dem(path, epsg=None):
++    import rioxarray  # noqa: F401
++    da = xr.open_dataarray(path, engine='rasterio').squeeze(drop=True)
++    if epsg and da.rio.crs is not None and da.rio.crs.to_epsg() != int(epsg):
++        da = da.rio.reproject(f'EPSG:{int(epsg)}')
++    nodata = da.rio.nodata
++    z = da.values.astype(float)
++    if nodata is not None:
++        z[z == nodata] = np.nan
++    return z, da.x.values, da.y.values
++
++
++def terrain_indices(df, dem_file, radius_km, epsg=None, with_mrvbf=False, mrvbf_slope_threshold=50.):
++    """
++    Hypsometric position, elevation range and MRVBF of points.
++
++    Args:
++        df (dataframe): points with x, y (projected, m) and elevation
++        dem_file (str): context DEM, covering the points plus the radius; reprojected to epsg if needed
++        radius_km (float): window radius [km]
++        with_mrvbf (bool): compute MRVBF (REDCAPP), on the context DEM
++
++    Returns:
++        dataframe with hypso_pos, relief [m], mrvbf, window_coverage (share of the circle inside the DEM)
++    """
++    z, xs, ys = _open_dem(dem_file, epsg)
++    rx, ry = abs(float(xs[1] - xs[0])), abs(float(ys[1] - ys[0]))
++    R = radius_km * 1e3
++    out = pd.DataFrame(index=df.index, columns=INDEX_COLUMNS, dtype=float)
++    for i, (x, y, elev) in zip(df.index, df[['x', 'y', 'elevation']].values):
++        ix, iy = np.argmin(np.abs(xs - x)), np.argmin(np.abs(ys - y))
++        ny, nx = int(np.ceil(R / ry)), int(np.ceil(R / rx))
++        y0, x0 = max(iy - ny, 0), max(ix - nx, 0)
++        win = z[y0:iy + ny + 1, x0:ix + nx + 1]
++        d2 = (((np.arange(y0, y0 + win.shape[0]) - iy) * ry) ** 2)[:, None] + \
++            (((np.arange(x0, x0 + win.shape[1]) - ix) * rx) ** 2)[None, :]
++        cells = win[(d2 <= R * R) & np.isfinite(win)]
++        out.loc[i, 'hypso_pos'] = np.mean(cells > elev)
++        out.loc[i, 'relief'] = cells.max() - cells.min()
++        out.loc[i, 'window_coverage'] = min(1., cells.size * rx * ry / (np.pi * R * R))
++    if with_mrvbf:
++        m, _ = mrvbf(z, 0.5 * (rx + ry), mrvbf_slope_threshold)
++        ix = np.abs(xs[None, :] - df.x.values[:, None]).argmin(axis=1)
++        iy = np.abs(ys[None, :] - df.y.values[:, None]).argmin(axis=1)
++        out['mrvbf'] = m[iy, ix]
++    return out
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  setup for the downscaling
++# ---------------------------------------------------------------------------------------------------------------------
++def setup(df, cfg, dem_file, epsg):
++    """
++    Terrain indices and weights of the points, and the arguments of toposcale_core.downscale_block.
++
++    Args:
++        df (dataframe): df_centroids (x, y, elevation); index columns and w_surf are added in place
++        cfg (dict): config toposcale.surface_effect
++        dem_file (str): project DEM, used when cfg has no context_dem
++        epsg (int): projection of x, y
++
++    Returns:
++        dict for downscale_block(surface=...), or None when the correction and its diagnostics are off
++    """
++    cfg = dict(cfg or {})
++    method = str(cfg.get('method') or 'none').lower()
++    if method not in METHODS:
++        raise ValueError(f'Unknown surface-effect method {method}, use one of {METHODS}')
++    if method == 'none':
++        return {'weight': None, 'diagnostics': True} if cfg.get('diagnostics') else None
++    coef = load_coefficients(method, cfg.get('coefficients'))
++    idx = terrain_indices(df, cfg.get('context_dem') or dem_file, coef['radius_km'], epsg,
++                          with_mrvbf=method == 'redcapp', mrvbf_slope_threshold=coef.get('mrvbf_slope_threshold', 50.))
++    partial = idx.window_coverage < 0.95
++    if partial.any():
++        msg = (f'Surface effect: the {coef["radius_km"]} km window of {partial.sum()} points leaves the context DEM '
++               f'(coverage down to {idx.window_coverage.min():.0%}). Provide toposcale.surface_effect.context_dem')
++        if not cfg.get('allow_partial_window'):
++            raise ValueError(msg + ' or set allow_partial_window: true')
++        print('WARNING: ' + msg)
++    for c in INDEX_COLUMNS:
++        df[c] = idx[c].values
++    df['w_surf'] = weight(method, df, coef)
++    print(f'---> Surface effect {method} ({coef["source"]}): w from {df.w_surf.min():.2f} to {df.w_surf.max():.2f}')
++    return {'weight': df['w_surf'].values.astype(float),
++            'beta_coef': {k: coef[k] for k in ['beta_amp', 't_star', 'beta_bias']} if method == 'dreamit' else None,
++            'dewpoint': cfg.get('dewpoint', True) is not False,
++            'lw_consistent': cfg.get('lw_consistent', True) is not False,
++            'diagnostics': bool(cfg.get('diagnostics'))}
+diff --git a/TopoPyScale/topo_scale_zarr.py b/TopoPyScale/topo_scale_zarr.py
+index 616c371..5e14de6 100644
+--- a/TopoPyScale/topo_scale_zarr.py
++++ b/TopoPyScale/topo_scale_zarr.py
+@@ -30,6 +30,7 @@ except ImportError:
+ 
+ from TopoPyScale import toposcale_core as core
+ from TopoPyScale import topo_utils as tu
++from TopoPyScale import surface_effect as se
+ from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
+ 
+ PLEV_VARS = ['z', 't', 'q', 'u', 'v']
+@@ -59,7 +60,11 @@ VAR_ATTRS = {
+     'SW_direct': {'units': 'W m**-2', 'long_name': 'Surface direct solar radiation downwards'},
+     'SW_diffuse': {'units': 'W m**-2', 'long_name': 'Surface diffuse solar radiation downwards'},
+     'cos_illumination': {'units': '1', 'long_name': 'Cosine of the solar illumination angle on the slope'},
++    't_pl': {'units': 'K', 'long_name': 'Pressure-level temperature before the surface-effect correction'},
++    'dT_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on temperature: t2m - T_pl at the ERA5 surface'},
++    'dTd_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on dew point: d2m - Td_pl at the ERA5 surface'},
+ }
++SURFACE_DIAGNOSTICS = ['t_pl', 'dT_surf', 'dTd_surf']
+ 
+ 
+ def tp_attrs(tstep_h):
+@@ -86,6 +91,8 @@ class ClimateDownscaler:
+         interp_method (str): 'idw' or 'linear'
+         lw_terrain_flag (bool): add the longwave emitted by the surrounding terrain
+         precip_lapse_rate_flag (bool): apply the precipitation elevation factor
++        surface_effect (dict): surface-effect correction, from surface_effect.setup() (None: off). Its diagnostics
++            t_pl, dT_surf and dTd_surf are added to the outputs when 'diagnostics' is true
+         store_name (str): name of the output zarr store, default 'down.zarr'
+         precip_lapse_rate_max_factor (float): bound of the precipitation elevation factor
+         point_block (int): number of points processed together, also the shard size of the output store along points
+@@ -113,7 +120,8 @@ class ClimateDownscaler:
+                  precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR,
+                  point_block=100,
+                  time_block=None,
+-                 max_box_mb=2000):
++                 max_box_mb=2000,
++                 surface_effect=None):
+ 
+         store_name = store_name or 'down.zarr'
+         if not str(store_name).endswith('.zarr'):
+@@ -159,6 +167,11 @@ class ClimateDownscaler:
+         self.precip_lapse_rate_flag = precip_lapse_rate_flag
+         self.precip_lapse_rate_max_factor = precip_lapse_rate_max_factor or PRECIP_LAPSE_MAX_FACTOR
+         self.varout = list(varout) if varout not in (None, 'all') else list(varout_default)
++        self.surface = None if surface_effect is None else dict(surface_effect)
++        if self.surface is not None and self.surface.get('beta_coef'):
++            self.surface['beta'] = se.beta_t(self.tvec, **self.surface['beta_coef'])
++        if surface_effect is not None and surface_effect.get('diagnostics'):
++            self.varout += [v for v in SURFACE_DIAGNOSTICS if v not in self.varout]
+         self.point_block = int(point_block)
+         self.time_block = int(time_block) if time_block else int(round(365 * 24 / self.tstep_h))
+         self.time_block = min(self.time_block, self.tvec.size)
+@@ -259,9 +272,14 @@ class ClimateDownscaler:
+         shade = core.horizon_at_sun(self.horizon_profiles[p0:p1], self.horizon_azimuth, solar['azimuth']) > \
+             solar['elevation']
+         points = {k: v[p0:p1] for k, v in self.points.items()}
++        surface = None
++        if self.surface is not None:
++            beta = self.surface.get('beta', 0.)
++            surface = dict(self.surface, beta=beta[t0:t1] if np.ndim(beta) else beta,
++                           weight=None if self.surface.get('weight') is None else self.surface['weight'][p0:p1])
+         out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
+                                    self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
+-                                   self.precip_lapse_rate_max_factor)
++                                   self.precip_lapse_rate_max_factor, surface)
+         group = zarr.open_group(str(self.store), mode='r+')
+         for v in self.varout:
+             group[v][p0:p1, t0:t1] = out[v].T.astype('float32')
+diff --git a/TopoPyScale/topoclass.py b/TopoPyScale/topoclass.py
+index 4c2a3f4..b12934a 100644
+--- a/TopoPyScale/topoclass.py
++++ b/TopoPyScale/topoclass.py
+@@ -33,6 +33,7 @@ from TopoPyScale import topo_param as tp
+ from TopoPyScale import topo_plot as tpl
+ from TopoPyScale import topo_sub as ts
+ from TopoPyScale import topo_scale_zarr as tz
++from TopoPyScale import surface_effect as se
+ from TopoPyScale import toposcale_core as core
+ from TopoPyScale import topo_utils as tu
+ from TopoPyScale import topo_checks as tc
+@@ -647,6 +648,10 @@ class Topoclass(object):
+     def _downscale_zarr(self, downscaled_dir):
+         """Downscale all points from the climate zarr store into one zarr store of downscaled points."""
+         variables = self.config.outputs.variables
++        df = self.toposub.df_centroids
++        surface = se.setup(df, self.config.toposcale.surface_effect, self.config.dem.filepath, self.config.dem.epsg)
++        if surface is not None and surface.get('weight') is not None:
++            df.to_pickle(self.config.outputs.path / self.config.outputs.file.df_centroids)
+         cda = tz.ClimateDownscaler(
+             era5_zarr_path=self._climate_store(),
+             output_path=downscaled_dir,
+@@ -664,7 +669,8 @@ class Topoclass(object):
+             store_name=self._downscaled_store_name(),
+             precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or core.PRECIP_LAPSE_MAX_FACTOR,
+             point_block=self.config.toposcale.point_block or 100,
+-            time_block=self.config.toposcale.time_block)
++            time_block=self.config.toposcale.time_block,
++            surface_effect=surface)
+         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
+         return cda.downscale(n_core=n_core)
+ 
+diff --git a/TopoPyScale/toposcale_core.py b/TopoPyScale/toposcale_core.py
+index 75328d3..9c19950 100644
+--- a/TopoPyScale/toposcale_core.py
++++ b/TopoPyScale/toposcale_core.py
+@@ -222,6 +222,56 @@ def q_from_dewpoint(d2m, sp):
+     return wsl / (1 + wsl)
+ 
+ 
++def vapor_pressure_from_q(q, p):
++    """Vapour pressure [Pa] from specific humidity and pressure (exact inverse of q_from_dewpoint)."""
++    return q * p / (EPS + (1 - EPS) * q)
++
++
++def dewpoint_from_vp(vp):
++    """Dew point [K] from vapour pressure [Pa] (inverse of the Magnus formula of q_from_dewpoint)."""
++    lnr = np.log(np.maximum(vp, 1e-3) / 610.94)
++    return 273.15 + 243.04 * lnr / (17.625 - lnr)
++
++
++def surface_signal(plev, surf, level_hpa):
++    """
++    ERA5 surface effect at the grid surface: 2 m temperature and dew point minus their pressure-level values at the
++    elevation of the ERA5 surface (inversions, cold-air pools, diurnal cycle missing from free-atmosphere air).
++
++    Args:
++        plev (dict): pressure-level fields as in interpolate_vertical, geopotential height 'z' in m
++        surf (dict): 'z_surf' (m2 s-2), 't2m', 'd2m', each (time, point)
++
++    Returns:
++        dT, dTd [K], both (time, point)
++    """
++    grid = interpolate_vertical(plev, surf['z_surf'][0] / G, level_hpa)
++    td_grid = dewpoint_from_vp(vapor_pressure_from_q(grid['q'], grid['p']))
++    return surf['t2m'] - grid['t'], surf['d2m'] - td_grid
++
++
++def surface_correction(t, q, p, dT, dTd, weight, beta=0., dewpoint=True):
++    """
++    Add the terrain-weighted surface effect to pressure-level temperature and humidity (REDCAPP, DReaMIT):
++    T = T_pl + w dT + beta and Td = Td_pl + w dTd, with Td capped at T. w = 0 and beta = 0 return t and q.
++
++    Args:
++        t, q, p: pressure-level temperature [K], specific humidity [kg kg-1] and pressure [Pa] at the points
++        dT, dTd: surface_signal() at the points, (time, point)
++        weight (array): surface-coupling weight w, (point,)
++        beta (array or float): additive offset [K], (time, 1) or scalar
++        dewpoint (bool): correct the humidity too
++
++    Returns:
++        corrected t, q
++    """
++    t_new = t + weight * dT + beta
++    if not dewpoint:
++        return t_new, q
++    td = dewpoint_from_vp(vapor_pressure_from_q(q, p)) + weight * dTd
++    return t_new, q_from_dewpoint(np.minimum(td, t_new), p)
++
++
+ def mixing_ratio(q):
+     """As meteo_util.mixing_ratio."""
+     return 0.5 * (1 - np.sqrt(1 - 4 * q))
+@@ -329,7 +379,7 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade):
+ #  full chain for one block of time steps and points
+ # ---------------------------------------------------------------------------------------------------------------------
+ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h, lw_terrain_flag,
+-                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR):
++                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None):
+     """
+     Downscale one block of time steps for a set of points.
+ 
+@@ -344,21 +394,35 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
+         solar (dict): see shortwave(), each (time, point)
+         shade (bool array): (time, point)
+         tstep_h (int): time step of the data in hours
++        surface (dict): optional surface-effect correction (surface_effect.py): 'weight' (point,) or None for the
++            diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the
++            corrected temperature and humidity). None: no correction, outputs unchanged
+ 
+     Returns:
+         dict of (time, point) arrays: t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW,
+-        SW, SW_direct, SW_diffuse, cos_illumination
++        SW, SW_direct, SW_diffuse, cos_illumination; with surface, also t_pl, dT_surf, dTd_surf
+     """
+     plev = dict(plev, z=plev['z'] / G)
+     elev = points['elevation']
+     out = interpolate_vertical(plev, elev, level_hpa)
++    t_lw, q_lw = out['t'], out['q']
++    if surface is not None:
++        out['t_pl'] = out['t']
++        out['dT_surf'], out['dTd_surf'] = surface_signal(plev, surf, level_hpa)
++        if surface.get('weight') is not None:
++            beta = np.reshape(surface.get('beta', 0.), (-1, 1))
++            out['t'], out['q'] = surface_correction(out['t'], out['q'], out['p'], out['dT_surf'], out['dTd_surf'],
++                                                    surface['weight'], beta, surface.get('dewpoint', True))
++            if surface.get('lw_consistent', True):
++                t_lw, q_lw = out['t'], out['q']
+     out['ws'], out['wd'] = wind_speed_direction(out['u'], out['v'])
+     out['tp'], out['precip_lapse_rate'] = precipitation(surf['tp'], elev[None, :] - surf['z_surf'] / G, months,
+                                                         tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor)
+     out['w'] = mixing_ratio(out['q'])
+     out['vp'] = vapor_pressure(out['p'], out['w'])
+     vp_surf = vapor_pressure(surf['sp'], mixing_ratio(q_from_dewpoint(surf['d2m'], surf['sp'])))
+-    out['LW'], out['cse'] = longwave(out['t'], out['vp'], surf['t2m'], vp_surf, surf['strd'], points['svf'],
++    vp_lw = out['vp'] if q_lw is out['q'] else vapor_pressure(out['p'], mixing_ratio(q_lw))
++    out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
+                                      points['slope'], lw_terrain_flag)
+     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
+                          points['svf'], shade))
+diff --git a/doc/docs/03_configurationFile.md b/doc/docs/03_configurationFile.md
+index 806c3e8..3a6b1bb 100644
+--- a/doc/docs/03_configurationFile.md
++++ b/doc/docs/03_configurationFile.md
+@@ -125,6 +125,14 @@ toposcale:
+   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
+   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
+   solar_substeps: 6                       # (optional) sub-steps used to average the top-of-atmosphere irradiance over the accumulation window. Default 6
++  surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
++    method: none                          # none, redcapp or dreamit
++    coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
++    context_dem:                          # (optional) DEM covering the points plus the window (30 km wide for redcapp, 50 km radius for dreamit). Default: project DEM
++    dewpoint: True                        # (optional) correct the humidity too. Default True
++    lw_consistent: True                   # (optional) longwave from the corrected temperature and humidity. Default True
++    allow_partial_window: False           # (optional) accept windows leaving the context DEM. Default False
++    diagnostics: False                    # (optional) store t_pl, dT_surf and dTd_surf (also with method none, for the calibration). Default False
+ 
+ #.....................................................................................................
+ outputs:
+diff --git a/doc/docs/07_features.md b/doc/docs/07_features.md
+index 3a4f330..fbeef8d 100644
+--- a/doc/docs/07_features.md
++++ b/doc/docs/07_features.md
+@@ -139,6 +139,36 @@ For the 50 centroids of the Davos example (747 × 500 cells), this takes 0.15 s
+ An existing `da_horizon.nc` is loaded if it holds the same points (names and positions), and recomputed otherwise, including files computed on the full DEM grid by earlier versions.
+ 
+ 
++## Surface-effect correction of air temperature
++
++TopoSCALE takes the air temperature and humidity of a point from the pressure levels: free-atmosphere air, without the inversions, cold-air pools and daily cycle that ERA5 resolves at its own surface. With `toposcale.surface_effect.method: redcapp` or `dreamit`, the downscaling adds back a terrain-weighted share of the ERA5 surface signal ΔT = t2m − T_pl(z_ERA5 surface):
++
++T = T_pl(z_point) + w ΔT + β(t), and Td = Td_pl(z_point) + w ΔTd, capped at T.
++
++w = 0 gives the plain TopoSCALE values; w = 1 transfers the whole grid-surface difference. The longwave is then computed from the corrected temperature and humidity (`lw_consistent`). The weight of each point comes from its terrain, computed once on `context_dem`, which must cover the points plus the window:
++
++| Method | Weight | Terrain | Published coefficients |
++| --- | --- | --- | --- |
++| `redcapp` ([Cao et al. 2017](https://doi.org/10.5194/gmd-10-2905-2017)) | w = α [H (1 − S) + S] + β V (1 − S), S = exp(−R / γ) | hypsometric position H and relief R in a 30 km wide circle; V = MRVBF / 8 | Swiss Alps: α 0.61, β 1.56, γ 465 m |
++| `dreamit` ([Pozsgay et al. 2026](https://doi.org/10.5194/gmd-19-7197-2026)) | w = α_intercept + exp(α_slope h) − 1, plus β(t) = β_amp cos(2π(t − t*)) + β_bias | hypsometric position h within 50 km | ERA5, Yukon: α_intercept 0.449, α_slope 0.732, β_amp 0.918, t* 0.958, β_bias 1.181 K |
++
++The hypsometric position is the fraction of the DEM cells in the window that are higher than the point: 0 on the highest summit, 1 at the bottom of the lowest valley. The indices and `w_surf` are added to `df_centroids`. DReaMIT defines ΔT against a lapse rate fitted above the inversion; TopoPyScale uses its own pressure-level interpolation, as REDCAPP does.
++
++Published coefficients may not transfer: at Davos (January 2020), the Yukon DReaMIT coefficients over-correct the Weissfluhjoch crest. `TopoPyScale.surface_calib` fits them for a new region from station records:
++
++```python
++from TopoPyScale import surface_calib as sc, surface_effect as se
++# 1. downscale the stations as a points project with surface_effect: {method: none, diagnostics: true}
++data = sc.pair(mp.downscaled_pts.load(), {name: sc.read_meteoswiss(file) for name, file in station_files.items()})
++indices = {r: se.terrain_indices(df_stations, 'glo90.tif', r, epsg=32632).set_index(df_stations.point_name)
++           for r in [5, 15, 30, 50]}
++res = sc.calibrate('dreamit', data, indices, fit_beta='bias')   # pooled fit, cross-validation, bootstrap
++sc.save_coefficients(res, 'surface_coeffs.yml')                  # then surface_effect.coefficients: surface_coeffs.yml
++```
++
++`calibrate` fits w per station (diagnostic), then the coefficients by pooled least squares over all stations and hours, keeps the window radius with the lowest cross-validated error (leave one station out, or contiguous time blocks with fewer than 3 stations), and gives moving-block bootstrap intervals. `fit_beta` is `none`, `bias` (regional offset) or `seasonal` (DReaMIT β(t), needs a year of data).
++
++
+ ## Clustering
+ 
+ Clustering offer a number of possibilities. First, any DEM can by segmented by clustering (k-means) using a list of features. These features can be topographic or anything which can be labeled to the pixel level (e.g. watershed, glaciated land, etc.). The clustering will return a list of groups of pixels that fall within the same "cluster". The method implemented is K-means from [Scikit-learn](https://sklearn.org/stable/getting_started.html). To speed up the processing, TPS will use the routine `minibatch_kmean()` to spread the computational load on multiple core. 
+diff --git a/doc/docs/TopoPyScale.surface_calib.md b/doc/docs/TopoPyScale.surface_calib.md
+new file mode 100644
+index 0000000..0f43357
+--- /dev/null
++++ b/doc/docs/TopoPyScale.surface_calib.md
+@@ -0,0 +1,233 @@
++<!-- markdownlint-disable -->
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++# <kbd>module</kbd> `TopoPyScale.surface_calib`
++Calibration of the surface-effect correction (surface_effect.py) from station records. 
++
++1. Run TopoPyScale on the stations as a points project with toposcale.surface_effect: {method: none,  diagnostics: true}: the store then holds t_pl, dT_surf and dTd_surf at each station. 2. Read the observations (read_meteoswiss, read_csv) and pair them with the store (pair). 3. calibrate(): per-station weights (diagnostic), coefficients of the method by pooled least squares,  cross-validation (leave one station out, or contiguous time blocks with fewer than 3 stations) and  moving-block bootstrap intervals. 4. save_coefficients(): YAML file for toposcale.surface_effect.coefficients. 
++
++Model fitted, per station s and hour t:  T_obs - T_pl = w(theta; indices_s) dT + beta(t) [+ c_s] 
++
++**Global Variables**
++---------------
++- **DREAMIT_SLOPES**
++- **REDCAPP_GAMMAS**
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L28"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `dewpoint_from_rh`
++
++```python
++dewpoint_from_rh(t, rh)
++```
++
++Dew point [K] from temperature [K] and relative humidity [%] (Magnus, as toposcale_core). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L35"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `read_meteoswiss`
++
++```python
++read_meteoswiss(path)
++```
++
++MeteoSwiss open-data hourly file (ogd-smn_<sta>_h_*.csv): t [K] and td [K], indexed by the END of the hour (UTC). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L45"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `read_csv`
++
++```python
++read_csv(path, time, t, rh=None, td=None, celsius=True, **kwargs)
++```
++
++Generic station file: column names of time, temperature and relative humidity [%] or dew point. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L57"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `pair`
++
++```python
++pair(ds_down, obs, hour_ending=True)
++```
++
++Pair station observations with a downscaled store run with surface-effect diagnostics. 
++
++
++
++**Args:**
++ 
++ - <b>`ds_down`</b> (dataset):  downscaled points (point_name, time) with t_pl, dT_surf, dTd_surf, q, p 
++ - <b>`obs`</b> (dict):  point_name -> dataframe of t and td [K] (read_meteoswiss, read_csv) 
++ - <b>`hour_ending`</b> (bool):  observations are means over the hour ending at the time stamp; the model is then  averaged over the two time steps bracketing that hour 
++
++
++
++**Returns:**
++ dataframe with point_name, time, y (t obs - t_pl), dT, yd (td obs - td_pl), dTd 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L88"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `fit_stations`
++
++```python
++fit_stations(data, min_abs_dT=1.0)
++```
++
++Per-station weight: slope of T_obs - T_pl on dT (with intercept), over hours with |dT| > min_abs_dT. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L130"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `fit`
++
++```python
++fit(method, data, idx, fit_beta='none', station_offsets=False)
++```
++
++Coefficients of a method by pooled least squares over all stations and hours: profile over the nonlinear parameter (DReaMIT alpha_slope, REDCAPP gamma), linear least squares for the others. 
++
++
++
++**Args:**
++ 
++ - <b>`method`</b> (str):  'dreamit' or 'redcapp' 
++ - <b>`data`</b> (dataframe):  pair() output 
++ - <b>`idx`</b> (dataframe):  terrain indices of the stations (surface_effect.terrain_indices), indexed by point_name 
++ - <b>`fit_beta`</b> (str):  'none', 'bias' (constant offset) or 'seasonal' (DReaMIT beta(t)); else beta = 0 
++ - <b>`station_offsets`</b> (bool):  one free offset per station (fits w on the variation of dT only) 
++
++
++
++**Returns:**
++ dict of coefficients (and 'offsets' per station if station_offsets) 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L176"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `predict`
++
++```python
++predict(method, coef, data, idx)
++```
++
++Corrected temperature minus T_pl for the rows of data (offsets per station if present in coef). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L186"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `scores`
++
++```python
++scores(sim, obs)
++```
++
++Bias, RMSE and correlation. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L192"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `cross_validate`
++
++```python
++cross_validate(method, data, idx, by='station', n_blocks=2, **kw)
++```
++
++Out-of-sample predictions of T_obs - T_pl: leave one station out (by='station'), or leave one of n_blocks contiguous time blocks out (by='time'). 
++
++
++
++**Returns:**
++  series of predictions aligned with data 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L215"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `bootstrap`
++
++```python
++bootstrap(method, data, idx, n=200, block='5D', seed=0, **kw)
++```
++
++Moving-block bootstrap over time (blocks shared by all stations): 2.5 and 97.5 % percentiles. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L233"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `calibrate`
++
++```python
++calibrate(
++    method,
++    data,
++    indices,
++    fit_beta='none',
++    station_offsets=False,
++    n_boot=200,
++    cv_by=None
++)
++```
++
++Full calibration: per-station weights, pooled fit, cross-validation and bootstrap, for each window radius. 
++
++
++
++**Args:**
++ 
++ - <b>`method`</b> (str):  'dreamit' or 'redcapp' 
++ - <b>`data`</b> (dataframe):  pair() output 
++ - <b>`indices`</b> (dict):  radius_km -> terrain indices of the stations (indexed by point_name); the radius with the  lowest cross-validated RMSE is kept 
++ - <b>`cv_by`</b> (str):  'station' or 'time'; default 'station' with 3 stations or more, else 'time' 
++
++
++
++**Returns:**
++ 
++ - <b>`dict`</b>:  method, radius_km, coefficients, intervals_95, cv (scores per station, out of sample), fit (scores in sample), stations (per-station weights), cv_by 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_calib.py#L268"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `save_coefficients`
++
++```python
++save_coefficients(result, path)
++```
++
++Write a calibrate() result as a coefficients file for toposcale.surface_effect.coefficients. 
++
++
++
++
++---
++
++_This file was automatically generated via [lazydocs](https://github.com/ml-tooling/lazydocs)._
+diff --git a/doc/docs/TopoPyScale.surface_effect.md b/doc/docs/TopoPyScale.surface_effect.md
+new file mode 100644
+index 0000000..a5739e1
+--- /dev/null
++++ b/doc/docs/TopoPyScale.surface_effect.md
+@@ -0,0 +1,186 @@
++<!-- markdownlint-disable -->
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++# <kbd>module</kbd> `TopoPyScale.surface_effect`
++Surface-effect correction of the downscaled air temperature and dew point: REDCAPP and DReaMIT. 
++
++TopoSCALE takes air temperature from pressure levels, i.e. free-atmosphere air, without the inversions, cold-air pools and diurnal cycle that ERA5 resolves at its own surface. Both methods add back a terrain-weighted share of the ERA5 surface signal dT = t2m - T_pl(z_grid) (toposcale_core.surface_signal): 
++
++ T = T_pl(z_point) + w dT + beta(t),     Td = Td_pl(z_point) + w dTd  (capped at T) 
++
++
++- REDCAPP (Cao et al. 2017, GMD 10, 2905): w = alpha [H (1 - S) + S] + beta V (1 - S), S = exp(-R / gamma),  with H the hypsometric position and R the elevation range within a 30 km wide circle, and V = MRVBF / 8  (Gallant and Dowling 2003). Published coefficients: Swiss Alps. 
++- DReaMIT (Pozsgay et al. 2026, GMD 19, 7197): w = alpha_intercept + exp(alpha_slope h) - 1, with h the hypsometric  position within 50 km, and beta(t) = beta_amp cos(2 pi (t - t_star)) + beta_bias (t: fraction of the year).  Published coefficients: ERA5, Yukon and Northwest Territories (GlobSim). DReaMIT defines dT against a linear lapse  rate fitted above the inversion; here T_pl is the TopoSCALE pressure-level interpolation, as in REDCAPP. 
++
++Hypsometric position = fraction of the DEM cells within the window that are higher than the point: 0 on the highest summit, 1 at the bottom of the lowest valley (both papers). 
++
++Config (toposcale.surface_effect), off by default:  method: none | redcapp | dreamit  coefficients: file written by surface_calib.save_coefficients (default: published values)  context_dem: DEM for the terrain indices, covering the points plus the window (default: project DEM)  dewpoint: true               # correct the humidity too  lw_consistent: true          # longwave from the corrected temperature and humidity  allow_partial_window: false  # accept windows that leave the context DEM (flagged in df_centroids)  diagnostics: false           # store t_pl, dT_surf and dTd_surf (also with method: none) 
++
++**Global Variables**
++---------------
++- **METHODS**
++- **DEFAULTS**
++- **INDEX_COLUMNS**
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L50"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `weight_dreamit`
++
++```python
++weight_dreamit(hypso_pos, alpha_intercept, alpha_slope, **_)
++```
++
++DReaMIT surface-coupling weight alpha(h) (Pozsgay et al. 2026, eq. 5). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L55"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `weight_redcapp`
++
++```python
++weight_redcapp(hypso_pos, relief, mrvbf, alpha, beta, gamma, **_)
++```
++
++REDCAPP land-surface correction factor LSCF (Cao et al. 2017). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L61"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `weight`
++
++```python
++weight(method, df, coef)
++```
++
++Weight of each point (rows of df with the INDEX_COLUMNS) for a method and its coefficients. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L70"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `beta_t`
++
++```python
++beta_t(times, beta_amp=0.0, t_star=0.0, beta_bias=0.0, **_)
++```
++
++DReaMIT seasonal offset beta(t) [K] (Pozsgay et al. 2026, eq. 6), t the fraction of the year. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L82"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `load_coefficients`
++
++```python
++load_coefficients(method, path=None)
++```
++
++Published coefficients of a method, updated with a coefficients file (surface_calib.save_coefficients). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L144"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `mrvbf`
++
++```python
++mrvbf(z, res, slope_threshold=16.0, max_steps=8, pctl_radius=6)
++```
++
++Multiresolution index of valley bottom flatness (Gallant and Dowling 2003, Water Resour. Res. 39, 1347). 
++
++Steps 1 and 2 at the DEM resolution, then the DEM is smoothed and coarsened 3 times per step and the slope threshold halved. Steps stop when the coarse DEM is smaller than the lowness window. 
++
++
++
++**Args:**
++ 
++ - <b>`z`</b> (2d array):  elevation [m], nan for no data 
++ - <b>`res`</b> (float):  cell size [m] 
++ - <b>`slope_threshold`</b> (float):  slope threshold of the first step [%]; 16 for a 25 m DEM (Gallant and Dowling),  REDCAPP uses 50 for a smoother index 
++ - <b>`max_steps`</b> (int):  number of steps (8: index up to about 8) 
++ - <b>`pctl_radius`</b> (int):  radius of the elevation-percentile window [cells] from step 2 (3 at step 1) 
++
++
++
++**Returns:**
++ mrvbf (2d array), number of steps computed 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L202"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `terrain_indices`
++
++```python
++terrain_indices(
++    df,
++    dem_file,
++    radius_km,
++    epsg=None,
++    with_mrvbf=False,
++    mrvbf_slope_threshold=50.0
++)
++```
++
++Hypsometric position, elevation range and MRVBF of points. 
++
++
++
++**Args:**
++ 
++ - <b>`df`</b> (dataframe):  points with x, y (projected, m) and elevation 
++ - <b>`dem_file`</b> (str):  context DEM, covering the points plus the radius; reprojected to epsg if needed 
++ - <b>`radius_km`</b> (float):  window radius [km] 
++ - <b>`with_mrvbf`</b> (bool):  compute MRVBF (REDCAPP), on the context DEM 
++
++
++
++**Returns:**
++ dataframe with hypso_pos, relief [m], mrvbf, window_coverage (share of the circle inside the DEM) 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/surface_effect.py#L241"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `setup`
++
++```python
++setup(df, cfg, dem_file, epsg)
++```
++
++Terrain indices and weights of the points, and the arguments of toposcale_core.downscale_block. 
++
++
++
++**Args:**
++ 
++ - <b>`df`</b> (dataframe):  df_centroids (x, y, elevation); index columns and w_surf are added in place 
++ - <b>`cfg`</b> (dict):  config toposcale.surface_effect 
++ - <b>`dem_file`</b> (str):  project DEM, used when cfg has no context_dem 
++ - <b>`epsg`</b> (int):  projection of x, y 
++
++
++
++**Returns:**
++ dict for downscale_block(surface=...), or None when the correction and its diagnostics are off 
++
++
++
++
++---
++
++_This file was automatically generated via [lazydocs](https://github.com/ml-tooling/lazydocs)._
+diff --git a/doc/docs/TopoPyScale.topo_scale_zarr.md b/doc/docs/TopoPyScale.topo_scale_zarr.md
+index 7ed4671..ccdca50 100644
+--- a/doc/docs/TopoPyScale.topo_scale_zarr.md
++++ b/doc/docs/TopoPyScale.topo_scale_zarr.md
+@@ -19,10 +19,11 @@ Create the ERA5 store from yearly netcdf files with fetch_era5.netcdf_to_zarr().
+ - **SOLAR_VARS**
+ - **varout_default**
+ - **VAR_ATTRS**
++- **SURFACE_DIAGNOSTICS**
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L65"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L70"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `tp_attrs`
+ 
+@@ -37,6 +38,8 @@ tp_attrs(tstep_h)
+ 
+ ---
+ 
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L76"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
+ ## <kbd>class</kbd> `ClimateDownscaler`
+ Downscale an ERA5 zarr store to a list of points. 
+ 
+@@ -56,6 +59,7 @@ Downscale an ERA5 zarr store to a list of points.
+  - <b>`interp_method`</b> (str):  'idw' or 'linear' 
+  - <b>`lw_terrain_flag`</b> (bool):  add the longwave emitted by the surrounding terrain 
+  - <b>`precip_lapse_rate_flag`</b> (bool):  apply the precipitation elevation factor 
++ - <b>`surface_effect`</b> (dict):  surface-effect correction, from surface_effect.setup() (None: off). Its diagnostics  t_pl, dT_surf and dTd_surf are added to the outputs when 'diagnostics' is true 
+  - <b>`store_name`</b> (str):  name of the output zarr store, default 'down.zarr' 
+  - <b>`precip_lapse_rate_max_factor`</b> (float):  bound of the precipitation elevation factor 
+  - <b>`point_block`</b> (int):  number of points processed together, also the shard size of the output store along points 
+@@ -63,9 +67,9 @@ Downscale an ERA5 zarr store to a list of points.
+  - <b>`Default`</b>:  one year 
+  - <b>`max_box_mb`</b> (float):  the ERA5 nodes around all points are read once per time block if they fit in this  memory (MB), otherwise once per point block 
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L98"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L105"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `__init__`
++### <kbd>method</kbd> `ClimateDownscaler.__init__`
+ 
+ ```python
+ __init__(
+@@ -86,7 +90,8 @@ __init__(
+     precip_lapse_rate_max_factor=5.0,
+     point_block=100,
+     time_block=None,
+-    max_box_mb=2000
++    max_box_mb=2000,
++    surface_effect=None
+ )
+ ```
+ 
+@@ -99,9 +104,9 @@ __init__(
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L270"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L288"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `downscale`
++### <kbd>method</kbd> `ClimateDownscaler.downscale`
+ 
+ ```python
+ downscale(n_core=1)
+@@ -123,9 +128,9 @@ Downscale all points and write them to the output store.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L244"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L257"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `process_block`
++### <kbd>method</kbd> `ClimateDownscaler.process_block`
+ 
+ ```python
+ process_block(p0, p1, t0, t1, era=None)
+@@ -141,9 +146,9 @@ Downscale points p0:p1 (positions in df_centroids) for time steps t0:t1 and writ
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L185"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L198"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `setup_output_store`
++### <kbd>method</kbd> `ClimateDownscaler.setup_output_store`
+ 
+ ```python
+ setup_output_store()
+diff --git a/doc/docs/TopoPyScale.topoclass.md b/doc/docs/TopoPyScale.topoclass.md
+index 756b288..7c60cb5 100644
+--- a/doc/docs/TopoPyScale.topoclass.md
++++ b/doc/docs/TopoPyScale.topoclass.md
+@@ -17,131 +17,14 @@ project/  config.ini
+ 
+ ---
+ 
+-## <kbd>class</kbd> `Plotting`
+-Sub-Class with plotting functions for topoclass object 
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L995"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `horizon`
+-
+-```python
+-horizon()
+-```
+-
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L977"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `map_center_clusters`
+-
+-```python
+-map_center_clusters(
+-    background_var='elevation',
+-    cmap=<matplotlib.colors.ListedColormap object at 0x7f9589258aa0>,
+-    hillshade=True,
+-    **kwargs
+-)
+-```
+-
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L984"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `map_clusters`
+-
+-```python
+-map_clusters(**kwargs)
+-```
+-
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L970"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `map_terrain`
+-
+-```python
+-map_terrain(var='elevation', hillshade=True, **kwargs)
+-```
+-
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L953"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `map_variable`
+-
+-```python
+-map_variable(
+-    var='t',
+-    time_step=1,
+-    time=None,
+-    cmap=<matplotlib.colors.LinearSegmentedColormap object at 0x7f9589263410>,
+-    hillshade=True,
+-    **kwargs
+-)
+-```
+-
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L992"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `solar_geom`
+-
+-```python
+-solar_geom()
+-```
+-
+-
+-
+-
+-
+----
+-
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L989"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+-
+-### <kbd>function</kbd> `timeseries`
+-
+-```python
+-timeseries()
+-```
+-
+-
+-
+-
+-
+-
+----
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L41"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>class</kbd> `Topoclass`
+ A python class to bring the typical use-case of toposcale in a user friendly object 
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L45"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L46"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `__init__`
++### <kbd>method</kbd> `Topoclass.__init__`
+ 
+ ```python
+ __init__(config_file)
+@@ -156,9 +39,9 @@ __init__(config_file)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L671"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L677"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `check_physics`
++### <kbd>method</kbd> `Topoclass.check_physics`
+ 
+ ```python
+ check_physics(
+@@ -188,9 +71,9 @@ Run physics-consistency checks on the downscaled outputs (see topo_checks.py) an
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L231"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `compute_dem_param`
++### <kbd>method</kbd> `Topoclass.compute_dem_param`
+ 
+ ```python
+ compute_dem_param()
+@@ -202,9 +85,9 @@ compute_dem_param()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L567"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L568"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `compute_horizon`
++### <kbd>method</kbd> `Topoclass.compute_horizon`
+ 
+ ```python
+ compute_horizon()
+@@ -214,9 +97,9 @@ Horizon angles of the points (df_centroids), every dem.horizon_increments degree
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L557"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L558"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `compute_solar_geometry`
++### <kbd>method</kbd> `Topoclass.compute_solar_geometry`
+ 
+ ```python
+ compute_solar_geometry()
+@@ -228,9 +111,9 @@ compute_solar_geometry()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L601"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L602"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `downscale_climate`
++### <kbd>method</kbd> `Topoclass.downscale_climate`
+ 
+ ```python
+ downscale_climate()
+@@ -240,9 +123,9 @@ Downscale the climate forcing to the points, into the zarr store outputs/downsca
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L267"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L268"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `extract_pts_param`
++### <kbd>method</kbd> `Topoclass.extract_pts_param`
+ 
+ ```python
+ extract_pts_param(method='nearest', **kwargs)
+@@ -262,9 +145,9 @@ Function to use a list point as input rather than cluster centroids from DEM seg
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L294"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L295"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `extract_topo_cluster_param`
++### <kbd>method</kbd> `Topoclass.extract_topo_cluster_param`
+ 
+ ```python
+ extract_topo_cluster_param()
+@@ -282,9 +165,9 @@ Function to segment a DEM in clusters and retain only the centroids of each clus
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L497"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L498"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `extract_topo_param`
++### <kbd>method</kbd> `Topoclass.extract_topo_param`
+ 
+ ```python
+ extract_topo_param()
+@@ -294,9 +177,9 @@ Function to select which
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L758"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L764"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `get_WMO_observations`
++### <kbd>method</kbd> `Topoclass.get_WMO_observations`
+ 
+ ```python
+ get_WMO_observations()
+@@ -306,9 +189,9 @@ Function to download and parse in-situ data from WMO database
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L701"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L707"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `get_era5`
++### <kbd>method</kbd> `Topoclass.get_era5`
+ 
+ ```python
+ get_era5()
+@@ -320,9 +203,9 @@ get_era5()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L706"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L712"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `get_era5_snowmapper`
++### <kbd>method</kbd> `Topoclass.get_era5_snowmapper`
+ 
+ ```python
+ get_era5_snowmapper(surf_plev, lastday)
+@@ -336,9 +219,9 @@ Funtion to call fetching of ERA5 data
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L754"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L760"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `get_ifs_forecast`
++### <kbd>method</kbd> `Topoclass.get_ifs_forecast`
+ 
+ ```python
+ get_ifs_forecast()
+@@ -350,9 +233,9 @@ get_ifs_forecast()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L744"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L750"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `get_lastday`
++### <kbd>method</kbd> `Topoclass.get_lastday`
+ 
+ ```python
+ get_lastday()
+@@ -364,9 +247,9 @@ get_lastday()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L171"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L172"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `load_project`
++### <kbd>method</kbd> `Topoclass.load_project`
+ 
+ ```python
+ load_project()
+@@ -376,9 +259,9 @@ Function to load pre-existing TopoPyScale project saved in files
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L751"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L757"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `remap_netcdf`
++### <kbd>method</kbd> `Topoclass.remap_netcdf`
+ 
+ ```python
+ remap_netcdf(filepath, file_type)
+@@ -390,9 +273,9 @@ remap_netcdf(filepath, file_type)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L237"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L238"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `search_optimum_number_of_clusters`
++### <kbd>method</kbd> `Topoclass.search_optimum_number_of_clusters`
+ 
+ ```python
+ search_optimum_number_of_clusters(
+@@ -415,9 +298,9 @@ Function to test what would be an appropriate number of clusters
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L813"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L819"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_crocus`
++### <kbd>method</kbd> `Topoclass.to_crocus`
+ 
+ ```python
+ to_crocus(fname_format='CROCUS_pt_*.nc', scale_precip=1)
+@@ -434,9 +317,9 @@ function to export toposcale output to crocus format .nc. This functions saves o
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L782"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L788"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_cryogrid`
++### <kbd>method</kbd> `Topoclass.to_cryogrid`
+ 
+ ```python
+ to_cryogrid(fname_format='Cryogrid_pt_*.nc', precip_partition='continuous')
+@@ -452,9 +335,9 @@ wrapper function to export toposcale output to cryosgrid format from TopoClass
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L807"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L813"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_fsm`
++### <kbd>method</kbd> `Topoclass.to_fsm`
+ 
+ ```python
+ to_fsm(fname_format='FSM_pt_*.txt')
+@@ -464,9 +347,9 @@ function to export toposcale output to FSM format
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L890"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L896"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_geotop`
++### <kbd>method</kbd> `Topoclass.to_geotop`
+ 
+ ```python
+ to_geotop(fname_format='meteo_*.txt')
+@@ -476,9 +359,9 @@ function to export toposcale output to FSM format
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L896"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L902"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_musa`
++### <kbd>method</kbd> `Topoclass.to_musa`
+ 
+ ```python
+ to_musa(
+@@ -517,9 +400,9 @@ Writes daily forcing files, mask.nc, and DEM.nc ('grid') or points_meta.csv ('po
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L865"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L871"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_netcdf`
++### <kbd>method</kbd> `Topoclass.to_netcdf`
+ 
+ ```python
+ to_netcdf(file_out='output.nc', variables=None)
+@@ -536,9 +419,9 @@ function to export toposcale output to one single generic netcdf format, compres
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L853"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L859"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_snowmodel`
++### <kbd>method</kbd> `Topoclass.to_snowmodel`
+ 
+ ```python
+ to_snowmodel(fname_format='Snowmodel_stn_*.csv')
+@@ -550,9 +433,9 @@ function to export toposcale output to snowmodel format .ascii, for single stati
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L884"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L890"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_snowpack`
++### <kbd>method</kbd> `Topoclass.to_snowpack`
+ 
+ ```python
+ to_snowpack(fname_format='smet_pt_*.smet')
+@@ -562,9 +445,9 @@ function to export toposcale output to FSM format
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L828"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L834"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `to_surfex`
++### <kbd>method</kbd> `Topoclass.to_surfex`
+ 
+ ```python
+ to_surfex(
+@@ -586,9 +469,9 @@ function to export toposcale output to surfex format .nc. This functions saves o
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L748"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L754"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+-### <kbd>function</kbd> `unzip_file`
++### <kbd>method</kbd> `Topoclass.unzip_file`
+ 
+ ```python
+ unzip_file(filepath)
+@@ -599,6 +482,127 @@ unzip_file(filepath)
+ 
+ 
+ 
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L950"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>class</kbd> `Plotting`
++Sub-Class with plotting functions for topoclass object 
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L1001"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.horizon`
++
++```python
++horizon()
++```
++
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L983"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.map_center_clusters`
++
++```python
++map_center_clusters(
++    background_var='elevation',
++    cmap=<matplotlib.colors.ListedColormap object at 0x7f33810d1700>,
++    hillshade=True,
++    **kwargs
++)
++```
++
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L990"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.map_clusters`
++
++```python
++map_clusters(**kwargs)
++```
++
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L976"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.map_terrain`
++
++```python
++map_terrain(var='elevation', hillshade=True, **kwargs)
++```
++
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L959"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.map_variable`
++
++```python
++map_variable(
++    var='t',
++    time_step=1,
++    time=None,
++    cmap=<matplotlib.colors.LinearSegmentedColormap object at 0x7f3380f90d10>,
++    hillshade=True,
++    **kwargs
++)
++```
++
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L998"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.solar_geom`
++
++```python
++solar_geom()
++```
++
++
++
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L995"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++### <kbd>method</kbd> `Plotting.timeseries`
++
++```python
++timeseries()
++```
++
++
++
++
++
++
+ 
+ 
+ ---
+diff --git a/doc/docs/TopoPyScale.toposcale_core.md b/doc/docs/TopoPyScale.toposcale_core.md
+index efe2239..9922a43 100644
+--- a/doc/docs/TopoPyScale.toposcale_core.md
++++ b/doc/docs/TopoPyScale.toposcale_core.md
+@@ -218,6 +218,85 @@ Specific humidity [kg kg-1] from dew point [K] and pressure [Pa] (Magnus, as met
+ 
+ <a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L225"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
++## <kbd>function</kbd> `vapor_pressure_from_q`
++
++```python
++vapor_pressure_from_q(q, p)
++```
++
++Vapour pressure [Pa] from specific humidity and pressure (exact inverse of q_from_dewpoint). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `dewpoint_from_vp`
++
++```python
++dewpoint_from_vp(vp)
++```
++
++Dew point [K] from vapour pressure [Pa] (inverse of the Magnus formula of q_from_dewpoint). 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L236"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `surface_signal`
++
++```python
++surface_signal(plev, surf, level_hpa)
++```
++
++ERA5 surface effect at the grid surface: 2 m temperature and dew point minus their pressure-level values at the elevation of the ERA5 surface (inversions, cold-air pools, diurnal cycle missing from free-atmosphere air). 
++
++
++
++**Args:**
++ 
++ - <b>`plev`</b> (dict):  pressure-level fields as in interpolate_vertical, geopotential height 'z' in m 
++ - <b>`surf`</b> (dict):  'z_surf' (m2 s-2), 't2m', 'd2m', each (time, point) 
++
++
++
++**Returns:**
++ dT, dTd [K], both (time, point) 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L253"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `surface_correction`
++
++```python
++surface_correction(t, q, p, dT, dTd, weight, beta=0.0, dewpoint=True)
++```
++
++Add the terrain-weighted surface effect to pressure-level temperature and humidity (REDCAPP, DReaMIT): T = T_pl + w dT + beta and Td = Td_pl + w dTd, with Td capped at T. w = 0 and beta = 0 return t and q. 
++
++
++
++**Args:**
++ 
++ - <b>`t, q, p`</b>:  pressure-level temperature [K], specific humidity [kg kg-1] and pressure [Pa] at the points 
++ - <b>`dT, dTd`</b>:  surface_signal() at the points, (time, point) 
++ - <b>`weight`</b> (array):  surface-coupling weight w, (point,) 
++ - <b>`beta`</b> (array or float):  additive offset [K], (time, 1) or scalar 
++ - <b>`dewpoint`</b> (bool):  correct the humidity too 
++
++
++
++**Returns:**
++ corrected t, q 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L275"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
+ ## <kbd>function</kbd> `mixing_ratio`
+ 
+ ```python
+@@ -229,7 +308,7 @@ As meteo_util.mixing_ratio.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L280"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `vapor_pressure`
+ 
+@@ -242,7 +321,7 @@ As meteo_util.vapor_pressure [Pa].
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L235"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L285"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `wind_speed_direction`
+ 
+@@ -255,7 +334,7 @@ Wind speed [m s-1] and direction the wind blows from, clockwise from north [rad,
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L240"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L290"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `precipitation`
+ 
+@@ -278,7 +357,7 @@ precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=5.0)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L260"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L310"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `longwave`
+ 
+@@ -299,7 +378,7 @@ Downwelling longwave [W m-2]: clear-sky emissivity at the point plus the cloud e
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L278"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L328"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `horizon_at_sun`
+ 
+@@ -320,7 +399,7 @@ Horizon angle in the direction of the sun (nearest azimuth bin, as xarray .sel(m
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L295"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L345"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `shortwave`
+ 
+@@ -350,7 +429,7 @@ Shortwave partition and terrain corrections.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L331"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L381"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `downscale_block`
+ 
+@@ -366,7 +445,8 @@ downscale_block(
+     tstep_h,
+     lw_terrain_flag,
+     precip_lapse_rate_flag,
+-    precip_lapse_rate_max_factor=5.0
++    precip_lapse_rate_max_factor=5.0,
++    surface=None
+ )
+ ```
+ 
+@@ -384,12 +464,14 @@ Downscale one block of time steps for a set of points.
+  - <b>`solar`</b> (dict):  see shortwave(), each (time, point) 
+  - <b>`shade`</b> (bool array):  (time, point) 
+  - <b>`tstep_h`</b> (int):  time step of the data in hours 
++ - <b>`surface`</b> (dict):  optional surface-effect correction (surface_effect.py): 'weight' (point,) or None for the  diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the 
++ - <b>`corrected temperature and humidity). None`</b>:  no correction, outputs unchanged 
+ 
+ 
+ 
+ **Returns:**
+  
+- - <b>`dict of (time, point) arrays`</b>:  t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW, SW, SW_direct, SW_diffuse, cos_illumination 
++ - <b>`dict of (time, point) arrays`</b>:  t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW, SW, SW_direct, SW_diffuse, cos_illumination; with surface, also t_pl, dT_surf, dTd_surf 
+ 
+ 
+ 
+diff --git a/doc/mkdocs.yml b/doc/mkdocs.yml
+index 6b55340..2ba40cd 100644
+--- a/doc/mkdocs.yml
++++ b/doc/mkdocs.yml
+@@ -20,6 +20,8 @@ nav:
+         - topo_sub: TopoPyScale.topo_sub.md
+         - topo_scale_zarr: TopoPyScale.topo_scale_zarr.md
+         - toposcale_core: TopoPyScale.toposcale_core.md
++        - surface_effect: TopoPyScale.surface_effect.md
++        - surface_calib: TopoPyScale.surface_calib.md
+         - solar_geom: TopoPyScale.solar_geom.md
+         - topo_param: TopoPyScale.topo_param.md
+         - fetch_era5: TopoPyScale.fetch_era5.md
+diff --git a/pyproject.toml b/pyproject.toml
+index bca3418..12d76af 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -32,6 +32,8 @@ dependencies = [
+     "pandas",
+     "geopandas",
+     "numpy",
++    "scipy",
++    "pyyaml",
+     "netcdf4",
+     "h5netcdf",
+     "pvlib",
+diff --git a/tests/test_surface_effect.py b/tests/test_surface_effect.py
+new file mode 100644
+index 0000000..4782127
+--- /dev/null
++++ b/tests/test_surface_effect.py
+@@ -0,0 +1,206 @@
++"""Synthetic tests of the surface-effect correction (REDCAPP, DReaMIT) and of its calibration."""
++import contextlib
++import io
++
++import numpy as np
++import pandas as pd
++import pytest
++import rioxarray  # noqa: F401
++import xarray as xr
++
++import synthetic_era5 as syn
++from TopoPyScale import surface_calib as sc
++from TopoPyScale import surface_effect as se
++from TopoPyScale import toposcale_core as core
++from TopoPyScale import topo_scale_zarr as tz
++
++
++def quiet(fun, *args, **kwargs):
++    with contextlib.redirect_stdout(io.StringIO()):
++        return fun(*args, **kwargs)
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  correction
++# ---------------------------------------------------------------------------------------------------------------------
++def test_zero_weight_returns_inputs_and_humidity_stays_physical():
++    rng = np.random.default_rng(1)
++    t = rng.uniform(250, 300, (50, 4))
++    p = rng.uniform(6e4, 9e4, (50, 4))
++    q = core.q_from_dewpoint(t - rng.uniform(0.5, 15, t.shape), p)
++    dT, dTd = rng.normal(-5, 4, t.shape), rng.normal(-3, 4, t.shape)
++    t0, q0 = core.surface_correction(t, q, p, dT, dTd, np.zeros(4))
++    np.testing.assert_allclose(t0, t)
++    np.testing.assert_allclose(q0, q, rtol=1e-10)
++    t1, q1 = core.surface_correction(t, q, p, dT, dTd, rng.uniform(0, 1.5, 4), beta=rng.normal(0, 1, (50, 1)))
++    td1 = core.dewpoint_from_vp(core.vapor_pressure_from_q(q1, p))
++    assert np.all(td1 <= t1 + 1e-9) and np.all(q1 > 0)
++
++
++def test_full_weight_at_grid_elevation_gives_t2m():
++    z = np.array([[3000., 1500., 100.]] * 2)[:, :, None]  # (time, level, point), levels by increasing pressure
++    plev = {'z': z, 't': 290. - 0.0065 * z, 'q': np.full_like(z, 4e-3), 'u': 0 * z, 'v': 0 * z}
++    surf = {'z_surf': np.full((2, 1), 2000. * core.G), 't2m': np.array([[270.], [280.]]),
++            'd2m': np.array([[265.], [268.]])}
++    dT, dTd = core.surface_signal(plev, surf, np.array([700., 850., 1000.]))
++    out = core.interpolate_vertical(plev, np.array([2000.]), np.array([700., 850., 1000.]))
++    t, q = core.surface_correction(out['t'], out['q'], out['p'], dT, dTd, np.ones(1))
++    np.testing.assert_allclose(t, surf['t2m'])
++    np.testing.assert_allclose(core.dewpoint_from_vp(core.vapor_pressure_from_q(q, out['p'])), surf['d2m'])
++
++
++def test_published_weights():
++    assert se.weight_dreamit(0., **se.DEFAULTS['dreamit']) == pytest.approx(0.449)
++    assert se.weight_dreamit(1., **se.DEFAULTS['dreamit']) == pytest.approx(0.449 + np.exp(0.732) - 1)
++    # flat terrain (no relief): REDCAPP weight is alpha
++    assert se.weight_redcapp(0.3, 0., 5., **se.DEFAULTS['redcapp']) == pytest.approx(0.61)
++    # rugged valley bottom: alpha H + beta V
++    assert se.weight_redcapp(1., 1e5, 8., **se.DEFAULTS['redcapp']) == pytest.approx(0.61 + 1.56)
++    b = se.beta_t(pd.date_range('2021-01-01', '2021-12-31', freq='1D'), beta_amp=1., t_star=0.5, beta_bias=2.)
++    assert b.min() == pytest.approx(1., abs=1e-3) and b.max() == pytest.approx(3., abs=1e-3) and b[182] > 2.99
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  terrain indices
++# ---------------------------------------------------------------------------------------------------------------------
++def write_dem(path, z, res=100.):
++    ny, nx = z.shape
++    da = xr.DataArray(z.astype('float32'), dims=('y', 'x'),
++                      coords={'y': 5e6 - res * np.arange(ny), 'x': 5e5 + res * np.arange(nx)})
++    da.rio.write_crs('EPSG:32632', inplace=True).rio.to_raster(path)
++    return da
++
++
++def test_hypsometric_position_relief_and_coverage(tmp_path):
++    yy, xx = np.mgrid[0:201, 0:201]
++    cone = 3000. - 10. * np.hypot(yy - 100, xx - 100)
++    da = write_dem(tmp_path / 'cone.tif', cone)
++    pts = pd.DataFrame({'x': [da.x[100].item(), da.x[100].item(), da.x[0].item()],
++                        'y': [da.y[100].item(), da.y[170].item(), da.y[0].item()],
++                        'elevation': [3000., 2300., cone[0, 0]]})
++    idx = se.terrain_indices(pts, tmp_path / 'cone.tif', radius_km=5.)
++    assert idx.hypso_pos[0] == 0.                       # summit
++    assert 0.3 < idx.hypso_pos[1] < 0.7                 # mid slope
++    assert idx.window_coverage[0] == pytest.approx(1., abs=0.01) and idx.window_coverage[2] < 0.3
++    assert idx.relief[0] == pytest.approx(500., abs=1.)  # 50 cells of 10 m drop
++    fl = write_dem(tmp_path / 'flat.tif', np.full((50, 50), 500.))
++    pts_flat = pd.DataFrame({'x': [fl.x[25].item()], 'y': [fl.y[25].item()], 'elevation': [500.]})
++    flat = se.terrain_indices(pts_flat, tmp_path / 'flat.tif', radius_km=1.)
++    assert flat.relief[0] == 0 and flat.hypso_pos[0] == 0
++
++
++def test_mrvbf_high_on_valley_floor_low_on_slopes(tmp_path):
++    xx = np.arange(400)[None, :].repeat(300, axis=0)
++    d = np.abs(xx - 200)
++    valley = np.where(d < 60, 1000. + 0.2 * d, 1012. + 0.6 * (d - 60) * 30.)  # flat floor, 30 m DEM
++    m, steps = se.mrvbf(valley, 30., slope_threshold=16.)
++    assert steps >= 3
++    assert np.nanmean(m[100:200, 180:220]) > 2. and np.nanmean(m[100:200, 300:350]) < 0.5
++
++
++def test_setup_off_partial_window_and_weights(tmp_path):
++    da = write_dem(tmp_path / 'dem.tif', 2000. + 300. * np.sin(np.arange(60)[None, :] / 6.) * np.ones((60, 1)))
++    df = pd.DataFrame({'x': [da.x[30].item()], 'y': [da.y[30].item()], 'elevation': [1900.]})
++    assert se.setup(df, None, tmp_path / 'dem.tif', 32632) is None
++    assert se.setup(df, {'method': 'none', 'diagnostics': True}, tmp_path / 'dem.tif', 32632)['weight'] is None
++    with pytest.raises(ValueError, match='allow_partial_window'):
++        se.setup(df, {'method': 'dreamit'}, tmp_path / 'dem.tif', 32632)
++    s = quiet(se.setup, df, {'method': 'redcapp', 'allow_partial_window': True}, tmp_path / 'dem.tif', 32632)
++    assert s['weight'][0] == pytest.approx(df.w_surf[0]) and s['beta_coef'] is None
++    assert {'hypso_pos', 'relief', 'mrvbf', 'window_coverage'} <= set(df.columns)
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  downscaler
++# ---------------------------------------------------------------------------------------------------------------------
++def test_downscaler_off_unchanged_and_correction_applied(tmp_path):
++    case = syn.make_era5(start='2020-01-10', n_days=2)
++    night = np.cos(2 * np.pi * case.tvec.hour.values / 24)  # +1 at midnight
++    case.surf['t2m'] = case.surf.t2m - (4. + 3. * night)[:, None, None]  # inversion at night
++    rows = [syn.make_point(case, name=n, dx=dx, elevation=e) for n, dx, e in
++            [('001', 800., 1300.), ('002', -2000., 2100.), ('003', 3000., 900.)]]
++    ds_solar = quiet(syn.solar_geometry, case, rows, tmp_path)
++    hor = syn.horizon_da(rows, 0.)
++    df = pd.DataFrame([vars(r) for r in rows])
++    store = syn.era5_store(case, tmp_path)
++
++    def run(surface, name):
++        cd = tz.ClimateDownscaler(store, tmp_path / 'down', df, hor, ds_solar, syn.EPSG, case.start, case.end, '1h',
++                                  store_name=name, surface_effect=surface)
++        return quiet(cd.downscale).load()
++
++    off = run(None, 'off.zarr')
++    zero = run({'weight': np.zeros(3), 'diagnostics': True}, 'zero.zarr')
++    for v in ['t', 'q', 'LW', 'SW', 'p']:
++        np.testing.assert_allclose(zero[v], off[v], rtol=2e-6, err_msg=v)
++    np.testing.assert_allclose(zero.t_pl, off.t)
++    assert float(zero.dT_surf.mean()) == pytest.approx(-4., abs=0.05)
++
++    w = np.array([0., 0.5, 1.])
++    on = run({'weight': w, 'beta_coef': {'beta_bias': 0.5}, 'diagnostics': True}, 'on.zarr')
++    np.testing.assert_allclose(on.t - on.t_pl, w[:, None] * on.dT_surf + 0.5, atol=1e-4)
++    assert float(on.LW.sel(point_name='003').mean()) < float(off.LW.sel(point_name='003').mean())
++    np.testing.assert_allclose(on.sel(point_name='001').LW, off.sel(point_name='001').LW, rtol=0.01)
++
++
++# ---------------------------------------------------------------------------------------------------------------------
++#  calibration
++# ---------------------------------------------------------------------------------------------------------------------
++def synthetic_stations(method, coef, n_st=15, n_days=40, noise=1., seed=0):
++    rng = np.random.default_rng(seed)
++    names = [f's{i:02d}' for i in range(n_st)]
++    idx = pd.DataFrame({'hypso_pos': np.linspace(0.05, 0.95, n_st), 'relief': rng.uniform(100, 3000, n_st),
++                        'mrvbf': rng.uniform(0, 6, n_st)}, index=names)
++    time = pd.date_range('2021-01-01', periods=24 * n_days, freq='1h')
++    rows = []
++    for s in names:
++        diurnal = -4 - 4 * np.cos(2 * np.pi * time.hour.values / 24)
++        synoptic = np.repeat(rng.normal(0, 3, n_days), 24)
++        dT = diurnal + synoptic + rng.normal(0, 1, time.size)
++        e = np.zeros(time.size)
++        for k in range(1, time.size):  # AR(1) noise
++            e[k] = 0.8 * e[k - 1] + rng.normal(0, noise * 0.6)
++        d = pd.DataFrame({'point_name': s, 'time': time, 'dT': dT, 't_pl': 270., 'dTd': dT, 'yd': np.nan})
++        d['y'] = sc.predict(method, coef, d, idx) + e
++        rows.append(d)
++    return pd.concat(rows, ignore_index=True), idx
++
++
++@pytest.mark.parametrize('method,truth', [
++    ('dreamit', {'alpha_intercept': 0.2, 'alpha_slope': 0.6, 'beta_amp': 0., 't_star': 0., 'beta_bias': 0.}),
++    ('redcapp', {'alpha': 0.5, 'beta': 0.8, 'gamma': 600., 'beta_amp': 0., 't_star': 0., 'beta_bias': 0.})])
++def test_parameter_recovery_cross_validation_and_file(method, truth, tmp_path):
++    data, idx = synthetic_stations(method, truth)
++    res = sc.calibrate(method, data, {10.: idx}, n_boot=30)
++    c, ci = res['coefficients'], res['intervals_95']
++    for k in ['alpha_intercept', 'alpha_slope'] if method == 'dreamit' else ['alpha', 'beta']:
++        assert c[k] == pytest.approx(truth[k], abs=0.08), k
++        assert ci[k][0] - 0.05 <= truth[k] <= ci[k][1] + 0.05, (k, ci[k])
++    assert res['cv_by'] == 'station' and res['cv'].rmse.max() < 2.
++    f = sc.save_coefficients(res, tmp_path / 'coef.yml')
++    loaded = se.load_coefficients(method, f)
++    assert loaded['radius_km'] == 10. and loaded['beta_bias'] == 0.
++    with pytest.raises(ValueError, match='coefficients of'):
++        se.load_coefficients('redcapp' if method == 'dreamit' else 'dreamit', f)
++
++
++def test_seasonal_beta_and_station_weights():
++    truth = {'alpha_intercept': 0.3, 'alpha_slope': 0.5, 'beta_amp': 1., 't_star': 0.1, 'beta_bias': 0.7}
++    data, idx = synthetic_stations('dreamit', truth, n_st=6, n_days=365, noise=0.5)
++    c = sc.fit('dreamit', data, idx, fit_beta='seasonal')
++    assert c['beta_bias'] == pytest.approx(0.7, abs=0.1) and c['beta_amp'] == pytest.approx(1., abs=0.1)
++    assert c['t_star'] == pytest.approx(0.1, abs=0.03)
++    st = sc.fit_stations(data)
++    w = se.weight_dreamit(idx.hypso_pos, **truth)
++    np.testing.assert_allclose(st.w.astype(float), w, atol=0.1)
++
++
++def test_pair_with_hour_ending_observations():
++    time = pd.date_range('2021-01-01', periods=6, freq='1h')
++    ds = xr.Dataset({v: (('point_name', 'time'), np.full((1, 6), x)) for v, x in
++                     [('dT_surf', -3.), ('dTd_surf', -2.), ('q', 3e-3), ('p', 8e4)]},
++                    coords={'point_name': ['a'], 'time': time})
++    ds['t_pl'] = (('point_name', 'time'), 270. + np.arange(6.)[None])
++    obs = pd.DataFrame({'t': 268. + np.arange(6.), 'td': 260.}, index=time)
++    d = sc.pair(ds, {'a': obs})
++    assert len(d) == 5 and np.allclose(d.y, -2 + 0.5)  # model averaged over the hour ending at the stamp
+-- 
+2.43.0
+

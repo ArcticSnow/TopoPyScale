@@ -1,0 +1,891 @@
+From dc0e1e477324ef0ed7b3436a78ef059528df711c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 10:01:06 +0100
+Subject: [PATCH 8/8] Scale the direct beam by the sunlit fraction of the
+ accumulation window
+
+ERA5 shortwave is a mean over the accumulation window, but terrain shading
+was tested once, at the centre of the window: the direct beam was kept or
+removed for the whole hour when the sun cleared or dropped behind a ridge
+during it. The downscaler now tests the horizon at the solar_substeps
+sub-steps of the window (default 6, as for the top-of-atmosphere average)
+and scales the direct beam by the sunlit fraction, each sub-step weighted
+by the beam it brings to the slope. Sub-step sun positions are geocentric
+(solar_geom.sun_geocentric, within 0.01 deg of the SPA); only terrain
+shading counts. solar_substeps: 1 keeps one test per window.
+
+- ds_solar.nc records accumulation_window and solar_substeps; older files
+  give the window from solar_geometry_time_offset
+- physics check direct_in_terrain_shadow: shaded over the whole window
+  (previous, current and next time steps)
+- tests: geocentric positions against the SPA, convergence to a 60
+  sub-step reference behind a 25 deg horizon, open horizon unchanged,
+  older solar files
+
+Davos points, January 2020, against the stations: on the 57 hours the sun
+crosses the horizon of DAV, RMSE 30.3 -> 20.6 W m-2 and bias -7.9 -> -2.7;
+monthly bias -4.4 -> -4.0. WFJ (crest): 15 hours change, RMSE 12.7 ->
+14.1, monthly scores unchanged. No measurable cost (300 clusters: 0.80 s
+-> 0.79 s).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012FMkEYDUJxvxmd3SbUsJfP
+---
+ TopoPyScale/solar_geom.py               | 28 +++++++++-
+ TopoPyScale/topo_checks.py              |  9 +++-
+ TopoPyScale/topo_scale_zarr.py          | 61 ++++++++++++++++++++--
+ TopoPyScale/topoclass.py                |  3 +-
+ doc/docs/03_configurationFile.md        |  4 +-
+ doc/docs/07_features.md                 |  4 +-
+ doc/docs/09_physics_checks.md           |  2 +-
+ doc/docs/10_release_notes.md            |  4 +-
+ doc/docs/TopoPyScale.solar_geom.md      | 33 +++++++++++-
+ doc/docs/TopoPyScale.topo_checks.md     | 22 ++++----
+ doc/docs/TopoPyScale.topo_scale_zarr.md | 18 ++++---
+ doc/docs/TopoPyScale.topoclass.md       | 54 +++++++++----------
+ tests/test_physics_consistency.py       |  7 ++-
+ tests/test_shading.py                   | 69 +++++++++++++++++++++++++
+ 14 files changed, 259 insertions(+), 59 deletions(-)
+ create mode 100644 tests/test_shading.py
+
+diff --git a/TopoPyScale/solar_geom.py b/TopoPyScale/solar_geom.py
+index bad62c3..ac9f4d2 100644
+--- a/TopoPyScale/solar_geom.py
++++ b/TopoPyScale/solar_geom.py
+@@ -111,6 +111,30 @@ def cos_zenith_geocentric(terms, latitude, longitude):
+     return np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(H)
+ 
+ 
++def sun_geocentric(terms, latitude, longitude):
++    """
++    Geocentric solar elevation and azimuth, (time, point): cheap, used for the shading sub-steps. It neglects the
++    parallax (< 0.003 deg) and the atmospheric refraction.
++
++    Returns:
++        elevation [rad], azimuth [rad, 0 towards south, positive towards east, as ds_solar]
++    """
++    H = np.deg2rad(np.asarray(terms['v'])[:, None] + np.asarray(longitude, float)[None, :]
++                   - np.asarray(terms['alpha'])[:, None])
++    lat = np.deg2rad(np.asarray(latitude, float))[None, :]
++    dec = np.deg2rad(np.asarray(terms['delta']))[:, None]
++    elevation = np.arcsin(np.clip(np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(H), -1, 1))
++    # astronomers' azimuth of the SPA (from south, positive towards west); ds_solar uses the opposite sign
++    gamma = np.arctan2(np.sin(H), np.cos(H) * np.sin(lat) - np.tan(dec) * np.cos(lat))
++    return elevation, -gamma
++
++
++def substep_offsets(accumulation_window, n_substeps):
++    """Offsets of the centres of n_substeps equal parts of the window (t - window, t], from the time stamp t."""
++    window = pd.Timedelta(accumulation_window)
++    return pd.to_timedelta(((np.arange(n_substeps) + 0.5) / n_substeps - 1) * window.total_seconds(), unit='s')
++
++
+ def _positions(times, terms, lat, lon, elev, method):
+     if method == 'nrel_numpy':
+         return spa_positions(terms, lat, lon, elev)
+@@ -172,7 +196,7 @@ def get_solar_geom(df_position,
+     n_sub = int(n_substeps) if (window > pd.Timedelta(0) and n_substeps and n_substeps > 1) else 1
+     if n_sub > 1:
+         # centres of n_sub equal parts of the window (t - window, t]
+-        offsets = pd.to_timedelta(((np.arange(n_sub) + 0.5) / n_sub - 1) * window.total_seconds(), unit='s')
++        offsets = substep_offsets(window, n_sub)
+         t_sub = pd.DatetimeIndex((times.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
+     else:
+         t_sub = t_mid
+@@ -212,6 +236,8 @@ def get_solar_geom(df_position,
+     ds.attrs['solar_geometry_note'] = ('solar angles evaluated at time - offset, the centre of the '
+                                        f'{accumulation_window} radiation accumulation window ending at time')
+     ds.attrs['solar_constant'] = float(solar_constant)
++    ds.attrs['accumulation_window'] = str(accumulation_window)
++    ds.attrs['solar_substeps'] = n_sub
+     ds.attrs['solar_position_method'] = method_solar
+     ds.zenith.attrs = {'units': 'rad', 'long_name': 'Solar zenith angle at the centre of the accumulation window'}
+     ds.azimuth.attrs = {'units': 'rad', 'long_name': 'Solar azimuth, 0 towards south, positive towards east'}
+diff --git a/TopoPyScale/topo_checks.py b/TopoPyScale/topo_checks.py
+index 98c61f1..bd165a8 100644
+--- a/TopoPyScale/topo_checks.py
++++ b/TopoPyScale/topo_checks.py
+@@ -339,10 +339,15 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
+         azi = np.asarray(sol.azimuth.transpose('point_name', 'time').values, dtype=float)
+         hor = _horizon_at_sun(terrain, azi)
+         if hor is not None:
+-            shade = (hor > elev) & ~sun_down
++            # behind the horizon at the previous, current and next evaluation times: shaded over the whole
++            # accumulation window (the direct beam is scaled by the sunlit fraction of the window)
++            behind = hor > elev
++            prev_b = np.concatenate([behind[:, :1], behind[:, :-1]], axis=1)
++            next_b = np.concatenate([behind[:, 1:], behind[:, -1:]], axis=1)
++            shade = behind & prev_b & next_b & ~sun_down
+             rows.append(_row('direct_in_terrain_shadow', 'SW_direct', ((dr > tol) & shade).sum(), shade.sum(), 'error',
+                              worst=np.nanmax(np.where(shade, dr, 0)),
+-                             note='direct beam while sun is behind the local horizon'))
++                             note='direct beam while sun is behind the local horizon over the whole window'))
+     return rows
+ 
+ 
+diff --git a/TopoPyScale/topo_scale_zarr.py b/TopoPyScale/topo_scale_zarr.py
+index 5e14de6..e37edd9 100644
+--- a/TopoPyScale/topo_scale_zarr.py
++++ b/TopoPyScale/topo_scale_zarr.py
+@@ -31,6 +31,7 @@ except ImportError:
+ from TopoPyScale import toposcale_core as core
+ from TopoPyScale import topo_utils as tu
+ from TopoPyScale import surface_effect as se
++from TopoPyScale import solar_geom as sg
+ from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
+ 
+ PLEV_VARS = ['z', 't', 'q', 'u', 'v']
+@@ -100,6 +101,9 @@ class ClimateDownscaler:
+             Default: one year
+         max_box_mb (float): the ERA5 nodes around all points are read once per time block if they fit in this
+             memory (MB), otherwise once per point block
++        shading_substeps (int): sub-steps of the radiation accumulation window at which terrain shading is tested;
++            the direct beam is scaled by the sunlit fraction of the window (1: one test at the centre, all or
++            nothing). Default: the solar_substeps of ds_solar, else 6
+     """
+ 
+     def __init__(self,
+@@ -121,7 +125,8 @@ class ClimateDownscaler:
+                  point_block=100,
+                  time_block=None,
+                  max_box_mb=2000,
+-                 surface_effect=None):
++                 surface_effect=None,
++                 shading_substeps=None):
+ 
+         store_name = store_name or 'down.zarr'
+         if not str(store_name).endswith('.zarr'):
+@@ -144,6 +149,7 @@ class ClimateDownscaler:
+ 
+         self.df = df_centroids.reset_index(drop=True).copy()
+         self.df['point_name'] = self.df.point_name.astype(str)
++        self.target_EPSG = target_EPSG
+         transformer = Transformer.from_crs('epsg:4326', f'epsg:{target_EPSG}', always_xy=True)
+         self.ilat, self.ilon, self.weights = core.neighbours(self.df, self.ERA.latitude.values,
+                                                               self.ERA.longitude.values, transformer, interp_method)
+@@ -162,6 +168,7 @@ class ClimateDownscaler:
+         self.solar_point_index = pd.Index(sol.point_name.values).get_indexer(self.df.point_name)
+         self.solar_time_index = self._time_index(pd.DatetimeIndex(sol.time.values), 'ds_solar')
+         self._solar_lock = threading.Lock()  # HDF5 files are not safe to read from several threads
++        self._setup_shading(sol, shading_substeps)
+ 
+         self.lw_terrain_flag = lw_terrain_flag
+         self.precip_lapse_rate_flag = precip_lapse_rate_flag
+@@ -224,6 +231,55 @@ class ClimateDownscaler:
+                         'shards': (self.point_block, self.time_block)} for v in self.varout}
+         ds.to_zarr(self.store, mode='w', compute=False, zarr_format=3, encoding=encoding)
+ 
++    def _setup_shading(self, ds_solar, n_substeps):
++        """Sun positions of the shading sub-steps: time terms for every time step, point coordinates."""
++        if 'accumulation_window' in ds_solar.attrs:
++            window = pd.Timedelta(ds_solar.attrs['accumulation_window'])
++        elif 'solar_geometry_time_offset' in ds_solar.attrs:
++            window = 2 * pd.Timedelta(str(ds_solar.attrs['solar_geometry_time_offset']).lstrip('-'))
++        else:
++            window = pd.Timedelta(0)
++        if n_substeps is None:
++            n_substeps = int(ds_solar.attrs.get('solar_substeps', 6))
++        self.shading_substeps = int(n_substeps) if window > pd.Timedelta(0) else 1
++        if self.shading_substeps < 2:
++            return
++        if {'lat', 'lon'} <= set(self.df.columns):
++            self.lat, self.lon = self.df.lat.values.astype(float), self.df.lon.values.astype(float)
++        else:
++            tr = Transformer.from_crs(f'epsg:{self.target_EPSG}', 'epsg:4326', always_xy=True)
++            self.lon, self.lat = tr.transform(self.df.x.values, self.df.y.values)
++        offsets = sg.substep_offsets(window, self.shading_substeps)
++        t = self.tvec.tz_localize('UTC')
++        t_sub = pd.DatetimeIndex((t.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
++        terms = sg.spa_time_terms(t_sub)
++        self.shading_terms = {k: np.asarray(terms[k]).reshape(t.size, self.shading_substeps)
++                              for k in ['v', 'alpha', 'delta']}
++
++    def _shade(self, p0, p1, t0, t1, solar):
++        """
++        Shaded fraction of the direct beam, (time, point): share of the accumulation window during which the sun is
++        behind the local horizon, each sub-step weighted by the direct beam it brings to the slope. Only terrain
++        shading: sub-steps with the sun below the astronomical horizon do not count.
++        """
++        prof = self.horizon_profiles[p0:p1]
++        mid = core.horizon_at_sun(prof, self.horizon_azimuth, solar['azimuth']) > solar['elevation']
++        if self.shading_substeps < 2:
++            return mid
++        slope, aspect = self.points['slope'][p0:p1], self.points['aspect'][p0:p1]
++        lat, lon = self.lat[p0:p1], self.lon[p0:p1]
++        wsum = np.zeros(mid.shape)
++        wlit = np.zeros(mid.shape)
++        for k in range(self.shading_substeps):
++            terms = {v: a[t0:t1, k] for v, a in self.shading_terms.items()}
++            elev, az = sg.sun_geocentric(terms, lat, lon)
++            cos_i = np.sin(elev) * np.cos(slope) + np.cos(elev) * np.sin(slope) * np.cos(az - aspect)
++            w = np.where(elev > 0, np.maximum(cos_i, 0.), 0.)
++            wsum += w
++            wlit += w * (elev > core.horizon_at_sun(prof, self.horizon_azimuth, az))
++        with np.errstate(invalid='ignore', divide='ignore'):
++            return np.where(wsum > 0, 1. - wlit / wsum, mid.astype(float))
++
+     def _read_solar(self, p0, p1, t0, t1):
+         tsl = self.solar_time_index[t0:t1]
+         with self._solar_lock:
+@@ -269,8 +325,7 @@ class ClimateDownscaler:
+         plev = {v: core.apply_weights(fields[v], W) for v in PLEV_VARS}
+         surf = {v: core.apply_weights(fields[v], W) for v in SURF_VARS}
+         solar = self._read_solar(p0, p1, t0, t1)
+-        shade = core.horizon_at_sun(self.horizon_profiles[p0:p1], self.horizon_azimuth, solar['azimuth']) > \
+-            solar['elevation']
++        shade = self._shade(p0, p1, t0, t1, solar)
+         points = {k: v[p0:p1] for k, v in self.points.items()}
+         surface = None
+         if self.surface is not None:
+diff --git a/TopoPyScale/topoclass.py b/TopoPyScale/topoclass.py
+index b12934a..dd3181b 100644
+--- a/TopoPyScale/topoclass.py
++++ b/TopoPyScale/topoclass.py
+@@ -670,7 +670,8 @@ class Topoclass(object):
+             precip_lapse_rate_max_factor=self.config.climate.precip_lapse_rate_max_factor or core.PRECIP_LAPSE_MAX_FACTOR,
+             point_block=self.config.toposcale.point_block or 100,
+             time_block=self.config.toposcale.time_block,
+-            surface_effect=surface)
++            surface_effect=surface,
++            shading_substeps=self.config.toposcale.solar_substeps or None)
+         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
+         return cda.downscale(n_core=n_core)
+ 
+diff --git a/doc/docs/03_configurationFile.md b/doc/docs/03_configurationFile.md
+index a64327e..0216f56 100644
+--- a/doc/docs/03_configurationFile.md
++++ b/doc/docs/03_configurationFile.md
+@@ -124,7 +124,7 @@ toposcale:
+   point_block: 100                        # (optional) number of points downscaled together. Default 100
+   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
+   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
+-  solar_substeps: 6                       # (optional) sub-steps used to average the top-of-atmosphere irradiance over the accumulation window. Default 6
++  solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
+   surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
+     method: none                          # none, redcapp or dreamit
+     coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
+@@ -233,7 +233,7 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
+ | point_block             | 100           | no       | int             | number of points downscaled together (also the shard size of the output store). Default 100 |
+ | time_block              | 8760          | no       | int             | number of time steps downscaled together (also the chunk size of the output store). Default: one year |
+ | solar_constant          | 1361          | no       | float           | total solar irradiance at 1 AU [W m-2], scaled by the Earth-Sun distance to compute the top-of-atmosphere irradiance. Default 1361 |
+-| solar_substeps          | 6             | no       | int             | number of sub-steps used to average the top-of-atmosphere irradiance over the radiation accumulation window. Default 6 |
++| solar_substeps          | 6             | no       | int             | number of sub-steps of the radiation accumulation window, used to average the top-of-atmosphere irradiance and to scale the direct beam by the part of the window the point is not shaded by terrain. 1: one shading test at the centre of the window. Default 6 |
+ | physics_checks          | True          | no       | True, False, 'warning', 'error' | run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. Default False. See [Physics Checks](09_physics_checks.md) |
+ | surface_effect          | {method: redcapp} | no   | dict            | surface-effect correction of air temperature and dew point: `method` none, redcapp or dreamit, plus `coefficients`, `context_dem`, `dewpoint`, `lw_consistent`, `allow_partial_window`, `diagnostics` (see the example above). Default off. See [Features](07_features.md#surface-effect-correction-of-air-temperature) |
+ 
+diff --git a/doc/docs/07_features.md b/doc/docs/07_features.md
+index 9d7a985..cfa485d 100644
+--- a/doc/docs/07_features.md
++++ b/doc/docs/07_features.md
+@@ -92,6 +92,8 @@ TPS uses parallelization for a number of steps: threads to manage download reque
+ 
+ `ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it.
+ 
++**Terrain shading within the window.** ERA5 shortwave is a mean over the accumulation window, so a point can be lit for part of it: the sun clears or drops behind a ridge during the hour. The downscaling tests the horizon at the same `toposcale.solar_substeps` sub-steps of the window and scales the direct beam by the sunlit fraction, each sub-step weighted by the beam it brings to the slope (cosine of the illumination angle). The sun positions of the sub-steps are geocentric (within 0.01° of the SPA); only terrain shading counts, not the sun below the astronomical horizon. With `solar_substeps: 1` the horizon is tested once, at the centre of the window, and the beam is kept or removed for the whole window. On the Davos points (January 2020), the 57 hours the sun crosses the horizon of DAV get an RMSE of 20.6 W m⁻² against the station instead of 30.3; the cost does not show in the downscaling time.
++
+ 
+ ## Slope, aspect and sky view factor
+ 
+@@ -130,7 +132,7 @@ For maps of horizons, `topo_param.compute_horizon(dem_file, azimuth_inc=30)` run
+ 
+ ## Horizons
+ 
+-`mp.compute_horizon()` computes the horizon angle of each point in the directions `dem.horizon_increments` degrees apart (the centres of the bins: -175, -165, ..., 175 for 10°; 0 = south, 90 = east, ±180 = north). The downscaling sets the direct beam to zero when the sun is below the horizon of the nearest direction. The horizons are saved to `outputs/da_horizon.nc`, with dimensions (`azimuth`, `point_name`), and as the columns `hori_azi_<azimuth>` of `df_centroids`.
++`mp.compute_horizon()` computes the horizon angle of each point in the directions `dem.horizon_increments` degrees apart (the centres of the bins: -175, -165, ..., 175 for 10°; 0 = south, 90 = east, ±180 = north). The downscaling removes the direct beam while the sun is below the horizon of the nearest direction, in proportion to the part of the accumulation window it spends there (Solar geometry). The horizons are saved to `outputs/da_horizon.nc`, with dimensions (`azimuth`, `point_name`), and as the columns `hori_azi_<azimuth>` of `df_centroids`.
+ 
+ From each point, `topo_param.horizon_rays()` follows a straight ray in each direction, one cell at a time along the major grid axis, interpolating the DEM bilinearly. The observer is on the DEM surface at the exact position of the point, not at the centre of the nearest cell. The horizon is the steepest elevation angle to the terrain along the ray, or 0 if no terrain is higher than the point. A ray stops at the edge of the DEM, or as soon as no terrain further away could be steeper than the horizon already found: the highest elevation of the DEM seen from that distance is below it. This shortcut does not change the result. No-data cells never form a horizon. Earth curvature is ignored.
+ 
+diff --git a/doc/docs/09_physics_checks.md b/doc/docs/09_physics_checks.md
+index a37ba24..a4604e1 100644
+--- a/doc/docs/09_physics_checks.md
++++ b/doc/docs/09_physics_checks.md
+@@ -125,7 +125,7 @@ Default bounds of the `range` check, in the units written by `TopoPyScale`. They
+ | `direct_with_sun_down` | error | no direct beam when the sun is below the astronomical horizon |
+ | `sw_at_night` | error | no SW when the sun is down over the whole accumulation window |
+ | `direct_beam_bound` | error | `SW_direct ≤ S0 · cos(i)` with `i` the illumination angle on the slope: the beam cannot exceed the top-of-atmosphere beam |
+-| `direct_in_terrain_shadow` | error | no direct beam when the sun is below the local horizon (`hori_azi_*` columns of `df_centroids`) |
++| `direct_in_terrain_shadow` | error | no direct beam when the sun is behind the local horizon over the whole accumulation window (at the previous, current and next time steps). Within the window, the direct beam is scaled by its sunlit fraction |
+ | `sw_timing` | warning | the daily centroid of SW (in local solar time, for points with slope < 10°) matches the one of the top-of-atmosphere irradiance within 15 min. `worst` is the median offset in minutes; positive means SW lags the sun |
+ 
+ ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`, whatever the time step of the downloaded data. The solar geometry is therefore computed at the centre of this window (`t − 30 min`). The length of the window is set by `climate.<source>.accumulation_window` (default `1h`). The top-of-atmosphere irradiance `SWtoa`, used for the clearness index, is the mean over the same window, including the Earth–Sun distance (see [Features](07_features.md)). A solar file `ds_solar.nc` computed by an older version of `TopoPyScale` uses the time stamps; `sw_timing` then reports a lag of about +30 min, and `compute_solar_geometry()` prints a warning. Delete the file to recompute it.
+diff --git a/doc/docs/10_release_notes.md b/doc/docs/10_release_notes.md
+index c1c3bdd..b7d2d0b 100644
+--- a/doc/docs/10_release_notes.md
++++ b/doc/docs/10_release_notes.md
+@@ -7,7 +7,7 @@ TopoPyScale 1.0 checks the physics of its outputs, fixes the errors those checks
+ ### Highlights
+ 
+ - **Physics-consistency checks** of the downscaled outputs (`mp.check_physics()`, `toposcale.physics_checks`, see [Physics Checks](09_physics_checks.md)), and a test suite running the code on synthetic ERA5 with known answers.
+-- **Corrected physics**: elevation scaling and timing of the shortwave, aspect of clusters, rain/snow partition, bilinear interpolation, bounded precipitation factor, units, humidity precision and the conversions of the exporters.
++- **Corrected physics**: elevation scaling and timing of the shortwave, terrain shading scaled by the sunlit part of each hour, aspect of clusters, rain/snow partition, bilinear interpolation, bounded precipitation factor, units, humidity precision and the conversions of the exporters.
+ - **Zarr downscaling engine**, vectorized over blocks of points: one year of 2,400 points in 13 s on 2 cores, written to one store, `outputs/downscaled/down.zarr`.
+ - **Terrain without topocalc**: sky view factor and horizon maps by a line sweep (numba kernel, 11 s for the Davos DEM on one core), horizons of the points along straight rays from their exact positions.
+ - **Surface-effect correction** of temperature and humidity (REDCAPP, DReaMIT), off by default, and `surface_calib` to fit it for a new region (see [Features](07_features.md#surface-effect-correction-of-air-temperature)).
+@@ -21,4 +21,4 @@ TopoPyScale 1.0 checks the physics of its outputs, fixes the errors those checks
+ 4. **Delete `outputs/ds_param.nc`** to get the new sky view factor (median change about 0.003 from topocalc). An existing file is kept as is.
+ 5. **Horizons**: `outputs/da_horizon.nc` now holds the horizons of the points, `(azimuth, point_name)`. A full-grid file of 0.3 is recomputed automatically.
+ 6. **Outputs**: the downscaled points are in `outputs/downscaled/down.zarr` instead of one netcdf file per point. Read them with `mp.downscaled_pts` or `topo_utils.read_downscaled()`; the exporters read the store.
+-7. **Results change**: shortwave (elevation, timing, cluster aspect, top-of-atmosphere irradiance), `interp_method: linear` (now bilinear) and precipitation at large elevation differences (factor bounded within [1/5, 5]). Re-run the downscaling before comparing with results of 0.3.
++7. **Results change**: shortwave (elevation, timing, cluster aspect, top-of-atmosphere irradiance, hours in which the sun crosses the horizon), `interp_method: linear` (now bilinear) and precipitation at large elevation differences (factor bounded within [1/5, 5]). Re-run the downscaling before comparing with results of 0.3.
+diff --git a/doc/docs/TopoPyScale.solar_geom.md b/doc/docs/TopoPyScale.solar_geom.md
+index c3a7e48..f692e4a 100644
+--- a/doc/docs/TopoPyScale.solar_geom.md
++++ b/doc/docs/TopoPyScale.solar_geom.md
+@@ -72,7 +72,38 @@ Cosine of the geocentric solar zenith angle, (time, point): cheap, used to avera
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L123"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L114"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `sun_geocentric`
++
++```python
++sun_geocentric(terms, latitude, longitude)
++```
++
++Geocentric solar elevation and azimuth, (time, point): cheap, used for the shading sub-steps. It neglects the parallax (< 0.003 deg) and the atmospheric refraction. 
++
++
++
++**Returns:**
++  elevation [rad], azimuth [rad, 0 towards south, positive towards east, as ds_solar] 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L132"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
++## <kbd>function</kbd> `substep_offsets`
++
++```python
++substep_offsets(accumulation_window, n_substeps)
++```
++
++Offsets of the centres of n_substeps equal parts of the window (t - window, t], from the time stamp t. 
++
++
++---
++
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L147"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `get_solar_geom`
+ 
+diff --git a/doc/docs/TopoPyScale.topo_checks.md b/doc/docs/TopoPyScale.topo_checks.md
+index 4409a03..166d867 100644
+--- a/doc/docs/TopoPyScale.topo_checks.md
++++ b/doc/docs/TopoPyScale.topo_checks.md
+@@ -187,7 +187,7 @@ check_shortwave(ds, sol=None, terrain=None, tol=1.0)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L349"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L354"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_shortwave_timing`
+ 
+@@ -207,7 +207,7 @@ Compare the daily centroid (in local solar time) of downscaled SW with the one o
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L384"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L389"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_longwave`
+ 
+@@ -222,7 +222,7 @@ check_longwave(ds, terrain=None, tol=0.02, min_emissivity=0.4)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L397"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L402"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_precipitation`
+ 
+@@ -237,7 +237,7 @@ check_precipitation(ds, max_factor=5.0)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L415"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L420"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_domain_precip_budget`
+ 
+@@ -250,7 +250,7 @@ Area-weighted domain precipitation relative to the horizontally interpolated ERA
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L442"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L447"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_centroid_aspect`
+ 
+@@ -271,7 +271,7 @@ The cluster centre (aspect_cos, aspect_sin) is the mean of the pixels only for k
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L466"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L471"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_dem_orientation`
+ 
+@@ -284,7 +284,7 @@ slope/aspect (gradient_d8 with dy < 0) assume a north-up raster.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L475"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L480"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `check_snow_partition`
+ 
+@@ -297,7 +297,7 @@ Probe meteo_util.partition_snow: closure, bounds, monotonic in T, and RH unit co
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L507"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L512"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `run_all_checks`
+ 
+@@ -336,7 +336,7 @@ Run all physics-consistency checks on downscaled outputs.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L556"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L561"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `summarize`
+ 
+@@ -349,7 +349,7 @@ Human-readable summary of the checks at or above `min_status`.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L567"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L572"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `raise_on_failure`
+ 
+@@ -364,6 +364,8 @@ raise_on_failure(report, level='error')
+ 
+ ---
+ 
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L70"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++
+ ## <kbd>class</kbd> `PhysicsConsistencyError`
+ 
+ 
+diff --git a/doc/docs/TopoPyScale.topo_scale_zarr.md b/doc/docs/TopoPyScale.topo_scale_zarr.md
+index ccdca50..5d80c12 100644
+--- a/doc/docs/TopoPyScale.topo_scale_zarr.md
++++ b/doc/docs/TopoPyScale.topo_scale_zarr.md
+@@ -23,7 +23,7 @@ Create the ERA5 store from yearly netcdf files with fetch_era5.netcdf_to_zarr().
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L70"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L71"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>function</kbd> `tp_attrs`
+ 
+@@ -38,7 +38,7 @@ tp_attrs(tstep_h)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L76"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L77"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>class</kbd> `ClimateDownscaler`
+ Downscale an ERA5 zarr store to a list of points. 
+@@ -66,8 +66,11 @@ Downscale an ERA5 zarr store to a list of points.
+  - <b>`time_block`</b> (int):  number of time steps processed together, also the chunk size of the output store along time. 
+  - <b>`Default`</b>:  one year 
+  - <b>`max_box_mb`</b> (float):  the ERA5 nodes around all points are read once per time block if they fit in this  memory (MB), otherwise once per point block 
++ - <b>`shading_substeps`</b> (int):  sub-steps of the radiation accumulation window at which terrain shading is tested; 
++ - <b>`the direct beam is scaled by the sunlit fraction of the window (1`</b>:  one test at the centre, all or 
++ - <b>`nothing). Default`</b>:  the solar_substeps of ds_solar, else 6 
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L105"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L109"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `ClimateDownscaler.__init__`
+ 
+@@ -91,7 +94,8 @@ __init__(
+     point_block=100,
+     time_block=None,
+     max_box_mb=2000,
+-    surface_effect=None
++    surface_effect=None,
++    shading_substeps=None
+ )
+ ```
+ 
+@@ -104,7 +108,7 @@ __init__(
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L288"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L343"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `ClimateDownscaler.downscale`
+ 
+@@ -128,7 +132,7 @@ Downscale all points and write them to the output store.
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L257"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L313"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `ClimateDownscaler.process_block`
+ 
+@@ -146,7 +150,7 @@ Downscale points p0:p1 (positions in df_centroids) for time steps t0:t1 and writ
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L198"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L205"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `ClimateDownscaler.setup_output_store`
+ 
+diff --git a/doc/docs/TopoPyScale.topoclass.md b/doc/docs/TopoPyScale.topoclass.md
+index 7c60cb5..0d327a7 100644
+--- a/doc/docs/TopoPyScale.topoclass.md
++++ b/doc/docs/TopoPyScale.topoclass.md
+@@ -39,7 +39,7 @@ __init__(config_file)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L677"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L678"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.check_physics`
+ 
+@@ -177,7 +177,7 @@ Function to select which
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L764"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L765"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.get_WMO_observations`
+ 
+@@ -189,7 +189,7 @@ Function to download and parse in-situ data from WMO database
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L707"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L708"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.get_era5`
+ 
+@@ -203,7 +203,7 @@ get_era5()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L712"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L713"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.get_era5_snowmapper`
+ 
+@@ -219,7 +219,7 @@ Funtion to call fetching of ERA5 data
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L760"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L761"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.get_ifs_forecast`
+ 
+@@ -233,7 +233,7 @@ get_ifs_forecast()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L750"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L751"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.get_lastday`
+ 
+@@ -259,7 +259,7 @@ Function to load pre-existing TopoPyScale project saved in files
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L757"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L758"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.remap_netcdf`
+ 
+@@ -298,7 +298,7 @@ Function to test what would be an appropriate number of clusters
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L819"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L820"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_crocus`
+ 
+@@ -317,7 +317,7 @@ function to export toposcale output to crocus format .nc. This functions saves o
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L788"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L789"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_cryogrid`
+ 
+@@ -335,7 +335,7 @@ wrapper function to export toposcale output to cryosgrid format from TopoClass
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L813"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L814"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_fsm`
+ 
+@@ -347,7 +347,7 @@ function to export toposcale output to FSM format
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L896"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L897"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_geotop`
+ 
+@@ -359,7 +359,7 @@ function to export toposcale output to FSM format
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L902"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L903"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_musa`
+ 
+@@ -400,7 +400,7 @@ Writes daily forcing files, mask.nc, and DEM.nc ('grid') or points_meta.csv ('po
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L871"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L872"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_netcdf`
+ 
+@@ -419,7 +419,7 @@ function to export toposcale output to one single generic netcdf format, compres
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L859"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L860"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_snowmodel`
+ 
+@@ -433,7 +433,7 @@ function to export toposcale output to snowmodel format .ascii, for single stati
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L890"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L891"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_snowpack`
+ 
+@@ -445,7 +445,7 @@ function to export toposcale output to FSM format
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L834"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L835"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.to_surfex`
+ 
+@@ -469,7 +469,7 @@ function to export toposcale output to surfex format .nc. This functions saves o
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L754"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L755"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Topoclass.unzip_file`
+ 
+@@ -484,7 +484,7 @@ unzip_file(filepath)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L950"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L951"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ## <kbd>class</kbd> `Plotting`
+ Sub-Class with plotting functions for topoclass object 
+@@ -494,7 +494,7 @@ Sub-Class with plotting functions for topoclass object
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L1001"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L1002"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.horizon`
+ 
+@@ -508,14 +508,14 @@ horizon()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L983"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L984"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.map_center_clusters`
+ 
+ ```python
+ map_center_clusters(
+     background_var='elevation',
+-    cmap=<matplotlib.colors.ListedColormap object at 0x7f33810d1700>,
++    cmap=<matplotlib.colors.ListedColormap object at 0x7f056d90f1d0>,
+     hillshade=True,
+     **kwargs
+ )
+@@ -527,7 +527,7 @@ map_center_clusters(
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L990"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L991"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.map_clusters`
+ 
+@@ -541,7 +541,7 @@ map_clusters(**kwargs)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L976"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L977"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.map_terrain`
+ 
+@@ -555,7 +555,7 @@ map_terrain(var='elevation', hillshade=True, **kwargs)
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L959"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L960"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.map_variable`
+ 
+@@ -564,7 +564,7 @@ map_variable(
+     var='t',
+     time_step=1,
+     time=None,
+-    cmap=<matplotlib.colors.LinearSegmentedColormap object at 0x7f3380f90d10>,
++    cmap=<matplotlib.colors.LinearSegmentedColormap object at 0x7f056d31be90>,
+     hillshade=True,
+     **kwargs
+ )
+@@ -576,7 +576,7 @@ map_variable(
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L998"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L999"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.solar_geom`
+ 
+@@ -590,7 +590,7 @@ solar_geom()
+ 
+ ---
+ 
+-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L995"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
++<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topoclass.py#L996"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+ 
+ ### <kbd>method</kbd> `Plotting.timeseries`
+ 
+diff --git a/tests/test_physics_consistency.py b/tests/test_physics_consistency.py
+index 2b96cdb..47add04 100644
+--- a/tests/test_physics_consistency.py
++++ b/tests/test_physics_consistency.py
+@@ -251,8 +251,13 @@ def test_no_direct_beam_behind_horizon(summer, tmp_path):
+     ds, ds_solar = downscale(summer, row, tmp_path, horizon_deg=25.)
+     elev = np.rad2deg(ds_solar.elevation.sel(point_name=row.point_name).values)
+     sw_dir = ds.SW_direct.isel(point_name=0).values
+-    assert (sw_dir[(elev > 0) & (elev < 25.)] < 1.).all()
++    # behind the 25 deg horizon over the whole hour: the sun stays below it from the previous to the next centre
++    behind = (elev < 25.) & (np.r_[elev[0], elev[:-1]] < 25.) & (np.r_[elev[1:], elev[-1]] < 25.) & (elev > 0)
++    assert behind.any() and (sw_dir[behind] < 1.).all()
+     assert (sw_dir[elev > 30.] > 1.).any()  # not vacuous: the sun is above the horizon at noon
++    # hours in which the sun clears the horizon get part of the beam
++    crossing = (elev > 0) & ((elev < 25.) != (np.r_[elev[1:], elev[-1]] < 25.))
++    assert crossing.any() and (sw_dir[crossing] > 1.).any()
+ 
+ 
+ def test_shortwave_timing_matches_solar_geometry(summer, tmp_path):
+diff --git a/tests/test_shading.py b/tests/test_shading.py
+new file mode 100644
+index 0000000..be144bf
+--- /dev/null
++++ b/tests/test_shading.py
+@@ -0,0 +1,69 @@
++"""Fractional terrain shading: the direct beam is scaled by the sunlit fraction of the accumulation window."""
++import contextlib
++import io
++
++import numpy as np
++import pandas as pd
++import pytest
++
++import synthetic_era5 as syn
++from TopoPyScale import solar_geom as sg
++from TopoPyScale import topo_scale_zarr as tz
++
++
++def quiet(fun, *args, **kwargs):
++    with contextlib.redirect_stdout(io.StringIO()):
++        return fun(*args, **kwargs)
++
++
++def test_geocentric_sun_matches_spa():
++    times = pd.date_range('2021-01-01', '2021-12-31', freq='97min', tz='UTC')
++    lat, lon, z = np.array([46.8, -33.9, 69.6]), np.array([9.8, 18.4, 18.9]), np.array([1600., 0., 0.])
++    terms = sg.spa_time_terms(times)
++    zen, az_n, el = sg.spa_positions(terms, lat, lon, z)
++    elev, az = sg.sun_geocentric(terms, lat, lon)
++    np.testing.assert_allclose(np.rad2deg(elev), el, atol=0.01)
++    up = (el > 0) & (el < 85)
++    d_az = (np.rad2deg(az) - (180. - az_n) + 180.) % 360. - 180.
++    assert np.abs(d_az[up]).max() < 0.02
++
++
++@pytest.fixture(scope='module')
++def summer_wall(tmp_path_factory):
++    """One flat point behind a 25 deg horizon, 3 summer days."""
++    wd = tmp_path_factory.mktemp('shading')
++    case = syn.make_era5(start='2020-06-20', n_days=3)
++    rows = [syn.make_point(case, name='001', elevation=1500.)]
++    ds_solar = quiet(syn.solar_geometry, case, rows, wd)
++    df = pd.DataFrame([vars(r) for r in rows])
++    return case, df, ds_solar, syn.era5_store(case, wd), wd
++
++
++def run(setup, horizon_deg, n_sub, name, ds_solar=None):
++    case, df, sol, store, wd = setup
++    cd = tz.ClimateDownscaler(store, wd / 'down', df, syn.horizon_da(list(df.itertuples()), horizon_deg),
++                              sol if ds_solar is None else ds_solar, syn.EPSG, case.start, case.end, '1h',
++                              store_name=name, shading_substeps=n_sub)
++    return quiet(cd.downscale).load().SW_direct.isel(point_name=0).values
++
++
++def test_fractional_shading_converges_to_fine_reference(summer_wall):
++    binary = run(summer_wall, 25., 1, 'b.zarr')
++    frac = run(summer_wall, 25., 6, 'f.zarr')
++    fine = run(summer_wall, 25., 60, 'r.zarr')
++    partial = (frac > 1) & (frac < binary - 1) | (frac > binary + 1)
++    assert partial.any()                                       # transition hours change
++    assert np.abs(frac - fine).max() < np.abs(binary - fine).max() / 3
++    assert abs(frac.sum() / fine.sum() - 1) < 0.01
++    np.testing.assert_allclose(frac[(binary == 0) & (frac == 0)], 0)
++
++
++def test_open_horizon_unchanged(summer_wall):
++    np.testing.assert_allclose(run(summer_wall, 0., 6, 'o6.zarr'), run(summer_wall, 0., 1, 'o1.zarr'), atol=1e-4)
++
++
++def test_window_from_older_solar_files(summer_wall):
++    sol = summer_wall[2].copy()
++    sol.attrs = {k: v for k, v in sol.attrs.items() if k not in ('accumulation_window', 'solar_substeps')}
++    np.testing.assert_allclose(run(summer_wall, 25., None, 'old.zarr', ds_solar=sol),
++                               run(summer_wall, 25., 6, 'new.zarr'))
+-- 
+2.43.0
+
