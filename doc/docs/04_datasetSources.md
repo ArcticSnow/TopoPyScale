@@ -17,13 +17,13 @@ Copernicus whom generate the ERA5 data is also a portal to download the data. To
 
 #### From NCAR GDEX
 
-The [NCAR Geoscience Data Exchange](https://gdex.ucar.edu/datasets/d633000/) (dataset d633000) holds the same ERA5 data as the CDS, with no account, licence or queue. TopoPyScale reads it in place and writes the same files as with the CDS, so the rest of the workflow is unchanged.
+The [NCAR Geoscience Data Exchange](https://gdex.ucar.edu/datasets/d633000/) (dataset d633000) holds the same ERA5 data as the CDS, with no account, licence or queue. TopoPyScale reads it in place and writes the same zarr store as with the CDS, so the rest of the workflow is unchanged.
 
 ```yaml
 climate:
   era5:
     data_repository: gdex
-    download_threads: 8      # days fetched in parallel
+    download_threads: 8      # days fetched in parallel, one process each (default 4)
 ```
 
 Setup:

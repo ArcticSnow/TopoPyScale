@@ -47,7 +47,7 @@ Downscale an ERA5 zarr store to a list of points.
 
 **Args:**
  
- - <b>`era5_zarr_path`</b> (str):  path to the ERA5 zarr store (see fetch_era5.netcdf_to_zarr) 
+ - <b>`era5_zarr_path`</b> (str):  path to the ERA5 zarr store (see era5_store and fetch_era5.netcdf_to_zarr). z_surf may  be static (latitude, longitude) or given at every time step 
  - <b>`output_path`</b> (str):  directory of the output store 
  - <b>`df_centroids`</b> (dataframe):  points with point_name, x, y, lat, lon, elevation, slope, aspect, svf 
  - <b>`da_horizon`</b> (dataarray):  horizon angles [rad] of the points (azimuth, point_name), from  topo_param.compute_horizon_points, or of the DEM grid (azimuth, y, x), taken at the nearest pixel 
@@ -70,7 +70,7 @@ Downscale an ERA5 zarr store to a list of points.
  - <b>`the direct beam is scaled by the sunlit fraction of the window (1`</b>:  one test at the centre, all or 
  - <b>`nothing). Default`</b>:  the solar_substeps of ds_solar, else 6 
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L109"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L110"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.__init__`
 
@@ -108,7 +108,7 @@ __init__(
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L343"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L349"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.downscale`
 
@@ -132,7 +132,7 @@ Downscale all points and write them to the output store.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L313"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L319"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.process_block`
 
@@ -150,7 +150,7 @@ Downscale points p0:p1 (positions in df_centroids) for time steps t0:t1 and writ
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L205"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L206"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.setup_output_store`
 

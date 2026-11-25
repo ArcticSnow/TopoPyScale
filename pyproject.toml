@@ -44,7 +44,6 @@ dependencies = [
     "dask",
     "configobj",
     "munch",
-    "cdo",
     "gitpython",
     "era5_downloader",
     "bs4",

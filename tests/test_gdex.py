@@ -1,5 +1,5 @@
 """
-ERA5 from NCAR GDEX (fetch_era5.retrieve_era5_gdex), against a miniature GDEX tree with the file names, variable
+ERA5 from NCAR GDEX (fetch_era5.fetch_era5_to_zarr with source='gdex'), against a miniature GDEX tree with the file names, variable
 names and layouts of dataset d633000: zarr stores of surface analyses, daily pressure-level files, half-month files
 of forecast accumulations (forecast_initial_time, forecast_hour) and the invariant surface geopotential. Values
 encode the variable, time, level and position, so the time mapping and the subsetting can be checked exactly.
@@ -89,47 +89,47 @@ def gdex(tmp_path_factory):
 
 
 def fetch(root, workdir, **kw):
-    kw = {**dict(step='1h', plevels=[1000, 700, 850], num_processes=1), **kw}
-    with contextlib.redirect_stdout(io.StringIO()):
-        fe.retrieve_era5_gdex(DAYS[0], DAYS[-1], workdir, root=str(root), **BOX, **kw)
-    return (xr.load_dataset(workdir / 'yearly/SURF_2020.nc'), xr.load_dataset(workdir / 'yearly/PLEV_2020.nc'))
+    kw = {**dict(step='1h', plevels=[1000, 700, 850], n_workers=1), **kw}
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        store = fe.fetch_era5_to_zarr(DAYS[0], DAYS[-1], workdir, source='gdex', gdex_root=str(root), retry_wait=0,
+                                      **BOX, **kw)
+    return xr.load_dataset(store, engine='zarr'), out.getvalue()
 
 
-def check(surf, plev, step_h=1):
+def check(ds, step_h=1):
     times = pd.date_range(DAYS[0], DAYS[-1] + pd.Timedelta('23h'), freq=f'{step_h}h')
-    lat, lon = surf.latitude.values, surf.longitude.values
+    lat, lon = ds.latitude.values, ds.longitude.values
     np.testing.assert_allclose(lat, [59.5, 59.25, 59.0, 58.75, 58.5])
     np.testing.assert_allclose(lon, [-0.5, -0.25, 0., 0.25, 0.5])
-    assert (surf.time.values == times.values).all() and (plev.time.values == times.values).all()
-    assert list(plev.level.values) == [700, 850, 1000]
-    assert set(surf.data_vars) == {'z', 't2m', 'd2m', 'sp', 'ssrd', 'strd', 'tp'}
-    assert set(plev.data_vars) == {'z', 't', 'u', 'v', 'q'}
+    assert (ds.time.values == times.values).all()
+    assert list(ds.level.values) == [700, 850, 1000]
+    assert set(ds.data_vars) == {'z', 't', 'u', 'v', 'q', 'z_surf', 't2m', 'd2m', 'sp', 'ssrd', 'strd', 'tp',
+                                 'filled_plev', 'filled_surf'}
+    assert ds.filled_plev.values.all() and ds.filled_surf.values.all()
     for name, var in [('z', 'Z'), ('t', 'T'), ('u', 'U'), ('v', 'V'), ('q', 'Q')]:
-        np.testing.assert_allclose(plev[name].transpose('time', 'level', 'latitude', 'longitude').values,
+        np.testing.assert_allclose(ds[name].transpose('time', 'level', 'latitude', 'longitude').values,
                                    value(var, times, [700, 850, 1000], lat, lon), rtol=1e-6, err_msg=name)
     for name, var in [('t2m', 'VAR_2T'), ('d2m', 'VAR_2D'), ('sp', 'SP'), ('ssrd', 'SSRD'), ('strd', 'STRD'),
                       ('tp', 'TP')]:
-        np.testing.assert_allclose(surf[name].transpose('time', 'latitude', 'longitude').values,
+        np.testing.assert_allclose(ds[name].transpose('time', 'latitude', 'longitude').values,
                                    value(var, times, [0.], lat, lon)[:, 0], rtol=1e-6, err_msg=name)
-    np.testing.assert_allclose(surf.z.values, 1000 * lat[None, :, None] + 0 * surf.z.values, rtol=1e-6)
+    assert ds.z_surf.dims == ('latitude', 'longitude')
+    np.testing.assert_allclose(ds.z_surf.values, 1000 * lat[:, None] + 0 * lon[None, :], rtol=1e-6)
 
 
 def test_local_gdex_matches_cds_layout(gdex, tmp_path):
-    surf, plev = fetch(gdex, tmp_path)
-    check(surf, plev)
-    # daily files are kept and reused
-    assert len(list((tmp_path / 'daily').glob('d*_2020*.nc'))) == 4
-    # the yearly files feed the zarr pipeline unchanged
-    with contextlib.redirect_stdout(io.StringIO()):
-        store = fe.netcdf_to_zarr(tmp_path / 'yearly', tmp_path / 'ERA5.zarr')
-    ds = xr.open_zarr(store)
-    assert {'z', 't', 'u', 'v', 'q', 'z_surf', 't2m', 'd2m', 'sp', 'ssrd', 'strd', 'tp'} <= set(ds.data_vars)
-    assert ds.sizes['time'] == 48
+    ds, _ = fetch(gdex, tmp_path)
+    check(ds)
+    assert not (tmp_path / 'raw').exists() and not (tmp_path / 'daily').exists()
+    # a second run finds everything in the store
+    _, log = fetch(gdex, tmp_path)
+    assert '0 of 5 downloads to do' in log
 
 
 def test_timestep_and_processes(gdex, tmp_path):
-    surf, plev = fetch(gdex, tmp_path, step='3h', num_processes=2)
-    check(surf, plev, step_h=3)
+    ds, _ = fetch(gdex, tmp_path, step='3h', n_workers=2)
+    check(ds, step_h=3)
 
 
 def test_accumulation_valid_times():
@@ -186,10 +186,10 @@ def test_remote_gdex_over_https(gdex, tmp_path):
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(RangeHandler, directory=str(gdex)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        surf, plev = fetch(f'http://127.0.0.1:{server.server_address[1]}', tmp_path)
+        ds, _ = fetch(f'http://127.0.0.1:{server.server_address[1]}', tmp_path)
     finally:
         server.shutdown()
-    check(surf, plev)
+    check(ds)
 
 
 def test_fetcher_dispatch(tmp_path, monkeypatch):
@@ -199,23 +199,24 @@ def test_fetcher_dispatch(tmp_path, monkeypatch):
                     'extent': {'latN': 59.2, 'latS': 58.8, 'lonW': -0.2, 'lonE': 0.2}},
         'climate': {'path': tmp_path, 'era5': {'product': 'reanalysis', 'timestep': '1h', 'plevels': [700, 850],
                                                'download_threads': 3, 'data_repository': 'gdex',
-                                               'gdex_root': '/somewhere'}}})
+                                               'gdex_root': '/somewhere'}},
+        'outputs': {'path': tmp_path / 'outputs'}})
     calls = []
-    monkeypatch.setattr(fe, 'retrieve_era5_gdex', lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr(fe, 'fetch_era5_to_zarr', lambda *a, **k: calls.append(k))
     with contextlib.redirect_stdout(io.StringIO()):
         fe.FetchERA5(config).go_fetch('all')
-    (args, kw), = calls
-    assert kw['root'] == '/somewhere' and kw['surf_plev'] == 'all' and kw['num_processes'] == 3
-    assert args[3] == pytest.approx(59.6) and args[6] == pytest.approx(-0.6)    # latN, lonW with the 0.4 margin
+    kw, = calls
+    assert kw['source'] == 'gdex' and kw['gdex_root'] == '/somewhere' and kw['n_workers'] == 3
+    assert kw['latN'] == pytest.approx(59.6) and kw['lonW'] == pytest.approx(-0.6)    # with the 0.4 margin
 
-    config.climate.era5.data_repository = 'google_cloud_storage'
-    with pytest.raises(ValueError, match='use cds or gdex'):
+    config.climate.era5.realtime = True
+    with pytest.raises(ValueError, match='realtime needs ERA5T'):
         with contextlib.redirect_stdout(io.StringIO()):
             fe.FetchERA5(config).go_fetch('all')
+    config.climate.era5.realtime = False
 
     # no repository given: the CDS
     del config.climate.era5['data_repository']
-    monkeypatch.setattr(fe, 'retrieve_era5', lambda *a, **k: calls.append(('cds', k)))
     with contextlib.redirect_stdout(io.StringIO()):
         fe.FetchERA5(config).go_fetch('all')
-    assert calls[-1][0] == 'cds'
+    assert calls[-1]['source'] == 'cds'

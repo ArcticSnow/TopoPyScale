@@ -79,7 +79,8 @@ class ClimateDownscaler:
     Downscale an ERA5 zarr store to a list of points.
 
     Args:
-        era5_zarr_path (str): path to the ERA5 zarr store (see fetch_era5.netcdf_to_zarr)
+        era5_zarr_path (str): path to the ERA5 zarr store (see era5_store and fetch_era5.netcdf_to_zarr). z_surf may
+            be static (latitude, longitude) or given at every time step
         output_path (str): directory of the output store
         df_centroids (dataframe): points with point_name, x, y, lat, lon, elevation, slope, aspect, svf
         da_horizon (dataarray): horizon angles [rad] of the points (azimuth, point_name), from
@@ -302,8 +303,13 @@ class ClimateDownscaler:
         sub = self.ERA[PLEV_VARS + SURF_VARS].isel(time=tsel, latitude=box[0], longitude=box[1])
         era = {v: np.asarray(sub[v].transpose('time', 'level', 'latitude', 'longitude').values, dtype=float)
                for v in PLEV_VARS}
-        era.update({v: np.asarray(sub[v].transpose('time', 'latitude', 'longitude').values, dtype=float)
-                    for v in SURF_VARS})
+        nt = sub.sizes['time']
+        for v in SURF_VARS:
+            if 'time' in sub[v].dims:
+                era[v] = np.asarray(sub[v].transpose('time', 'latitude', 'longitude').values, dtype=float)
+            else:   # static field (z_surf of the stores written by era5_store)
+                field = np.asarray(sub[v].transpose('latitude', 'longitude').values, dtype=float)
+                era[v] = np.broadcast_to(field, (nt,) + field.shape)
         return era, box
 
     def _box_mb(self, box, nt):

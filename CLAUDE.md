@@ -38,7 +38,7 @@ lazydocs --output-path="doc/docs" --overview-file="README.md" --src-base-url="ht
 The main entry point is `Topoclass` in `topoclass.py`. A typical workflow:
 
 1. **Configuration**: Load YAML config file → `Topoclass(config_file)`
-2. **Data Fetching**: `get_era5()` downloads ERA5 surface and pressure level data
+2. **Data Fetching**: `get_era5()` downloads ERA5 surface and pressure level data month by month into `ERA5.zarr` (`era5_store.py`)
 3. **DEM Processing**: `compute_dem_param()` calculates slope, aspect, sky view factor
 4. **Spatial Sampling**: `extract_topo_param()` either:
    - Clusters DEM using k-means (`topo_sub.py`) to reduce computation
@@ -95,4 +95,3 @@ Projects use YAML config files (see `TopoPyScale_examples` repo). Key sections:
 ## External Dependencies
 
 - **CDS API**: Requires `~/.cdsapirc` with Copernicus credentials for ERA5 download
-- **CDO**: Climate Data Operators for netCDF manipulation

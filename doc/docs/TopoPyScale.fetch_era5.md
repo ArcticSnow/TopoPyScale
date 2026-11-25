@@ -3,7 +3,7 @@
 <a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L0"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 # <kbd>module</kbd> `TopoPyScale.fetch_era5`
-Retrieve ecmwf data with cdsapi. 
+Retrieve ERA5 from the CDS (cdsapi) or NCAR GDEX into the zarr store read by the downscaling (see era5_store.py). 
 
 
 - J. Fiddes, Origin implementation 
@@ -19,10 +19,12 @@ Retrieve ecmwf data with cdsapi.
 - **GDEX_SURF_AN**
 - **GDEX_SURF_ACCUMU**
 - **GDEX_INVARIANT_Z**
+- **CDS_DATASETS**
+- **CDS_MAX_PARALLEL**
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L267"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L191"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `climate_netcdf_dir`
 
@@ -35,7 +37,7 @@ Folder of the PLEV/SURF netcdf files to convert to zarr: climate_path/yearly (wh
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L277"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L201"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `append_nc_to_zarr_region`
 
@@ -50,7 +52,7 @@ append_nc_to_zarr_region(ncfile, zarrstore, surf=False)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L303"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L213"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `netcdf_to_zarr`
 
@@ -87,7 +89,7 @@ Each pair is opened with xr.open_dataset, merged (the surface geopotential is re
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L374"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L284"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_zarr`
 
@@ -116,7 +118,7 @@ Function to convert a dataset to a zarr store.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L395"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L305"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fetch_era5_google_from_zarr`
 
@@ -139,7 +141,7 @@ Function to download data from Zarr repository on Google Cloud Storage (https://
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L446"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L356"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `gdex_root`
 
@@ -152,242 +154,109 @@ Root of GDEX dataset d633000: root if given, else the local mount on NCAR system
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L578"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L356"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-## <kbd>function</kbd> `retrieve_era5_gdex`
+## <kbd>function</kbd> `gdex_root`
 
 ```python
-retrieve_era5_gdex(
-    startDate,
-    endDate,
+gdex_root(root=None)
+```
+
+Root of GDEX dataset d633000: root if given, else the local mount on NCAR systems, else OSDF over HTTPS. 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L508"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `cds_request`
+
+```python
+cds_request(
+    task,
+    variables,
+    area,
+    step,
+    plevels=None,
+    product='reanalysis',
+    download_format='unarchived'
+)
+```
+
+CDS API request of a task: its days (one month at most), all time steps, the box on the 0.25 deg grid. 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L616"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `fetch_era5_to_zarr`
+
+```python
+fetch_era5_to_zarr(
+    start,
+    end,
     eraDir,
     latN,
     latS,
     lonE,
     lonW,
     step='1h',
-    surf_plev='all',
     plevels=None,
-    num_processes=4,
-    root=None,
-    rm_daily=False
+    streams=('plev', 'surf'),
+    source='cds',
+    product='reanalysis',
+    zarr_store='ERA5.zarr',
+    n_workers=None,
+    plev_variables=None,
+    surf_variables=None,
+    gdex_root=None,
+    download_format='unarchived',
+    verify=True,
+    retries=3,
+    retry_wait=60.0,
+    time_chunk=720
 )
 ```
 
-Fetch ERA5 from NCAR GDEX (dataset d633000) instead of the CDS, into the same daily and yearly files. 
+Fetch ERA5 for a period and a box into the zarr store eraDir/zarr_store, read by the downscaling. 
 
-Writes eraDir/daily/dSURF_YYYYMMDD.nc and dPLEV_YYYYMMDD.nc, then eraDir/yearly/SURF_YYYY.nc and PLEV_YYYY.nc, with the variables, units and layout of the CDS files: z, t, u, v, q on pressure levels (ascending) and z, t2m, d2m, sp, ssrd, strd, tp at the surface; latitude descending, longitude in -180..180. Accumulated fluxes are over the hour ending at the time stamp, as on the CDS. Days already in eraDir/daily are skipped. 
-
-On NCAR systems the files are read from /gdex/data. Elsewhere they are read over HTTPS (OSDF), which needs aiohttp. Pressure-level files are chunked as one global field per hour and per variable: whatever the size of the box, about 1 GB per variable and day is transferred. 
+From the CDS, one request per stream and month (as ECMWF advises), at most 10 at a time (the CDS per-user limit). From NCAR GDEX, one day per stream and task, read in spawned processes. Workers only download; the main thread reads each file as it arrives, checks it and writes it to the store (see era5_store.py). The surface geopotential is fetched once. Time steps already in the store are skipped, so an interrupted or failed run is completed by running again, and a longer period only fetches what is new. Data of the earlier layout (yearly/PLEV_*.nc, daily/dPLEV_*.nc...) are read instead of downloaded again. 
 
 
 
 **Args:**
  
- - <b>`startDate, endDate`</b>:  first and last day 
+ - <b>`start, end`</b>:  first and last day 
  - <b>`eraDir`</b> (Path):  climate folder 
- - <b>`latN, latS, lonE, lonW (float)`</b>:  box [deg] 
+ - <b>`latN, latS, lonE, lonW (float)`</b>:  box [deg], reduced to the nodes of the 0.25 deg grid inside it 
  - <b>`step`</b> (str):  '1h', '3h' or '6h' 
- - <b>`surf_plev`</b> (str):  'surf', 'plev' or 'all' 
  - <b>`plevels`</b> (list):  pressure levels [hPa] 
- - <b>`num_processes`</b> (int):  days fetched in parallel (processes, as HDF5 reads hold a global lock) 
- - <b>`root`</b> (str):  GDEX root (path or URL). Default: /gdex/data/d633000 if it exists, else OSDF over HTTPS 
- - <b>`rm_daily`</b> (bool):  remove the daily folder once merged into yearly files 
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L659"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `retrieve_era5`
-
-```python
-retrieve_era5(
-    product,
-    startDate,
-    endDate,
-    eraDir,
-    latN,
-    latS,
-    lonE,
-    lonW,
-    step,
-    num_threads=10,
-    surf_plev='surf',
-    plevels=None,
-    realtime=False,
-    output_format='netcdf',
-    download_format='unarchived',
-    new_CDS_API=True,
-    rm_daily=False,
-    surf_varoi=None,
-    plev_varoi=None,
-    verify_flag=True
-)
-```
-
-Sets up era5 surface retrieval. * Creates list of year/month pairs to iterate through. * MARS retrievals are most efficient when subset by time. * Identifies preexisting downloads if restarted. * Calls api using parallel function. 
-
-
-
-**Args:**
- 
- - <b>`product`</b>:  "reanalysis" (HRES) or "ensemble_members" (EDA) startDate: endDate: 
- - <b>`eraDir`</b>:  directory to write output 
- - <b>`latN`</b>:  north latitude of bbox 
- - <b>`latS`</b>:  south latitude of bbox 
- - <b>`lonE`</b>:  easterly lon of bbox 
- - <b>`lonW`</b>:  westerly lon of bbox 
- - <b>`step`</b>:  timestep to use: 1, 3, 6 
- - <b>`num_threads`</b>:  number of threads to use for downloading data 
- - <b>`surf_plev`</b>:  download surface single level or pressure level product: 'surf' or 'plev' 
- - <b>`output_format`</b> (str):  default is "netcdf", can be "grib". 
- - <b>`download_format`</b> (str):  default "unarchived". Can be "zip" 
- - <b>`new_CDS_API`</b>:  flag to handle new formating of SURF files with the new CDS API (2024). 
- - <b>`rm_daily`</b>:  remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files. 
- - <b>`surf_varoi`</b>:  list of surface variable to download. Default is None, automatically assigning minimum required for the downscaling 
- - <b>`plev_varoi`</b>:  list of pressure level variables to download. . Default is None, automatically assigning minimum required for the downscaling 
- - <b>`verify_flag`</b>:  bypass ssl certifcate flag. Default must be True 
+ - <b>`streams`</b> (list):  'plev' and/or 'surf' 
+ - <b>`source`</b> (str):  'cds' or 'gdex' 
+ - <b>`product`</b> (str):  CDS product type, 'reanalysis' 
+ - <b>`zarr_store`</b> (str):  store name in eraDir 
+ - <b>`n_workers`</b> (int):  parallel downloads. Default 8 for the CDS (at most 10), 4 processes for GDEX 
+ - <b>`plev_variables, surf_variables (list)`</b>:  CDS variable names. Default: what the downscaling reads 
+ - <b>`gdex_root`</b> (str):  GDEX root (path or URL). Default: /gdex/data/d633000 if it exists, else OSDF over HTTPS 
+ - <b>`download_format`</b> (str):  CDS download format, 'unarchived' or 'zip' (both are read) 
+ - <b>`verify`</b> (bool):  verify the SSL certificate of the CDS 
+ - <b>`retries`</b> (int):  new attempts of a failed download, after retry_wait, 2 retry_wait, 4 retry_wait... seconds 
+ - <b>`retry_wait`</b> (float):  seconds before the first new attempt 
+ - <b>`time_chunk`</b> (int):  time steps per chunk of the store 
 
 
 
 **Returns:**
- Monthly era surface files stored in disk. 
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L886"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `era5_request_surf`
-
-```python
-era5_request_surf(
-    dataset,
-    year,
-    month,
-    day,
-    bbox,
-    target,
-    product,
-    time,
-    verify_flag=True,
-    output_format='netcdf',
-    download_format='unarchived',
-    varoi=None
-)
-```
-
-CDS surface api call 
-
-
-
-**Args:**
  
- - <b>`dataset`</b> (str):  copernicus dataset (era5) 
- - <b>`year`</b> (str or list):  year of interest 
- - <b>`month`</b> (str or list):  month of interest 
- - <b>`bbox`</b> (list):  bonding box in lat-lon 
- - <b>`target`</b> (str):  filename 
- - <b>`product`</b> (str):  type of model run. defaul: reanalysis 
- - <b>`time`</b> (str or list):  hours for which to download data 
- - <b>`output_format`</b> (str):  default is "netcdf", can be "grib". 
- - <b>`download_format`</b> (str):  default "unarchived". Can be "zip" 
- - <b>`varoi`</b> (list):  list of variable of interest to download. Default to None which fallsback to minimum needed for TPS 
+ - <b>`Path`</b>:  the store 
 
-
-
-**Returns:**
- Store to disk dataset as indicated 
-
-
-
-**TODO:**
- 
-- [ ] change SURF request to the ZARR repository for timeseries retrieval. 
+Raises RuntimeError listing the downloads that failed, once all others are in the store. 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L935"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `era5_request_plev`
-
-```python
-era5_request_plev(
-    dataset,
-    year,
-    month,
-    day,
-    bbox,
-    target,
-    product,
-    time,
-    plevels,
-    verify_flag=True,
-    output_format='netcdf',
-    download_format='unarchived',
-    varoi=None
-)
-```
-
-CDS plevel api call 
-
-
-
-**Args:**
- 
- - <b>`dataset`</b> (str):  copernicus dataset (era5) 
- - <b>`year`</b> (str or list):  year of interest 
- - <b>`month`</b> (str or list):  month of interest 
- - <b>`bbox`</b> (list):  bonding box in lat-lon 
- - <b>`target`</b> (str):  filename 
- - <b>`product`</b> (str):  type of model run. defaul: reanalysis 
- - <b>`time`</b> (str or list):  hours to query 
- - <b>`plevels`</b> (str or list):  pressure levels to query 
- - <b>`output_format`</b> (str):  default is "netcdf", can be "grib". 
- - <b>`download_format`</b> (str):  default "unarchived". Can be "zip" 
- - <b>`varoi`</b> (list):  list of variable of interest to download. Default to None which fallsback to minimum needed for TPS 
-
-
-
-**Returns:**
- Store to disk dataset as indicated 
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L986"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `era5_realtime_surf`
-
-```python
-era5_realtime_surf(eraDir, dataset, bbox, product)
-```
-
-
-
-
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1009"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `era5_realtime_plev`
-
-```python
-era5_realtime_plev(eraDir, dataset, bbox, product, plevels)
-```
-
-
-
-
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1034"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L716"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `return_last_fullday`
 
@@ -400,26 +269,7 @@ TODO: NEED docstring and explanation
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1068"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
-
-## <kbd>function</kbd> `grib2netcdf`
-
-```python
-grib2netcdf(gribname, outname=None)
-```
-
-Function to convert grib file to netcdf 
-
-
-
-**Args:**
- 
- - <b>`gribname`</b>:  filename fo grib file to convert 
-
-
----
-
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1082"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L750"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `unzip_file`
 
@@ -427,18 +277,24 @@ Function to convert grib file to netcdf
 unzip_file(file_path)
 ```
 
-Function to unpack and repack as NETCDF data sent by the new CDS API. CDS can send either weird zip file shipped as netcdf file for Surface data.  The option of zip format can be used to download the data.  
+Repack as one netCDF file, in place, a CDS download that is a zip of netCDF files (the CDS sends one for surface fields of different kinds, instantaneous and accumulated). The result is standardized (see remap_CDSbeta) and named like the input with the .nc extension. A netCDF file is left unchanged. 
 
 
 
 **Args:**
  
- - <b>`file_path`</b>:  path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate/daily 
+ - <b>`file_path`</b> (str):  downloaded file 
+
+
+
+**Returns:**
+ 
+ - <b>`str`</b>:  path of the netCDF file 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1138"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L776"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `remap_CDSbeta`
 
@@ -446,19 +302,19 @@ Function to unpack and repack as NETCDF data sent by the new CDS API. CDS can se
 remap_CDSbeta(file_pattern, file_type='SURF')
 ```
 
-Remapping of variable names from CDS beta to CDS legacy standard. 
+Rewrite netCDF files of the CDS with the names of the earlier CDS (time, level), ascending levels, and without the number and expver coordinates (see era5_store.standardize). Files already remapped are left as they are. 
 
 
 
 **Args:**
  
- - <b>`file_pattern`</b> (str):  path and pattern of the file to be remapped. example: 'inputs/climate/daily/dSURF_*.nc' 
- - <b>`file_type`</b> (str):  type of file: SURF or PLEV.   
+ - <b>`file_pattern`</b> (str):  path and pattern of the files, e.g. 'inputs/climate/daily/dSURF_*.nc' 
+ - <b>`file_type`</b> (str):  SURF or PLEV (kept for compatibility, both are handled the same way) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1201"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L797"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `era5_request_surf_snowmapper`
 
@@ -495,7 +351,7 @@ CDS surface api call
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L1251"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L847"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `era5_request_plev_snowmapper`
 
@@ -535,6 +391,8 @@ CDS plevel api call
 
 ---
 
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L54"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
 ## <kbd>class</kbd> `FetchERA5`
 Class to fetch data from ERA5 based on config of loaded by the main class Topoclass.config or config loaded directly from yml file. 
 
@@ -547,9 +405,9 @@ Class to fetch data from ERA5 based on config of loaded by the main class Topocl
  - <b>`varoi_plev`</b> (list):  list of pressure level variables to download. Default is None which will fetch only necessary for TPS 
  - <b>`verify_ssl`</b> (bool):  boolean flag to stop ssl certificate. DO NOT USE!!! unless needed.   
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L71"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L65"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>function</kbd> `__init__`
+### <kbd>method</kbd> `FetchERA5.__init__`
 
 ```python
 __init__(config, varoi_surf=None, varoi_plev=None, verify_ssl=True)
@@ -564,9 +422,9 @@ __init__(config, varoi_surf=None, varoi_plev=None, verify_ssl=True)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L213"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L137"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>function</kbd> `get_era5_snowmapper`
+### <kbd>method</kbd> `FetchERA5.get_era5_snowmapper`
 
 ```python
 get_era5_snowmapper(surf_plev, lastday)
@@ -580,21 +438,33 @@ Funtion to call fetching of ERA5 data
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L121"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L102"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>function</kbd> `go_fetch`
+### <kbd>method</kbd> `FetchERA5.go_fetch`
 
 ```python
 go_fetch(surf_plev='all')
 ```
 
-Funtion to call fetching of ERA5 data 
+Fetch ERA5 into the zarr store of the climate folder (climate.<source>.zarr_store, default ERA5.zarr), from the CDS or NCAR GDEX (climate.<source>.data_repository). See fetch_era5_to_zarr(). 
+
+
+
+**Args:**
+ 
+ - <b>`surf_plev`</b> (str):  'all', 'surf' or 'plev' 
+
+
+
+**Returns:**
+ 
+ - <b>`Path`</b>:  the store 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L112"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L93"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>function</kbd> `load_config`
+### <kbd>method</kbd> `FetchERA5.load_config`
 
 ```python
 load_config(config_file)
@@ -606,9 +476,9 @@ load_config(config_file)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L251"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_era5.py#L175"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>function</kbd> `to_zarr`
+### <kbd>method</kbd> `FetchERA5.to_zarr`
 
 ```python
 to_zarr(zarr_store=None, time_chunk=720)

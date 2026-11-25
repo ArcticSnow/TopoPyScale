@@ -1,15 +1,17 @@
 """
-Retrieve ecmwf data with cdsapi.
+Retrieve ERA5 from the CDS (cdsapi) or NCAR GDEX into the zarr store read by the downscaling (see era5_store.py).
 
 - J. Fiddes, Origin implementation
 - S. Filhol adapted in 2021
 
 """
 # !/usr/bin/env python
+import functools
+import threading
+
 import pandas as pd
 import xarray as xr
 import numpy as np
-import dask
 try:
     from zarr.codecs import BloscCodec
 except ImportError:
@@ -20,22 +22,14 @@ except ImportError:
         # Fallback for older versions or different structure
         from zarr import Blosc as BloscCodec
 
-import cdsapi, os, sys
-from dateutil.relativedelta import *
-from multiprocessing.dummy import Pool as ThreadPool
-from datetime import datetime, timedelta
-from TopoPyScale import topo_utils as tu
+import cdsapi, os
+from datetime import datetime, timedelta, timezone
+from TopoPyScale import era5_store as es
 from pathlib import Path
 import zipfile
 import shutil
 import glob
-from cdo import *
 from munch import DefaultMunch
-
-
-# [ ] remove this dependencie era5_downloader bringing little value
-# [ ] create a class to execute download
-
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -82,32 +76,19 @@ class FetchERA5():
         self.varoi_surf = varoi_surf
         self.varoi_plev = varoi_plev
         self.verify_flag = verify_ssl
+        os.makedirs(self.config.climate.path, exist_ok=True)
 
-        os.makedirs(self.config.climate.path / 'yearly', exist_ok=True)
-        os.makedirs(self.config.climate.path/ 'daily', exist_ok=True)
-
-        # if keyword exists in config set realtime to value (True/False)
-        if self.config.climate[self.config.project.climate].realtime:
-            self.realtime = self.config.climate[self.config.project.climate].realtime
-            # make sure end date is correct
+        # realtime: the period ends on the last full day of ERA5T. The store records which time steps it holds, so
+        # the next run fetches the days added since (the current month is requested again, as one month)
+        self.realtime = bool(self.config.climate[self.config.project.climate].realtime)
+        if self.realtime:
             lastdate = return_last_fullday()
-            self.config.project.end = self.config.project.end.replace(year=lastdate.year, 
-                                                                        month=lastdate.month,
+            self.config.project.end = self.config.project.end.replace(year=lastdate.year, month=lastdate.month,
                                                                         day=lastdate.day)
-
-            # remove existing results (temporary results are ok and updated but cannot append to final files eg .outputs/downscaled/down_pt_0.nc)
-            try:
-                shutil.rmtree(self.config.outputs.path / "downscaled")
-                print('---> Downscaled directory cleaned')
-                os.makedirs(self.config.outputs.path / "downscaled")
-            except:
-                os.makedirs(self.config.outputs.path / "downscaled")
-
-        # else set realtime to False
-        else:
-            self.realtime = False
-                    
-        self.realtime = False # always false now as redownload of current month handled elsewhere ? key required only to dynamically set config.project.end
+            # downscaled outputs are rewritten
+            shutil.rmtree(self.config.outputs.path / "downscaled", ignore_errors=True)
+            os.makedirs(self.config.outputs.path / "downscaled", exist_ok=True)
+            print('---> Downscaled directory cleaned')
 
     @staticmethod
     def load_config(config_file):
@@ -119,96 +100,39 @@ class FetchERA5():
 
 
     def go_fetch(self, surf_plev='all'):
-            """
-            Funtion to call fetching of ERA5 data
+        """
+        Fetch ERA5 into the zarr store of the climate folder (climate.<source>.zarr_store, default ERA5.zarr), from
+        the CDS or NCAR GDEX (climate.<source>.data_repository). See fetch_era5_to_zarr().
 
-            """
-            if surf_plev.lower() == 'surf':
-                self.get_plev = False
-                self.get_surf = True 
-            elif surf_plev.lower() == 'plev':
-                self.get_plev = True 
-                self.get_surf = False 
+        Args:
+            surf_plev (str): 'all', 'surf' or 'plev'
 
-            elif surf_plev.lower() == 'all':
-                self.get_plev = True 
-                self.get_surf = True 
-
-            lonW = self.config.project.extent.get('lonW') - 0.4
-            lonE = self.config.project.extent.get('lonE') + 0.4
-            latN = self.config.project.extent.get('latN') + 0.4
-            latS = self.config.project.extent.get('latS') - 0.4
-
-            # if keyword exists in config set out_format to value or default to netcdf
-            if self.config.climate[self.config.project.climate].cds_output_format:
-                output_format = self.config.climate[self.config.project.climate].cds_output_format
-            else:
-                output_format = 'netcdf'
-
-            if self.config.climate[self.config.project.climate].cds_download_format:
-                download_format = self.config.climate[self.config.project.climate].cds_download_format
-            else: 
-                download_format = 'unarchived'
-
-            # Check data repository is currently supported
-            clim = self.config.climate[self.config.project.climate]
-            data_repository = self.config.climate[self.config.project.climate].data_repository or 'cds'
-            if data_repository == 'gdex':
-                if clim.realtime:
-                    raise ValueError('realtime needs ERA5T from the CDS: GDEX is updated months later')
-                if clim.product not in [None, {}, 'reanalysis']:
-                    raise ValueError(f'GDEX only holds the ERA5 reanalysis, not {clim.product}')
-                retrieve_era5_gdex(self.config.project.start, self.config.project.end, self.config.climate.path,
-                                   latN, latS, lonE, lonW, step=clim.timestep or '1h', surf_plev=surf_plev.lower(),
-                                   plevels=clim.plevels, num_processes=clim.download_threads or 4,
-                                   root=self.config.climate[self.config.project.climate].gdex_root,
-                                   rm_daily=bool(clim.rm_daily))
-                return
-            elif data_repository != 'cds':
-                raise ValueError(f"Data repository {data_repository} not supported: use cds or gdex")
-
-            if self.get_surf:
-                # retreive ERA5 surface data
-                retrieve_era5(
-                    self.config.climate[self.config.project.climate].product,
-                    self.config.project.start,
-                    self.config.project.end,
-                    self.config.climate.path,
-                    latN, latS, lonE, lonW,
-                    self.config.climate[self.config.project.climate].timestep,
-                    self.config.climate[self.config.project.climate].download_threads,
-                    surf_plev='surf',
-                    realtime=self.realtime,
-                    output_format=output_format,
-                    download_format=download_format,
-                    new_CDS_API=True,
-                    rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                    surf_varoi=self.varoi_surf,
-                    plev_varoi=self.varoi_plev,
-                    verify_flag=self.verify_flag
-                )
-            if self.get_plev:
-                # retrieve era5 plevels
-                retrieve_era5(
-                    self.config.climate[self.config.project.climate].product,
-                    self.config.project.start,
-                    self.config.project.end,
-                    self.config.climate.path,
-                    latN, latS, lonE, lonW,
-                    self.config.climate[self.config.project.climate].timestep,
-                    self.config.climate[self.config.project.climate].download_threads,
-                    surf_plev='plev',
-                    plevels=self.config.climate[self.config.project.climate].plevels,
-                    realtime=self.realtime,
-                    output_format=output_format,
-                    download_format=download_format,
-                    new_CDS_API=True,
-                    rm_daily=self.config.climate[self.config.project.climate].rm_daily,
-                    surf_varoi=self.varoi_surf,
-                    plev_varoi=self.varoi_plev,
-                    verify_flag=self.verify_flag
-                )
-
+        Returns:
+            Path: the store
+        """
+        streams = {'all': ('plev', 'surf'), 'surf': ('surf',), 'plev': ('plev',)}.get(surf_plev.lower())
+        if streams is None:
+            raise ValueError(f'surf_plev must be all, surf or plev, not {surf_plev}')
+        clim = self.config.climate[self.config.project.climate]
+        source = clim.data_repository or 'cds'
+        if source not in ('cds', 'gdex'):
+            raise ValueError(f"Data repository {source} not supported: use cds or gdex")
+        if source == 'gdex' and clim.realtime:
+            raise ValueError('realtime needs ERA5T from the CDS: GDEX is updated months later')
+        if clim.cds_output_format not in [None, {}, 'netcdf']:
+            print(f'     cds_output_format={clim.cds_output_format} ignored: netcdf is downloaded and written to '
+                  f'the zarr store')
+        if clim.rm_daily:
+            print('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
+        extent = self.config.project.extent
+        return fetch_era5_to_zarr(self.config.project.start, self.config.project.end, self.config.climate.path,
+                                  latN=extent.get('latN') + 0.4, latS=extent.get('latS') - 0.4,
+                                  lonE=extent.get('lonE') + 0.4, lonW=extent.get('lonW') - 0.4,
+                                  step=clim.timestep or '1h', plevels=clim.plevels, streams=streams, source=source,
+                                  product=clim.product or 'reanalysis', zarr_store=clim.zarr_store or 'ERA5.zarr',
+                                  n_workers=clim.download_threads or None, plev_variables=self.varoi_plev,
+                                  surf_variables=self.varoi_surf, gdex_root=clim.gdex_root or None,
+                                  download_format=clim.cds_download_format or 'unarchived', verify=self.verify_flag)
 
     def get_era5_snowmapper(self, surf_plev, lastday):
         """
@@ -283,21 +207,7 @@ def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
     dp.to_zarr(zarrstore, mode='a',region='auto', align_chunks=True)
     dp = None
 
-def _standardize_era5(ds):
-    """Harmonize ERA5 netcdf files: CDS-beta dimension names, ERA5/ERA5T expver, ascending pressure levels."""
-    ds = ds.rename({k: v for k, v in {'valid_time': 'time', 'pressure_level': 'level'}.items()
-                    if k in ds.variables or k in ds.dims})
-    if 'expver' in ds.dims:
-        # ERA5 (first expver) completed by ERA5T for the most recent dates
-        parts = [ds.isel(expver=i, drop=True) for i in range(ds.sizes['expver'])]
-        merged = parts[0]
-        for part in parts[1:]:
-            merged = merged.combine_first(part)
-        ds = merged
-    ds = ds.drop_vars([c for c in ['number', 'expver'] if c in ds.variables])
-    if 'level' in ds.dims:
-        ds = ds.sortby('level')
-    return ds
+_standardize_era5 = es.standardize
 
 
 def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
@@ -450,6 +360,9 @@ def gdex_root(root=None):
     return GDEX_POSIX_ROOT if os.path.isdir(GDEX_POSIX_ROOT) else GDEX_OSDF_ROOT
 
 
+gdex_root_path = gdex_root
+
+
 def _is_remote(path):
     return str(path).startswith(('http://', 'https://'))
 
@@ -549,7 +462,10 @@ def _gdex_surf_an(root, short, stem, times, box):
 
 
 def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
-    """Write the daily file of one day (dSURF_ or dPLEV_), with the variables and layout of the CDS files."""
+    """
+    Write the file of one day and stream ('plev' or 'surf') to target, with the variables and layout of the CDS
+    files. The surface geopotential z_surf is added to surface files unless None.
+    """
     times = pd.date_range(day, periods=24, freq='1h')[::int(pd.Timedelta(step) / pd.Timedelta('1h'))]
     if kind == 'plev':
         out = {}
@@ -561,7 +477,8 @@ def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
     else:
         out = {name: _gdex_surf_an(root, short, stem, times, box) for name, (short, stem) in GDEX_SURF_AN.items()}
         out.update({name: _gdex_accumu(root, stem, times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
-        out['z'] = z_surf.expand_dims(time=times)
+        if z_surf is not None:
+            out['z'] = z_surf.expand_dims(time=times)
         ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact')
     ds = ds.drop_vars([c for c in ds.coords if c not in ('time', 'level', 'latitude', 'longitude')])
     ds.attrs = {'source': f'NCAR GDEX d633000 (ERA5), {root}'}
@@ -571,464 +488,229 @@ def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
     return str(target)
 
 
-def _gdex_day_star(args):
-    return _gdex_day(*args)
+# ---------------------------------------------------------------------------------------------------------------
+# ERA5 to the zarr store, month by month from the CDS or day by day from GDEX (see era5_store.py)
+# ---------------------------------------------------------------------------------------------------------------
+CDS_DATASETS = {'plev': 'reanalysis-era5-pressure-levels', 'surf': 'reanalysis-era5-single-levels',
+                'zsurf': 'reanalysis-era5-single-levels'}
+CDS_MAX_PARALLEL = 10   # requests of one user the CDS runs at the same time; more only wait in its queue
+_cds_local = threading.local()
 
 
-def retrieve_era5_gdex(startDate, endDate, eraDir, latN, latS, lonE, lonW, step='1h', surf_plev='all',
-                       plevels=None, num_processes=4, root=None, rm_daily=False):
-    """
-    Fetch ERA5 from NCAR GDEX (dataset d633000) instead of the CDS, into the same daily and yearly files.
+def _cds_client(verify=True):
+    """CDS client of the calling thread (one per thread, reused by its requests)."""
+    if getattr(_cds_local, 'client', None) is None or _cds_local.verify != verify:
+        _cds_local.client = cdsapi.Client(verify=verify, progress=False, quiet=True)
+        _cds_local.verify = verify
+    return _cds_local.client
 
-    Writes eraDir/daily/dSURF_YYYYMMDD.nc and dPLEV_YYYYMMDD.nc, then eraDir/yearly/SURF_YYYY.nc and PLEV_YYYY.nc,
-    with the variables, units and layout of the CDS files: z, t, u, v, q on pressure levels (ascending) and z, t2m,
-    d2m, sp, ssrd, strd, tp at the surface; latitude descending, longitude in -180..180. Accumulated fluxes are
-    over the hour ending at the time stamp, as on the CDS. Days already in eraDir/daily are skipped.
 
-    On NCAR systems the files are read from /gdex/data. Elsewhere they are read over HTTPS (OSDF), which needs
-    aiohttp. Pressure-level files are chunked as one global field per hour and per variable: whatever the size of
-    the box, about 1 GB per variable and day is transferred.
-
-    Args:
-        startDate, endDate: first and last day
-        eraDir (Path): climate folder
-        latN, latS, lonE, lonW (float): box [deg]
-        step (str): '1h', '3h' or '6h'
-        surf_plev (str): 'surf', 'plev' or 'all'
-        plevels (list): pressure levels [hPa]
-        num_processes (int): days fetched in parallel (processes, as HDF5 reads hold a global lock)
-        root (str): GDEX root (path or URL). Default: /gdex/data/d633000 if it exists, else OSDF over HTTPS
-        rm_daily (bool): remove the daily folder once merged into yearly files
-    """
-    root = gdex_root(root)
-    eraDir = Path(eraDir)
-    kinds = ['surf', 'plev'] if surf_plev == 'all' else [surf_plev.lower()]
-    if 'plev' in kinds and not plevels:
-        raise ValueError('plevels are required for pressure-level data')
-    days = pd.date_range(pd.Timestamp(startDate).normalize(), pd.Timestamp(endDate).normalize(), freq='D')
-    (eraDir / 'daily').mkdir(parents=True, exist_ok=True)
-    (eraDir / 'yearly').mkdir(parents=True, exist_ok=True)
-    box = (latN, latS, lonW, lonE)
-
-    jobs = [(kind, day, eraDir / 'daily' / f'd{kind.upper()}_{day:%Y%m%d}.nc') for kind in kinds for day in days]
-    todo = [j for j in jobs if not j[2].is_file()]
-    print(f'---> ERA5 from NCAR GDEX ({root}): {len(todo)} daily files to fetch, {len(jobs) - len(todo)} present')
-    if _is_remote(root) and any(k == 'plev' for k, _, _ in todo):
-        n = sum(k == 'plev' for k, _, _ in todo) / (pd.Timedelta(step) / pd.Timedelta('1h'))
-        print(f'     Pressure levels are stored as global hourly fields: about {5 * n:.0f} GB to transfer '
-              f'whatever the size of the domain. On NCAR systems they are read locally')
-
-    z_surf = None
-    if any(k == 'surf' for k, _, _ in todo):
-        z_surf = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
-                            lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
-    args = [(root, kind, day, step, box, plevels, z_surf, target) for kind, day, target in todo]
-    if num_processes and num_processes > 1 and len(args) > 1:
-        from multiprocessing import get_context
-        with get_context('spawn').Pool(min(num_processes, len(args))) as pool:
-            for f in pool.imap_unordered(_gdex_day_star, args):
-                print(f'     {Path(f).name}')
+def cds_request(task, variables, area, step, plevels=None, product='reanalysis', download_format='unarchived'):
+    """CDS API request of a task: its days (one month at most), all time steps, the box on the 0.25 deg grid."""
+    days = sorted(task.days)
+    if task.stream == 'zsurf':
+        days, hours = days[:1], ['00:00']
     else:
-        for a in args:
-            print(f'     {Path(_gdex_day(*a)).name}')
-
-    for kind in kinds:
-        for year in sorted(set(days.year)):
-            _merge_daily_year(eraDir, kind, year)
-    if rm_daily:
-        shutil.rmtree(eraDir / 'daily')
-        print('---> Daily files removed')
-    print('===> ERA5 netcdf files ready')
-
-
-def _merge_daily_year(eraDir, kind, year):
-    """Concatenate the daily files of one year into yearly/SURF_YYYY.nc or PLEV_YYYY.nc, file by file."""
-    prefix = kind.upper()
-    files = sorted((Path(eraDir) / 'daily').glob(f'd{prefix}_{year:04d}*.nc'))
-    if not files:
-        return
-    parts = []
-    for f in files:
-        with xr.open_dataset(f) as ds:
-            parts.append(_standardize_era5(ds).load())
-    out = Path(eraDir) / 'yearly' / f'{prefix}_{year:04d}.nc'
-    xr.concat(parts, dim='time').sortby('time').to_netcdf(out)
-    print(f'---> {out.name} written from {len(files)} daily files')
+        hours = [f'{h:02d}:00' for h in range(0, 24, es.STEP_HOURS[step])]
+    if len({(d.year, d.month) for d in days}) > 1:
+        raise ValueError(f'{task.key}: a CDS request covers one month at most')
+    request = {'product_type': [product], 'variable': list(variables), 'year': [f'{days[0].year}'],
+               'month': [f'{days[0].month:02d}'], 'day': [f'{d.day:02d}' for d in days], 'time': hours,
+               'area': [float(a) for a in area], 'grid': [es.GRID, es.GRID], 'data_format': 'netcdf',
+               'download_format': download_format}
+    if task.stream == 'plev':
+        request['pressure_level'] = [str(int(p)) for p in sorted(plevels)]
+    return request
 
 
-def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, step, 
-                    num_threads=10, surf_plev='surf', plevels=None, realtime=False, 
-                    output_format='netcdf', download_format="unarchived", new_CDS_API=True, 
-                    rm_daily=False, surf_varoi=None, plev_varoi=None, verify_flag=True):
-    """ Sets up era5 surface retrieval.
-    * Creates list of year/month pairs to iterate through.
-    * MARS retrievals are most efficient when subset by time.
-    * Identifies preexisting downloads if restarted.
-    * Calls api using parallel function.
+def _cds_cost_limit(e):
+    text = str(e).lower()
+    return 'cost limits exceeded' in text or 'request is too large' in text
 
-    Args:
-        product: "reanalysis" (HRES) or "ensemble_members" (EDA)
-        startDate:
-        endDate:
-        eraDir: directory to write output
-        latN: north latitude of bbox
-        latS: south latitude of bbox
-        lonE: easterly lon of bbox
-        lonW: westerly lon of bbox
-        step: timestep to use: 1, 3, 6
-        num_threads: number of threads to use for downloading data
-        surf_plev: download surface single level or pressure level product: 'surf' or 'plev'
-        output_format (str): default is "netcdf", can be "grib".
-        download_format (str): default "unarchived". Can be "zip"
-        new_CDS_API: flag to handle new formating of SURF files with the new CDS API (2024).
-        rm_daily: remove folder containing all daily ERA5 file. Option to clear space of data converted to yearly files.
-        surf_varoi: list of surface variable to download. Default is None, automatically assigning minimum required for the downscaling
-        plev_varoi: list of pressure level variables to download. . Default is None, automatically assigning minimum required for the downscaling
-        verify_flag: bypass ssl certifcate flag. Default must be True
-        
-    Returns:
-        Monthly era surface files stored in disk.
 
+def _cds_fatal(e):
+    """Errors that a new attempt does not cure: client errors (4xx) except timeouts and rate limits."""
+    status = getattr(getattr(e, 'response', None), 'status_code', None)
+    return _cds_cost_limit(e) or (status is not None and 400 <= status < 500 and status not in (408, 429))
+
+
+def _container(path):
+    """'nc' or 'zip' from the first bytes of a download; IOError for anything else (an error page, a cut file)."""
+    path = Path(path)
+    with open(path, 'rb') as f:
+        head = f.read(8)
+    if head.startswith(b'\x89HDF') or head.startswith(b'CDF'):
+        return 'nc'
+    if zipfile.is_zipfile(path):
+        return 'zip'
+    raise IOError(f'{path.name} is not a netCDF or zip file (starts with {head!r})')
+
+
+def _cds_download(dataset, request, stem, verify):
+    """Retrieve to stem.part; renamed stem.nc or stem.zip once complete, so a cut download is never taken as done."""
+    part = Path(f'{stem}.part')
+    _cds_client(verify).retrieve(dataset, request, str(part))
+    final = Path(f'{stem}.{_container(part)}')
+    os.replace(part, final)
+    return final
+
+
+def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_format, verify, retries,
+               retry_wait, stem=None):
     """
-    print('\n')
-    print('---> Loading ERA5 {} climate forcing'.format(surf_plev))
-    bbox = [str(latN), str(lonW), str(latS), str(lonE)]
-    time_step_dict = {'1h': ['00:00', '01:00', '02:00',
-                             '03:00', '04:00', '05:00',
-                             '06:00', '07:00', '08:00',
-                             '09:00', '10:00', '11:00',
-                             '12:00', '13:00', '14:00',
-                             '15:00', '16:00', '17:00',
-                             '18:00', '19:00', '20:00',
-                             '21:00', '22:00', '23:00'],
-                    '3h': ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
-                    '6h': ['00:00', '06:00', '12:00', '18:00']}
-
-    df = pd.DataFrame()
-    # date_range will make sure to include the month of the latest date (endDate) provided
-    #df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
-    df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate), freq='D', inclusive='both')
-    df['month'] = df.dates.dt.month
-    df['day'] = df.dates.dt.day
-    df['year'] = df.dates.dt.year
-
-    os.makedirs(eraDir / "daily", exist_ok=True)
-
-    if surf_plev.lower() == 'surf':
-        df['dataset'] = 'reanalysis-era5-single-levels'
-        if output_format == "netcdf":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dSURF_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
-        if output_format == "grib":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dSURF_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
-    
-    elif surf_plev.lower() == 'plev':
-        df['dataset'] = 'reanalysis-era5-pressure-levels'
-        if output_format == "netcdf":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dPLEV_%04d%02d%02d.nc" % (x.year, x.month, x.day)))
-        if output_format == "grib":
-            df['target_file'] = df.dates.apply(lambda x: eraDir / "daily" / ("dPLEV_%04d%02d%02d.grib" % (x.year, x.month, x.day)))
-        loc_list = []
-        loc_list.extend([plevels]*df.shape[0])
-        df['plevels'] = loc_list
-    
-    else:
-        sys.exit('ERROR: surf_plev can only be surf or plev')
-    
-    df['file_exist'] = 0
-    df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
-
-    # if file does not exist, check if data already combined into yearly netcdf
-    print("TBI: automatically check if daily data already in yearly concatenated netcdf files")
-    print("--- If data already dowloaded, do not fetch data ")
-
-    df['step'] = step
-    df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
-    df['bbox'] = df.step.apply(lambda x: bbox)
-    df['product_type'] = product
-    df['output_format'] = output_format
-    df['download_format'] = download_format
-    df['verify_flag'] = verify_flag
-
-    if surf_varoi is None:
-        surf_varoi = ['geopotential', 
-                    '2m_dewpoint_temperature',
-                    'surface_thermal_radiation_downwards',
-                    'surface_solar_radiation_downwards',
-                    'surface_pressure',
-                    'total_precipitation',
-                    '2m_temperature']
-    if plev_varoi is None: 
-        plev_varoi = ['geopotential',
-                 'temperature',
-                 'u_component_of_wind',
-                 'v_component_of_wind',
-                 'specific_humidity',
-                 'relative_humidity']
-    df['surf_varoi'] = df.step.apply(lambda x: surf_varoi)
-    df['plev_varoi'] = df.step.apply(lambda x: plev_varoi)
-
-    print("Start = ", df.dates[0].strftime('%Y-%m-%d'))
-    print("End = ", df.dates[len(df.dates) - 1].strftime('%Y-%m-%d'))
-
-    if df.file_exist.sum() > 0:
-        print("ECWMF daily {} data found:".format(surf_plev.upper()))
-        print(df.target_file.loc[df.file_exist == 1].apply(lambda x: x.name))
-
-    if (df.file_exist == 0).sum() > 0:
-        print("Downloading daily {} from ECWMF:".format(surf_plev.upper()))
-        print(df.target_file.loc[df.file_exist == 0].apply(lambda x: x.name))
-
-    download = df.loc[df.file_exist == 0]
-    if download.shape[0] > 0:
-        if surf_plev == 'surf':
-            pool = ThreadPool(num_threads)
-            pool.starmap(era5_request_surf, zip(list(download.dataset),
-                                                list(download.year),
-                                                list(download.month),
-                                                list(download.day),
-                                                list(download.bbox),
-                                                list(download.target_file),
-                                                list(download.product_type),
-                                                list(download.time_steps),
-                                                list(download.verify_flag),
-                                                list(download.output_format),
-                                                list(download.download_format),
-                                                list(download.surf_varoi),))
-            pool.close()
-            pool.join()
-        elif surf_plev == 'plev':
-            pool = ThreadPool(num_threads)
-            pool.starmap(era5_request_plev, zip(list(download.dataset),
-                                                list(download.year),
-                                                list(download.month),
-                                                list(download.day),
-                                                list(download.bbox),
-                                                list(download.target_file),
-                                                list(download.product_type),
-                                                list(download.time_steps),
-                                                list(download.plevels),
-                                                list(download.verify_flag),
-                                                list(download.output_format),
-                                                list(download.download_format),
-                                                list(download.plev_varoi)))
-            pool.close()
-            pool.join()
+    Download a task to raw_dir (runs in a worker thread: no netCDF reading here). Files left by an interrupted run
+    are reused. A request over the CDS cost limit is split in two, by days, then by variables.
+    """
+    stem = Path(stem or Path(raw_dir) / task.key)
+    for ext in ('nc', 'zip'):
+        if Path(f'{stem}.{ext}').is_file():
+            return [Path(f'{stem}.{ext}')]
+    request = cds_request(task, variables, area, step, plevels, product, download_format)
+    try:
+        return [es.retry(lambda: _cds_download(CDS_DATASETS[task.stream], request, stem, verify), retries,
+                         retry_wait, fatal=_cds_fatal, label=stem.name)]
+    except Exception as e:
+        if not _cds_cost_limit(e):
+            raise
+        if len(task.days) > 1:
+            k = len(task.days) // 2
+            parts = [(es.Task(task.key, task.stream, task.days[:k]), variables),
+                     (es.Task(task.key, task.stream, task.days[k:]), variables)]
+        elif len(variables) > 1:
+            k = len(variables) // 2
+            parts = [(task, variables[:k]), (task, variables[k:])]
         else:
-            sys.exit('ERROR: surf_plev can only be surf or plev')
-        #else:
-        #	sys.exit('ERROR: Some forcing files are missing given the date range provided\n ---> or implement a method to modify start/end date of project to file available')
-
-    if realtime:
-        if surf_plev == 'surf':
-            # redownload current month to catch missing days in realtime mode.
-            era5_realtime_surf(eraDir / "daily", df.dataset[0], df.bbox[0], df.product_type[0])
-
-        if surf_plev == 'plev':
-            # redownload current month to catch missing days in realtime mode.
-            era5_realtime_plev(eraDir / "daily", df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
-
-    if new_CDS_API:
-        # Since mid-2024, CDS API has changed variable name and the way it packages SURF variables. 
-        # These two functions apply a small post process to get things in order.
-        if surf_plev == 'surf':
-            remap_CDSbeta(str(eraDir / "daily" / "dSURF*.nc"), file_type='surf')
-        if surf_plev == 'plev':
-            remap_CDSbeta(str(eraDir / "daily" / "dPLEV*.nc"), file_type='plev')
-
-    # code to merge daily files to monthly
-    # - [ ] write option earlier that checks also if monthly files already exist. improve logic that does not require to have both monthly and daily files
-    cdo = Cdo()
-    for year in df.year.unique():
-        print(f"---> Merging daily {surf_plev.upper()} files from {year} to yearly file")
-        
-        if surf_plev == 'surf':
-            fpat = str(eraDir / "daily" / ("dSURF_%04d*.nc" % (year)))
-            fout = str(eraDir / "yearly" / ("SURF_%04d.nc" % (year)))
+            raise
+        print(f'     {stem.name}: over the CDS cost limit, split in two requests')
+        return [f for i, (t, v) in enumerate(parts)
+                for f in _cds_fetch(t, raw_dir, v, area, step, plevels, product, download_format, verify, retries,
+                                    retry_wait, stem=f'{stem}_{i}')]
 
 
-            try:
-                cdo.mergetime(input=fpat, output=fout)
-            except Exception as e:
-                print(f"CDO warning (non-fatal): {e}")
-                # Check if output file was actually created despite warnings
-                if os.path.exists(fout):
-                    print(f"Merge completed successfully: {fout}")
-                else:
-                    raise e  # Re-raise if it's a real error
+def _cds_fetch_task(task, plev_variables, surf_variables, **kwargs):
+    variables = {'plev': plev_variables, 'surf': surf_variables, 'zsurf': ['geopotential']}[task.stream]
+    return _cds_fetch(task, variables=variables, **kwargs)
 
 
+def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait):
+    """Read a task from GDEX and write it to raw_dir (runs in a spawned process, HDF5 reads hold a global lock)."""
+    target = Path(raw_dir) / f'{task.key}.nc'
+    if target.is_file():
+        return [target]
+    n, w, s, e = area
+    box = (n, s, w, e)
 
-        if surf_plev == 'plev':
-            fpat = str(eraDir / "daily" / ("dPLEV_%04d*.nc" % (year)))
-            fout = str(eraDir / "yearly" / ("PLEV_%04d.nc" % (year)))
-
-            try:
-                cdo.mergetime(input=fpat, output=fout)
-            except Exception as e:
-                print(f"CDO warning (non-fatal): {e}")
-                # Check if output file was actually created despite warnings
-                if os.path.exists(fout):
-                    print(f"Merge completed successfully: {fout}")
-                else:
-                    raise e  # Re-raise if it's a real error
-            
-
-    if rm_daily:
-        try:
-            shutil.rmtree(eraDir / "daily")
-            print('---> Daily files removed')
-        except:
-            raise IOError('deletion of daily files issue')
-
-    print("===> ERA5 netcdf files ready")
+    def get():
+        if task.stream != 'zsurf':
+            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target))
+        z = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
+                       lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
+        tmp = Path(f'{target}.part')
+        z.rename('z').to_dataset().drop_vars([c for c in z.coords if c not in z.dims]).to_netcdf(tmp)
+        os.replace(tmp, target)
+        return target
+    return [es.retry(get, retries, retry_wait, fatal=lambda e: isinstance(e, (FileNotFoundError, KeyError,
+                                                                                 ValueError)), label=task.key)]
 
 
-def era5_request_surf(dataset, year, month, day, bbox, target, product, time, verify_flag=True, output_format= "netcdf", download_format="unarchived", varoi=None):
-    """CDS surface api call
+def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', plevels=None, streams=('plev', 'surf'),
+                       source='cds', product='reanalysis', zarr_store='ERA5.zarr', n_workers=None,
+                       plev_variables=None, surf_variables=None, gdex_root=None, download_format='unarchived',
+                       verify=True, retries=3, retry_wait=60., time_chunk=720):
+    """
+    Fetch ERA5 for a period and a box into the zarr store eraDir/zarr_store, read by the downscaling.
+
+    From the CDS, one request per stream and month (as ECMWF advises), at most 10 at a time (the CDS per-user limit).
+    From NCAR GDEX, one day per stream and task, read in spawned processes. Workers only download; the main thread
+    reads each file as it arrives, checks it and writes it to the store (see era5_store.py). The surface geopotential
+    is fetched once. Time steps already in the store are skipped, so an interrupted or failed run is completed by
+    running again, and a longer period only fetches what is new. Data of the earlier layout (yearly/PLEV_*.nc,
+    daily/dPLEV_*.nc...) are read instead of downloaded again.
 
     Args:
-        dataset (str): copernicus dataset (era5)
-        year (str or list): year of interest
-        month (str or list): month of interest
-        bbox (list): bonding box in lat-lon
-        target (str): filename
-        product (str): type of model run. defaul: reanalysis
-        time (str or list): hours for which to download data
-        output_format (str): default is "netcdf", can be "grib".
-        download_format (str): default "unarchived". Can be "zip"
-        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
+        start, end: first and last day
+        eraDir (Path): climate folder
+        latN, latS, lonE, lonW (float): box [deg], reduced to the nodes of the 0.25 deg grid inside it
+        step (str): '1h', '3h' or '6h'
+        plevels (list): pressure levels [hPa]
+        streams (list): 'plev' and/or 'surf'
+        source (str): 'cds' or 'gdex'
+        product (str): CDS product type, 'reanalysis'
+        zarr_store (str): store name in eraDir
+        n_workers (int): parallel downloads. Default 8 for the CDS (at most 10), 4 processes for GDEX
+        plev_variables, surf_variables (list): CDS variable names. Default: what the downscaling reads
+        gdex_root (str): GDEX root (path or URL). Default: /gdex/data/d633000 if it exists, else OSDF over HTTPS
+        download_format (str): CDS download format, 'unarchived' or 'zip' (both are read)
+        verify (bool): verify the SSL certificate of the CDS
+        retries (int): new attempts of a failed download, after retry_wait, 2 retry_wait, 4 retry_wait... seconds
+        retry_wait (float): seconds before the first new attempt
+        time_chunk (int): time steps per chunk of the store
 
     Returns:
-        Store to disk dataset as indicated
+        Path: the store
 
-    TODO: 
-    - [ ] change SURF request to the ZARR repository for timeseries retrieval.
-
+    Raises RuntimeError listing the downloads that failed, once all others are in the store.
     """
-    if varoi is None:
-        varoi = ['geopotential', 
-                    '2m_dewpoint_temperature',
-                    'surface_thermal_radiation_downwards',
-                    'surface_solar_radiation_downwards','surface_pressure',
-                    'total_precipitation',
-                    '2m_temperature']
-    
-    c = cdsapi.Client(verify=verify_flag)
-    c.retrieve(
-        dataset,
-        {'variable': varoi,
-         'product_type': [product],
-         "area": bbox,
-         'year': year,
-         'month': '%02d'%(month),
-         'day': '%02d'%(day),
-         'time': time,
-         'grid': "0.25/0.25",
-         'data_format': output_format,
-         'download_format': download_format
-         },
-        target)
-    print(str(target) + " complete")
-    unzip_file(str(target))
+    eraDir = Path(eraDir)
+    streams = [s for s in es.STREAMS if s in streams]
+    if source not in ('cds', 'gdex'):
+        raise ValueError(f'ERA5 source {source} not supported: use cds or gdex')
+    if step not in es.STEP_HOURS:
+        raise ValueError(f'step {step} not supported, use 1h, 3h or 6h')
+    if 'plev' in streams and not plevels:
+        raise ValueError('plevels are required for pressure-level data')
+    if source == 'gdex':
+        if product not in [None, 'reanalysis']:
+            raise ValueError(f'GDEX only holds the ERA5 reanalysis, not {product}')
+        if (plev_variables and list(plev_variables) != es.PLEV_VARIABLES) or \
+                (surf_variables and [v for v in surf_variables if v != 'geopotential'] != es.SURF_VARIABLES):
+            raise ValueError('GDEX gives the variables of the downscaling only: leave varoi_plev and varoi_surf empty')
+    area = es.snap_area(latN, latS, lonW, lonE)
+    plev_variables = list(plev_variables or es.PLEV_VARIABLES)
+    # the surface geopotential is static: fetched once, not with every month
+    surf_variables = [v for v in (surf_variables or es.SURF_VARIABLES)
+                      if v not in ('geopotential', 'geopotential_at_surface')]
+    request = {'product': product, 'area': area, 'levels': sorted(float(p) for p in (plevels or [])),
+               'timestep': step, 'plev_variables': plev_variables, 'surf_variables': surf_variables}
+    store = es.Era5Store(eraDir / zarr_store, request, es.time_axis(start, end, step), time_chunk=time_chunk)
 
+    make_tasks = es.month_tasks if source == 'cds' else es.day_tasks
+    tasks = ([es.Task('zsurf', 'zsurf', (pd.Timestamp(start).normalize(),))] if 'surf' in streams else []) \
+        + make_tasks(start, end, streams)
+    todo = store.missing(tasks)
+    print(f'---> ERA5 from {source.upper()} to {store.path}: {len(todo)} of {len(tasks)} downloads to do '
+          f'(box N{area[0]} W{area[1]} S{area[2]} E{area[3]})')
+    todo = es.import_legacy(store, todo, es.LegacyFiles(eraDir), area, plev_variables, surf_variables)
+    if not todo:
+        print(f'===> {store.path.name} complete')
+        return store.path
 
-def era5_request_plev(dataset, year, month, day, bbox, target, product, time, plevels, verify_flag=True, output_format= "netcdf", download_format="unarchived", varoi=None):
-    """CDS plevel api call
-
-    Args:
-        dataset (str): copernicus dataset (era5)
-        year (str or list): year of interest
-        month (str or list): month of interest
-        bbox (list): bonding box in lat-lon
-        target (str): filename
-        product (str): type of model run. defaul: reanalysis
-        time (str or list): hours to query
-        plevels (str or list): pressure levels to query
-        output_format (str): default is "netcdf", can be "grib".
-        download_format (str): default "unarchived". Can be "zip"
-        varoi (list): list of variable of interest to download. Default to None which fallsback to minimum needed for TPS
-
-    Returns:
-        Store to disk dataset as indicated
-
-    """
-    if varoi is None:
-        varoi = ['geopotential',
-                 'temperature',
-                 'u_component_of_wind',
-                 'v_component_of_wind',
-                 'specific_humidity',
-                 'relative_humidity']
-
-
-    c = cdsapi.Client(verify=verify_flag)
-    c.retrieve(
-        dataset,
-        {
-            'product_type': [product],
-            "area": bbox,
-            'variable': varoi,
-            'pressure_level': plevels,
-            'year': year,
-            'month': '%02d'%(month),
-            'day': '%02d'%(day),
-            'time': time,
-            'grid': "0.25/0.25",
-            'data_format': output_format,
-            'download_format': download_format
-        },
-        target)
-    print(str(target) + " complete")
-    unzip_file(str(target))
-
-
-
-def era5_realtime_surf(eraDir, dataset, bbox, product ):
-    # a small routine thaty simply redownloads the current month
-    # this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
-    # a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
-
-    # get current month
-    currentMonth = datetime.now().month
-    currentYear = datetime.now().year
-    print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
-
-    time = ['00:00', '01:00', '02:00',
-                             '03:00', '04:00', '05:00',
-                             '06:00', '07:00', '08:00',
-                             '09:00', '10:00', '11:00',
-                             '12:00', '13:00', '14:00',
-                             '15:00', '16:00', '17:00',
-                             '18:00', '19:00', '20:00',
-                             '21:00', '22:00', '23:00']
-
-    target = str(eraDir / "SURF_%04d%02d.nc" % (currentYear, currentMonth))
-    era5_request_surf(dataset, currentYear, currentMonth, bbox, target, product, time)
-
-
-def era5_realtime_plev(eraDir, dataset, bbox, product,plevels ):
-    # a small routine thaty simply redownloads the current month
-    # this is a simple (not most efficient) way of ensuring we have latest data for realtime applications
-    # a better way woulfd be to compare date that data is available for with date in latest files, download the difference and append - tobe implemented!
-
-    # get current month
-    currentMonth = datetime.now().month
-    currentYear = datetime.now().year
-    print("Running realtime download " + str(currentYear) + "_" + str(currentMonth))
-
-    time = ['00:00', '01:00', '02:00',
-                             '03:00', '04:00', '05:00',
-                             '06:00', '07:00', '08:00',
-                             '09:00', '10:00', '11:00',
-                             '12:00', '13:00', '14:00',
-                             '15:00', '16:00', '17:00',
-                             '18:00', '19:00', '20:00',
-                             '21:00', '22:00', '23:00']
-
-    target = str(eraDir / "PLEV_%04d%02d.nc" % (currentYear, currentMonth))
-    plevels = plevels
-    era5_request_plev(dataset, currentYear, currentMonth, bbox, target, product, time, plevels)
-
+    raw = eraDir / 'raw'
+    raw.mkdir(parents=True, exist_ok=True)
+    if source == 'cds':
+        n = int(n_workers or 8)
+        if n > CDS_MAX_PARALLEL:
+            print(f'     download_threads={n}: the CDS runs {CDS_MAX_PARALLEL} requests of a user at a time and '
+                  f'lowers the priority of users sending more. Using {CDS_MAX_PARALLEL}')
+            n = CDS_MAX_PARALLEL
+        _cds_client(verify)   # a missing or wrong ~/.cdsapirc fails here, before any thread starts
+        fetch = functools.partial(_cds_fetch_task, plev_variables=plev_variables, surf_variables=surf_variables,
+                                  raw_dir=raw, area=area, step=step, plevels=plevels, product=product,
+                                  download_format=download_format, verify=verify, retries=retries,
+                                  retry_wait=retry_wait)
+        es.run(store, todo, fetch, n_workers=n, processes=False)
+    else:
+        root = gdex_root_path(gdex_root)
+        if _is_remote(root) and any(t.stream == 'plev' for t in todo):
+            n_days = sum(t.stream == 'plev' for t in todo) / es.STEP_HOURS[step]
+            print(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
+                  f'whatever the size of the domain. On NCAR systems they are read locally')
+        fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
+                                  retries=retries, retry_wait=retry_wait)
+        es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
+    shutil.rmtree(raw, ignore_errors=True)
+    print(f'===> {store.path.name} complete')
+    return store.path
 
 
 def return_last_fullday():
@@ -1038,7 +720,7 @@ def return_last_fullday():
 
 
     # Get current UTC time
-    current_time_utc = datetime.utcnow()
+    current_time_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Round down to the nearest hour
     rounded_time_utc = current_time_utc.replace(minute=0, second=0, microsecond=0)
@@ -1065,137 +747,51 @@ def return_last_fullday():
     return six_days_ago_utc
 
 
-def grib2netcdf(gribname, outname=None):
-    """
-    Function to convert grib file to netcdf
-
-    Args:
-        gribname: filename fo grib file to convert
-    """
-    if outname is None:
-        outname = gribname[:-5] + ".nc"
-
-    cdo = Cdo()
-    cdo.copy(option='-f nc4', input=gribname, output=outname)
-
-
 def unzip_file(file_path):
     """
-    Function to unpack and repack as NETCDF data sent by the new CDS API. CDS can send either weird zip file shipped as netcdf file for Surface data. 
-    The option of zip format can be used to download the data. 
-    
+    Repack as one netCDF file, in place, a CDS download that is a zip of netCDF files (the CDS sends one for surface
+    fields of different kinds, instantaneous and accumulated). The result is standardized (see remap_CDSbeta) and
+    named like the input with the .nc extension. A netCDF file is left unchanged.
+
     Args:
-        file_path: path of era5 data. Typically in TopoPyScale project it will be at: ./inputs/climate/daily
+        file_path (str): downloaded file
+
+    Returns:
+        str: path of the netCDF file
     """
-        
-    # Step 1: Try to open as a NetCDF file
-    try:
-        with xr.open_dataset(file_path) as ds:
-            print(f"{file_path} is a valid NetCDF file. No processing needed.")
-
-    except Exception:
-        print(f"{file_path} is not a valid NetCDF file. Checking if it's a ZIP file.")
-    
-        # Step 2: Check if it's a ZIP file
-        if zipfile.is_zipfile(file_path):
-            if file_path[-3:]=='.nc':
-                print(f"{file_path} is neither a valid NetCDF nor a ZIP file.")
-            
-                # Step 3: Rename the file if it's actually a ZIP
-                zip_file_path = file_path.replace('.nc', '.zip')
-                os.rename(file_path, zip_file_path)
-                print(f"Renamed {file_path} to {zip_file_path} for processing.")
-        
-            # Step 4: Unzip the file
-            unzip_dir = zip_file_path.replace('.zip', '')
-            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-                zip_ref.extractall(unzip_dir)
-            print(f"Unzipped {zip_file_path} to {unzip_dir}.")
-            
-            # Step 5: Merge `.nc` files inside the unzipped directory
-            nc_files = [os.path.join(unzip_dir, f) for f in os.listdir(unzip_dir) if f.endswith('.nc')]
-            if not nc_files:
-                print(f"No .nc files found in {unzip_dir}.")
-                return
-            
-            merged_file_path = os.path.join(os.path.dirname(zip_file_path), os.path.basename(zip_file_path).replace('.zip', '.nc'))
-            try:
-                # Combine all `.nc` files
-                datasets = [xr.open_dataset(nc_file).load() for nc_file in sorted(nc_files)]
-                merged_ds = xr.merge(datasets, compat='override')  # override conflicting metadata like 'expver'
-                [d.close() for d in datasets]
-                merged_ds.to_netcdf(merged_file_path)
-                print(f"Merged .nc files into {merged_file_path}.")
-            except:
-                raise IOError("Unzipping failing.")
-
-            # Step 6: Clean up
-            os.remove(zip_file_path)
-            shutil.rmtree(unzip_dir)
-            print(f"Deleted {zip_file_path} and {unzip_dir}.")
+    path = Path(file_path)
+    if not zipfile.is_zipfile(path):
+        return str(path)
+    ds = es.open_raw([path])
+    out = path.with_suffix('.nc')
+    tmp = path.with_name(path.name + '.part')
+    ds.to_netcdf(tmp)
+    if path != out:
+        path.unlink()
+    os.replace(tmp, out)
+    print(f'---> {path.name} unzipped to {out.name}')
+    return str(out)
 
 
 def remap_CDSbeta(file_pattern, file_type='SURF'):
     """
-    Remapping of variable names from CDS beta to CDS legacy standard.
-    
+    Rewrite netCDF files of the CDS with the names of the earlier CDS (time, level), ascending levels, and without
+    the number and expver coordinates (see era5_store.standardize). Files already remapped are left as they are.
+
     Args:
-        file_pattern (str): path and pattern of the file to be remapped. example: 'inputs/climate/daily/dSURF_*.nc'
-        file_type (str): type of file: SURF or PLEV.  
+        file_pattern (str): path and pattern of the files, e.g. 'inputs/climate/daily/dSURF_*.nc'
+        file_type (str): SURF or PLEV (kept for compatibility, both are handled the same way)
     """
-
-    flist = glob.glob(file_pattern)
-
-    if file_type.lower() == 'plev':
-        for nc_file in flist:
-            try:
-                ds = xr.open_dataset(nc_file)
-                ds = ds.rename({ 'pressure_level': 'level', 'valid_time' : 'time'})
-                ds = ds.sortby('level', ascending=True)  # sort levels ascending (300 to 1000)
-
-                try:
-                    ds = ds.drop_vars('number')
-                except:
-                    print("Coordinate 'number' not found")
-
-                try:
-                    ds = ds.drop_vars('expver')
-                except:
-                    print("Coordinate 'expver' not found")
-
-                ds.to_netcdf(nc_file+ "_remap", mode='w')
-                # move remap back to orig name
-                os.rename(nc_file + "_remap", nc_file)
-            except:
-                print(nc_file+" already remapped or fc file.")
-
-    if file_type.lower() == 'surf':
-        for nc_file in flist:
-            try:
-                ds = xr.open_dataset(nc_file)
-                ds = ds.rename({ 'valid_time' : 'time'})
-
-                try:
-                    ds = ds.drop_vars('number')
-                except:
-                    print("Coordinate 'number' not found")
-
-                try:
-                    ds = ds.drop_vars('expver')
-                except:
-                    print("Coordinate 'expver' not found")
-
-                ds.to_netcdf(nc_file + "_remap", mode='w')
-                # move remap back to orig name
-                os.rename(nc_file + "_remap", nc_file)
-
-            except:
-                print(nc_file+" already remapped or fc file.")
-
-
-
-
-
+    for nc_file in sorted(glob.glob(str(file_pattern))):
+        with xr.open_dataset(nc_file) as ds:
+            renamed = any(n in ds.variables or n in ds.dims for n in ('valid_time', 'pressure_level', 'number',
+                                                                     'expver'))
+            out = es.standardize(ds).load() if renamed else None
+        if out is None:
+            continue
+        tmp = nc_file + '.part'
+        out.to_netcdf(tmp)
+        os.replace(tmp, nc_file)
 
 
 def era5_request_surf_snowmapper( today, latN, latS, lonE, lonW, eraDir, output_format= "netcdf"):

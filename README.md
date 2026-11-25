@@ -179,9 +179,7 @@ my_project/
             ├── my_dem.tif
             └── pts_list.csv  (optional)
         └── climate/
-            └── yearly/
-                ├── PLEV*.nc
-                └── SURF*.nc
+            └── ERA5.zarr     (written by mp.get_era5())
     ├── outputs/
     └── config.ini
 ```

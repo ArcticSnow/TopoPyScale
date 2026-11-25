@@ -26,6 +26,7 @@ from pathlib import Path
 
 from TopoPyScale import fetch_dem as fd
 from TopoPyScale import fetch_era5 as fe
+from TopoPyScale import era5_store as es
 from TopoPyScale import solar_geom as sg
 from TopoPyScale import topo_export as te
 from TopoPyScale import topo_obs as tpo
@@ -627,9 +628,20 @@ class Topoclass(object):
         return self.config.outputs.file.zarr_store or 'down.zarr'
 
     def _climate_store(self):
-        """Path of the climate zarr store; converted from the netcdf files of the climate folder if missing."""
+        """
+        Path of the climate zarr store. A store written by get_era5() must cover the project period without gaps.
+        Otherwise the store is converted from the netcdf files of the climate folder when missing, or when it does
+        not cover the project period.
+        """
         name = self.config.climate[self.config.project.climate].zarr_store or 'ERA5.zarr'
         store = self.config.climate.path / name
+        if store.exists():
+            gaps = es.store_gaps(store, self.config.project.start, self.config.project.end)
+            if gaps:
+                raise ValueError(f'{name} lacks {", ".join(gaps)} of the project period. Run mp.get_era5() again: '
+                                 f'it fetches only what is missing')
+            if gaps is not None:
+                return store
         nc_dir = fe.climate_netcdf_dir(self.config.climate.path)
         rebuild = not store.exists()
         if store.exists() and list(nc_dir.glob('PLEV_*.nc')):

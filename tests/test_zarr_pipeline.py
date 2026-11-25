@@ -83,6 +83,19 @@ def test_netcdf_to_zarr(case, cds_beta, tmp_path):
         np.testing.assert_allclose(ds[v].transpose(*ref[v].dims).values, ref[v].values, rtol=1e-6, err_msg=v)
 
 
+def test_static_z_surf(case, rows, inputs, tmp_path):
+    """A store with z_surf (latitude, longitude), as era5_store writes it, downscales as one with z_surf over time."""
+    _, ds_solar, hor = inputs
+    ref = quiet(syn.run_zarr, case, rows, ds_solar, hor, tmp_path / 'ref', lw_terrain=True, precip_lapse=True)
+    ds = xr.open_zarr(syn.era5_store(case, tmp_path / 'ref')).load()
+    ds['z_surf'] = ds.z_surf.isel(time=0, drop=True)
+    (tmp_path / 'static').mkdir()
+    ds.to_zarr(tmp_path / 'static' / 'ERA5.zarr', zarr_format=3)
+    out = quiet(syn.run_zarr, case, rows, ds_solar, hor, tmp_path / 'static', lw_terrain=True, precip_lapse=True)
+    for v in VARS:
+        np.testing.assert_allclose(out[v].values, ref[v].values, rtol=1e-6, atol=1e-6, err_msg=v)
+
+
 def test_read_downscaled(case, rows, inputs):
     wd, ds_solar, hor = inputs
     quiet(syn.run_zarr, case, rows, ds_solar, hor, wd, store_name='read.zarr')

@@ -11,11 +11,7 @@ my_project/
             ├── my_dem_groups.tif   (OPTIONAL: to delineate groups of clusters)
             └── pts_list.csv        (OPTIONAL: to downscale to specific points)
         └── climate/                (climate.era5.path)
-            ├── daily/
-            ├── ERA5.zarr           (created from yearly/ at the first downscaling, see Zarr below)
-            └── yearly/
-                ├── PLEV*.nc
-                └── SURF*.nc
+            └── ERA5.zarr           (written by mp.get_era5(), see Zarr below)
     ├── outputs/                    (outputs.directory)
             ├── tmp/
             ├── df_centroids.pck, ds_param.nc, ds_solar.nc, da_horizon.nc
@@ -77,15 +73,13 @@ climate:
 
     # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
-    download_threads: 1               # number of parallel CDS requests, or of days fetched in parallel from GDEX
+    download_threads: 8               # parallel CDS requests (one month each, at most 10), or GDEX processes
     realtime: False                   # (optional) CDS only. Set project.end to the last full day available and clean outputs/downscaled/
     data_repository: cds              # (optional) cds (Copernicus Climate Data Store, default) or gdex (NCAR GDEX, see Dataset Sources)
     gdex_root:                        # (optional) gdex only: path or URL of GDEX d633000. Default /gdex/data/d633000 on NCAR systems, else OSDF over HTTPS
-    cds_output_format: netcdf         # (optional) netcdf. Grib files are not read by topoclass
-    cds_download_format: unarchived   # (optional) unarchived or zip
-    rm_daily: False                   # (optional) remove the daily/ folder once merged into yearly files
+    cds_download_format: unarchived   # (optional) unarchived or zip, both are read
     output_format: netcdf             # (optional) file format of get_era5_snowmapper() only
-    zarr_store: ERA5.zarr             # (optional) name of the ERA5 zarr store in the climate folder, built from yearly/*.nc when missing. Default ERA5.zarr
+    zarr_store: ERA5.zarr             # (optional) name of the ERA5 zarr store in the climate folder. Default ERA5.zarr
 
 #.....................................................................................................
 dem:
@@ -187,15 +181,13 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 | timestep          | 1h                 | yes      | 1h, 3h, 6h      | time step of the download and of the downscaling. Lower case (pandas no longer accepts `1H`; it is converted). With 3h or 6h, radiation and precipitation are still the 1-h ERA5 accumulation ending at the time stamp: `tp` is that hour times the time step, sampled rather than summed |
 | accumulation_window | 1h               | no       | 1h, 3h, 0h      | window over which radiation is accumulated, ending at the time stamp (ERA5: 1h whatever the timestep). The solar geometry is computed at its centre, see [Solar geometry](07_features.md#solar-geometry). Default 1h |
 | plevels           | [700,800,900,1000] | yes      | array           | ERA5 pressure levels to use, in hPa. The lowest pressure level must lie above the highest elevation of the DEM |
-| download_threads  | 12                 | yes      | integer         | number of parallel CDS requests, or of days fetched in parallel (processes) from GDEX |
-| data_repository   | cds                | no       | cds, gdex       | where ERA5 is fetched from: `cds` (Copernicus Climate Data Store, default) or `gdex` (NCAR GDEX, best on NCAR systems). Both give the same files. See [Dataset Sources](04_datasetSources.md#from-ncar-gdex) |
+| download_threads  | 8                  | no       | integer         | number of parallel CDS requests, one month of one stream each. At most 10, the number of requests of a user the CDS runs at a time (more only wait in its queue, and lower the priority of the user). With GDEX: number of processes reading days in parallel, default 4 |
+| data_repository   | cds                | no       | cds, gdex       | where ERA5 is fetched from: `cds` (Copernicus Climate Data Store, default) or `gdex` (NCAR GDEX, best on NCAR systems). Both give the same store. See [Dataset Sources](04_datasetSources.md#from-ncar-gdex) |
 | gdex_root         | /gdex/data/d633000 | no       | path or URL     | `gdex` only: root of GDEX dataset d633000. Default `/gdex/data/d633000` if it exists (NCAR systems), else `https://osdf-director.osg-htc.org/ncar/gdex/d633000` |
-| cds_output_format | netcdf             | no       | netcdf          | file format delivered by the CDS. Default netcdf. Grib files are not read by `topoclass` |
-| cds_download_format | unarchived       | no       | unarchived, zip | download format delivered by the CDS. Default unarchived |
-| rm_daily          | False              | no       | True, False     | remove the `daily/` folder once the files are merged into yearly files, to save storage |
-| realtime          | False              | no       | True, False     | `cds` only: set `project.end` to the last full day available and empty `outputs/downscaled/`, for daily updates with the latest month (ERA5T) |
+| cds_download_format | unarchived       | no       | unarchived, zip | download format delivered by the CDS. Default unarchived. Zip files (the CDS sends one for surface fields whatever this setting) are read as well |
+| realtime          | False              | no       | True, False     | `cds` only: set `project.end` to the last full day available and empty `outputs/downscaled/`, for daily updates with the latest month (ERA5T). Each run fetches the current month again |
 | output_format     | netcdf             | no       | netcdf, grib    | file format of `get_era5_snowmapper()` only |
-| zarr_store        | ERA5.zarr          | no       | string          | name of the ERA5 zarr store in the climate folder. Built from the yearly netcdf files when missing, or rebuilt when it does not cover the project period. Default ERA5.zarr |
+| zarr_store        | ERA5.zarr          | no       | string          | name of the ERA5 zarr store in the climate folder, written by `mp.get_era5()`. Default ERA5.zarr |
 
 ### dem
 
@@ -293,10 +285,12 @@ Keys renamed or no longer read:
 | `sampling.points.ID_col` | `sampling.points.name_column` |
 | `data_repository: google_cloud_storage` | not supported: `cds` or `gdex` |
 | `clean_up.delete_tmp_dirs` | `clean_up.rm_tmp_dirs` |
+| `climate.era5.rm_daily` | not read: there are no daily files (a message is printed) |
+| `climate.era5.cds_output_format` | not read: netcdf is downloaded (a message is printed for `grib`) |
 
 ## Parallelization
 
-TopoPyScale uses parallelization for a number of steps: threads to manage the download requests to the CDS server, or processes fetching days from GDEX (`download_threads`), and `project.parallelization.setting.multicore.CPU_cores` cores for the sky view factor, the horizons and the clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `CPU_cores` of them.
+TopoPyScale uses parallelization for a number of steps: threads sending the download requests to the CDS (`download_threads`, at most 10), or processes fetching days from GDEX, and `project.parallelization.setting.multicore.CPU_cores` cores for the sky view factor, the horizons and the clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `CPU_cores` of them.
 
 Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).
 
@@ -305,7 +299,8 @@ Settings for parallelization should be adapted and considered according to your 
 
 Downscaling reads ERA5 from a zarr store, `inputs/climate/ERA5.zarr`, and writes all downscaled points to one zarr store, `outputs/downscaled/down.zarr`. Zarr stores data in compressed chunks, so that only the chunks needed are read.
 
-- The ERA5 store is built automatically from the yearly netcdf files (`inputs/climate/yearly/PLEV_*.nc` and `SURF_*.nc`) the first time `mp.downscale_climate()` runs, and rebuilt when it does not cover the project period. The files are converted one pair at a time, without `xr.open_mfdataset`. It can also be built explicitly with `mp.era5_obj.to_zarr()` or `fetch_era5.netcdf_to_zarr()`.
+- `mp.get_era5()` writes ERA5 to the store as the downloads arrive, see [Features](07_features.md#era5-download). A store written this way records which time steps it holds: `mp.downscale_climate()` refuses it while the project period has gaps, and running `mp.get_era5()` again fills them.
+- netcdf files placed in the climate folder by hand (`PLEV_*.nc` and `SURF_*.nc`, in `inputs/climate/` or `inputs/climate/yearly/`) are converted to a store the first time `mp.downscale_climate()` runs, and again when the store does not cover the project period. The files are converted one pair at a time, without `xr.open_mfdataset`. It can also be done explicitly with `mp.era5_obj.to_zarr()` or `fetch_era5.netcdf_to_zarr()`.
 - Downscaling processes blocks of points (`toposcale.point_block`) and of time steps (`toposcale.time_block`) at once. The ERA5 nodes around the points are read once per time block, and all points of a block are downscaled together as arrays.
 - The output store has dimensions `(point_name, time)`. See [Output Formats](05_outputs.md).
 

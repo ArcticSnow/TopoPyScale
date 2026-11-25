@@ -65,7 +65,31 @@ As explained in the (Datasets)[04_datasetSources.md], TPS relies on ERA5 data. I
 - 'instantaneous_surface_sensible_heat_flux'
 ```
 
-TPS requests daily files of the ERA5 pressure levels and surface level, and concatenates them with `cdo` into yearly files (`inputs/climate/yearly/`). Downscaling then reads ERA5 from a zarr store, `inputs/climate/ERA5.zarr`, built from the yearly files the first time `mp.downscale_climate()` runs (and rebuilt if it does not cover the project period). The conversion opens one pair of PLEV/SURF files at a time and appends it to the store. It can also be run explicitly:
+### ERA5 download
+
+`mp.get_era5()` writes ERA5 straight into the zarr store read by the downscaling, `inputs/climate/ERA5.zarr`, with no intermediate daily or yearly files:
+
+- **One request per stream and month**, the request size ECMWF advises for hourly ERA5: about 24 requests per year instead of 730 daily ones, each of which waits in the CDS queue. A request over the CDS cost limit is split in two (by days, then by variables).
+- **At most 10 requests at a time** (`download_threads`, default 8): the CDS runs 10 requests of a user in parallel, and lowers the priority of users who send more.
+- **Workers only download.** Each file is read by the main thread as it arrives, one at a time (netCDF-C and HDF5 are not thread safe), checked, written to its time slice of the store, and deleted. Each value is written once, and memory holds one month.
+- **Checks** before writing: all time steps of the month, the variables, the pressure levels, the grid of the store, no missing value. Downloads go to a `.part` file renamed once complete, so a cut download is never taken for a finished one.
+- **Retries**: a failed request is sent again after 1, 2 and 4 minutes (not for errors a new attempt cannot cure, such as a licence not accepted). Months that still fail are listed at the end, after all the others are written.
+- **Restart**: the store records the time steps it holds (`filled_plev`, `filled_surf`). Running `mp.get_era5()` again fetches only what is missing; a later `project.end` extends the store and fetches the new months only. A store holding another box, other levels or another time step is refused, rather than mixed.
+- **Less data**: the five pressure-level variables and six surface fields the downscaling reads (relative humidity is no longer downloaded), and the surface geopotential once instead of every hour.
+- **Earlier downloads** in `yearly/PLEV_*.nc`, `yearly/SURF_*.nc` or `daily/` are read into the store instead of being downloaded again, when they hold the variables and the grid of the request.
+
+The box is the project extent plus 0.4°, reduced to the nodes of the 0.25° ERA5 grid inside it, as the CDS returns them. The store holds `z, t, q, u, v` on pressure levels, `sp, t2m, d2m, tp, ssrd, strd` at the surface and the static `z_surf`, as float32 compressed with Blosc. The same function fetches from NCAR GDEX (see [Dataset Sources](04_datasetSources.md#from-ncar-gdex)), or can be called directly:
+
+```python
+from TopoPyScale import fetch_era5 as fe
+
+fe.fetch_era5_to_zarr('2020-01-01', '2020-12-31', 'inputs/climate', latN=47.3, latS=45.6, lonE=10.9, lonW=5.6,
+                      step='1h', plevels=[700, 750, 800, 850, 900, 950, 1000])
+```
+
+### ERA5 from netcdf files
+
+netcdf files placed in the climate folder by hand are converted to the store the first time `mp.downscale_climate()` runs (and again if the store does not cover the project period). The conversion opens one pair of PLEV/SURF files at a time and appends it to the store. It can also be run explicitly:
 
 ```python
 from TopoPyScale import fetch_era5 as fe
@@ -77,11 +101,11 @@ fe.netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
                   time_chunk=720)
 ```
 
-The store holds `z, t, q, u, v, r` on pressure levels and `z_surf, sp, t2m, d2m, tp, ssrd, strd` at the surface, as float32 compressed with Blosc. The function also harmonizes files downloaded from the new CDS (`valid_time`, `pressure_level`, `expver`).
+The store holds the variables of the files (`z, t, q, u, v` on pressure levels and `z, sp, t2m, d2m, tp, ssrd, strd` at the surface at least), as float32 compressed with Blosc. The function also harmonizes files downloaded from the new CDS (`valid_time`, `pressure_level`, `expver`).
 
 ## Parallelization
 
-TPS uses parallelization for a number of steps: threads to manage download requests to the CDS server, threads for the sky view factor, threads over blocks of points for the horizons, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
+TPS uses parallelization for a number of steps: threads sending download requests to the CDS (at most 10), threads for the sky view factor, threads over blocks of points for the horizons, multiple cores for clustering, and threads over blocks of points for the downscaling (`project.parallelization.setting.multicore.CPU_cores`).
 
 ## Solar geometry
 

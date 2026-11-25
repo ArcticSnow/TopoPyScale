@@ -26,6 +26,7 @@ nav:
         - solar_geom: TopoPyScale.solar_geom.md
         - topo_param: TopoPyScale.topo_param.md
         - fetch_era5: TopoPyScale.fetch_era5.md
+        - era5_store: TopoPyScale.era5_store.md
         - fetch_dem: TopoPyScale.fetch_dem.md
         - meteo_util: TopoPyScale.meteo_util.md
         - sim_fsm: TopoPyScale.sim_fsm.md
