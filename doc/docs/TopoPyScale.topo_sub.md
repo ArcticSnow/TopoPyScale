@@ -17,7 +17,7 @@ S. Filhol, Oct 2021
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L26"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L29"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `ds_to_indexed_dataframe`
 
@@ -42,7 +42,7 @@ See definition of function in topo_utils.py
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L41"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L44"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `scale_df`
 
@@ -73,7 +73,7 @@ Function to scale features of a pandas dataframe
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L66"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L69"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `inverse_scale_df`
 
@@ -104,7 +104,7 @@ Function to inverse feature scaling of a pandas dataframe
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L90"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L93"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `kmeans_clustering`
 
@@ -143,7 +143,7 @@ Function to perform K-mean clustering
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L123"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L126"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `minibatch_kmeans_clustering`
 
@@ -183,7 +183,7 @@ Function to perform mini-batch K-mean clustering
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L216"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L219"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `search_number_of_clusters`
 
@@ -224,7 +224,7 @@ Function to help identify an optimum number of clusters using the elbow method
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L287"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L301"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `plot_center_clusters`
 
@@ -234,7 +234,7 @@ plot_center_clusters(
     ds_param,
     df_centers,
     var='elevation',
-    cmap=<matplotlib.colors.ListedColormap object at 0x7fbf39b1c9f0>,
+    cmap=<matplotlib.colors.ListedColormap object at 0x7fd7b7dc1180>,
     figsize=(14, 10)
 )
 ```
@@ -254,7 +254,7 @@ Function to plot the location of the cluster centroids over the DEM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L316"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_sub.py#L330"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `write_landform`
 
@@ -263,9 +263,9 @@ write_landform(
     dem_file,
     df_param,
     project_directory='./',
-    out_dir: Optional[str, Path] = None,
+    out_dir: Optional[str, pathlib._local.Path] = None,
     out_name: Optional[str] = None
-) → Union[str, Path]
+) → Union[str, pathlib._local.Path]
 ```
 
 Function to write a landform file which maps cluster ids to dem pixels 

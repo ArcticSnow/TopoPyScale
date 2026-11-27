@@ -49,6 +49,13 @@ def map_terrain(ds_param,
     plt.show()
 
 
+def _on_map(da, ds_param):
+    """Values of the points (point_name) on the grid of ds_param: each cell gets the value of its point."""
+    # the coordinates of the points (x, y, elevation... of the zarr store) would clash with those of the grid
+    da = da.drop_vars([c for c in da.coords if c not in da.dims])
+    return da.sel(point_name=ds_param.point_name)
+
+
 def map_variable(ds_down,
                  ds_param,
                  time_step=None,
@@ -103,7 +110,7 @@ def map_variable(ds_down,
 
     if len(list(ds.keys()))==1:
         var = list(ds.keys())[0]
-    ds[var].sel(point_name=ds_param.point_name).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
+    _on_map(ds[var], ds_param).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
 
 
     return ax
@@ -112,6 +119,6 @@ def map_clusters(ds_down,
                  ds_param,
                  df_centroids=None,
                  **kwargs):
-    ds_down.point_name.sel(point_name=ds_param.point_name).plot.imshow(**kwargs)
+    _on_map(ds_down.point_name, ds_param).plot.imshow(**kwargs)
     if df_centroids is not None:
         plt.scatter(df_centroids.x, df_centroids.y, c='k', s=2)

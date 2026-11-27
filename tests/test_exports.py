@@ -129,6 +129,17 @@ def test_crocus_one_point_per_file(ds, tmp_path):
     np.testing.assert_allclose(fo.Tair.values[:, 0], ds.t.isel(point_name=7).values, rtol=1e-6)
 
 
+def test_exports_take_the_lat_lon_of_df_centroids(ds, tmp_path):
+    """df_centroids of TopoSUB holds lat and lon, without latitude and longitude."""
+    pts = df_pts(ds).drop(columns=['latitude', 'longitude'])
+    files = quiet(te.to_cryogrid, ds, pts, 'CG_*.nc', path=tmp_path)
+    fo = xr.load_dataset(files[3])
+    np.testing.assert_allclose(fo.latitude.values, pts.lat.iloc[3])
+    np.testing.assert_allclose(fo.longitude.values, pts.lon.iloc[3])
+    files = quiet(te.to_crocus, ds, pts, tmp_path / 'CROCUS_pt_*.nc')
+    np.testing.assert_allclose(xr.load_dataset(files[3]).LAT.values, pts.lat.iloc[3])
+
+
 def test_micromet_station_ids_and_header(ds, tmp_path):
     files = quiet(te.to_micromet_single_station, ds, df_pts(ds), tmp_path / 'SM_*.csv', headers=True, n_jobs=2)
     lines = open(files[4]).read().splitlines()

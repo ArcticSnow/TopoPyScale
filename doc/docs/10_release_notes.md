@@ -14,7 +14,7 @@ TopoPyScale 1.1 keeps the memory of long runs bounded, sums the accumulated ERA5
 - **Precipitation factors in the Southern Hemisphere**: the monthly coefficients of MicroMet follow the season (shifted by six months south of the equator).
 - **Radiation options** (see [Features](07_features.md#direct-and-diffuse-shortwave)): direct/diffuse split from the ERA5 direct radiation `fdir` (`toposcale.direct_diffuse: era5`); Hay–Davies circumsolar diffuse on slopes (`diffuse_model: hay_davies`); shortwave reflected by the surrounding terrain (`SW_terrain_albedo`, output `SW_terrain`); terrain longwave from the air temperature of the point (`LW_terrain_temperature: air`, the new default). The terrain temperature and albedo can also be given per point and time step, the hook for a snow model run on the points.
 - **Wind options** (see [Features](07_features.md#wind)): blending with the ERA5 10 m wind (`wind_downscaling.surface_blend`) and the slope and curvature factors of MicroMet (`wind_downscaling.terrain: liston_elder`).
-- **Fixes**: `to_netcdf()` wrote missing values of packed variables as plausible numbers (e.g. 2000 m for a missing elevation): they are now written as missing. `fetch_dem` and `sim_fsm` referred to undefined names on some paths; `to_fsm2()`, unfinished, now says so (use `to_fsm2oshd()`).
+- **Fixes**: `to_netcdf()` wrote missing values of packed variables as plausible numbers (e.g. 2000 m for a missing elevation): they are now written as missing. `fetch_dem` and `sim_fsm` referred to undefined names on some paths; `to_fsm2()`, unfinished, now says so (use `to_fsm2oshd()`). `get_era5()` reads earlier ERA5 files that cover a larger box or more pressure levels than the request, such as those of the examples, instead of downloading them again. The maps of downscaled points (`topo_plot.map_variable`, `map_clusters`, `mp.toposub.plot_clusters_map()`) and `write_landform()` work with the zarr store and the cluster labels stored as point names. `to_cryogrid()`, `to_crocus()` and `to_surfex()` take the `lat`/`lon` columns of `df_centroids`. The physics check of the direct beam in terrain shadow tests the sun at the sub-steps of the window, as the downscaling shades it: the sun passing between two ridges was reported as an error.
 
 ### Upgrading from 1.0
 
@@ -22,7 +22,7 @@ TopoPyScale 1.1 keeps the memory of long runs bounded, sums the accumulated ERA5
 2. **Terrain longwave**: with `LW_terrain_contribution: True`, the terrain now emits at the air temperature of the point. Set `LW_terrain_temperature: fixed` for the results of 1.0.
 3. **3 h and 6 h ERA5 stores** written by 1.0 hold the hour ending at each stamp: the downscaling uses them with a warning, and `get_era5()` refuses them. Delete the store to fetch the sums.
 4. **Southern Hemisphere** projects with `precip_lapse_rate: True` get different precipitation factors.
-5. **Example configs**: `project.CPU_cores` is not read, so the examples ran on one core. Use `project.parallelization.setting.multicore.CPU_cores`; the config check reports the key.
+5. **Example configs**: `project.CPU_cores` is not read, so the examples ran on one core. Use `project.parallelization.setting.multicore.CPU_cores`; the config check reports the key. The [examples](https://github.com/ArcticSnow/TopoPyScale_examples) are updated for 1.1.
 6. **Messages** go to the log instead of `print()`. Set `project.verbose: False` for warnings only.
 
 ## 1.0.0

@@ -180,7 +180,7 @@ What a store lacks to cover the period [start, end]: a list of messages, empty i
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L634"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L647"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `import_legacy`
 
@@ -193,7 +193,7 @@ Write the tasks found in earlier netCDF files to the store. Returns the tasks st
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L659"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L672"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `run`
 
@@ -396,10 +396,10 @@ index(stream)
 ### <kbd>method</kbd> `LegacyFiles.read`
 
 ```python
-read(task, step, area, times=None)
+read(task, step, area, times=None, levels=None)
 ```
 
-Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the variables of self.names ({'plev': [...], 'surf': [...]}, short names) at times (default: the time stamps of the task). 
+Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the variables of self.names ({'plev': [...], 'surf': [...]}, short names) at times (default: the time stamps of the task), on the nodes of area and at levels (default: all levels of the files). Files covering a larger box or more levels are read, as the files shipped with the examples. 
 
 
 

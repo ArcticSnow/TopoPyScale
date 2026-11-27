@@ -166,6 +166,13 @@ def _align_solar(ds, ds_solar):
     return sol.reindex(time=ds.time.values)
 
 
+def _covers(ds_solar, ds):
+    """ds_solar holds the points and the time steps of ds."""
+    names = set(_as_str(ds_solar.point_name.values))
+    return set(_as_str(ds.point_name.values)) <= names and pd.DatetimeIndex(ds.time.values).isin(
+        pd.DatetimeIndex(ds_solar.time.values)).all()
+
+
 def _arr(ds, var):
     return np.asarray(ds[var].transpose('point_name', 'time').values, dtype=float)
 
@@ -203,17 +210,18 @@ class _Solar:
     """Solar geometry of the points of ds for blocks of time steps: from ds_solar, or computed from coordinates."""
 
     def __init__(self, ds, ds_solar=None, terrain=None, epsg=None):
+        # computed from the coordinates of the points when possible: as the downscaling, with the sun at the
+        # sub-steps of the window. A saved ds_solar is used otherwise, if it holds the points and time steps of ds
         self.sol, self.terms, self.note = None, None, ''
-        if ds_solar is not None:
-            self.sol = _align_solar(ds, ds_solar)
-            return
-        if terrain is None:
-            self.note = 'needs ds_solar or df_centroids'
-            return
         try:
+            if terrain is None:
+                raise ValueError('no df_centroids')
             self.lon, self.lat, self.elev = sg.point_coordinates(terrain, epsg)
         except (ValueError, AttributeError):
-            self.note = 'needs ds_solar, or lon/lat (or x/y and epsg) in df_centroids'
+            if ds_solar is not None and _covers(ds_solar, ds):
+                self.sol = _align_solar(ds, ds_solar)
+            else:
+                self.note = 'needs lon/lat (or x/y and epsg) in df_centroids, or ds_solar of the points'
             return
         attrs = ds.attrs
         self.terms = sg.window_terms(pd.DatetimeIndex(ds.time.values), _window_from_attrs(attrs),

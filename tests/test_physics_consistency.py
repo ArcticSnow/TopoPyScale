@@ -325,6 +325,11 @@ def test_full_report_has_no_unexpected_failures(summer, tmp_path):
     print(tc.summarize(report))
     failing = set(report.loc[report.status.isin(['error', 'warning']), 'check'])
     assert failing <= KNOWN_FAILING_CHECKS, failing - KNOWN_FAILING_CHECKS
+    # a ds_solar of other points (saved before the points changed) is not used
+    stale = ds_solar.isel(point_name=[0])
+    report = tc.run_all_checks(ds, ds_solar=stale, df_centroids=syn.centroids_frame(rows), snow_partition_method=None)
+    assert set(report.loc[report.status.isin(['error', 'warning']), 'check']) <= KNOWN_FAILING_CHECKS
+    assert (report.check == 'direct_in_terrain_shadow').any()
 
 
 # ---------------------------------------------------------------------------------------------------------------------

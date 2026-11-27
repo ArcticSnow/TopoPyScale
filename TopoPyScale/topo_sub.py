@@ -287,6 +287,17 @@ def search_number_of_clusters(df_param,
     return df
 
 
+def _numeric_labels(da):
+    """
+    Cluster labels as numbers: ds_param stores them as point names ('00', '01'... and '-9999' outside the mask),
+    which become NaN outside the mask.
+    """
+    if da.dtype.kind in 'USO':
+        da = da.astype(float)
+        da = da.where(da >= 0)
+    return da
+
+
 def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=plt.cm.viridis, figsize=(14, 10)):
     """
     Function to plot the location of the cluster centroids over the DEM
@@ -306,7 +317,7 @@ def plot_center_clusters(dem_file, ds_param, df_centers, var='elevation', cmap=p
 
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
     shade = ls.hillshade(ds_param.elevation.values, vert_exag=0.5, dx=dx, dy=dy, fraction=1.0)
-    rgb = (ds_param[var] * shade).plot(cmap=cmap)
+    rgb = (_numeric_labels(ds_param[var]) * shade).plot(cmap=cmap)
     ax.scatter(df_centers.x, df_centers.y, c='r', edgecolors='k')
     # cb = plt.colorbar(rgb)
     # cb.set_label(var)
@@ -341,7 +352,7 @@ def write_landform(dem_file, df_param, project_directory='./', out_dir: Optional
     with rasterio.open(dem_file) as dem:
         shape = dem.shape
         profile = dem.profile
-    myarray = np.reshape(df_param.cluster_labels.values, shape)
+    myarray = np.reshape(_numeric_labels(df_param.cluster_labels).values, shape)
 
     # replace nan with number
     nodata = -1

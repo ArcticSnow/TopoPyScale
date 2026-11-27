@@ -176,6 +176,7 @@ class Topoclass(object):
         if (self.config.outputs.path / self.config.outputs.file.ds_param).is_file():
             self.toposub.ds_param = xr.open_dataset(
                 self.config.outputs.path / self.config.outputs.file.ds_param)
+            self.plot.ds_param = self.toposub.ds_param
             logger.info(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
         else:
             logger.warning(f'DEM parameter file {self.config.outputs.file.ds_param} not found')
@@ -195,6 +196,7 @@ class Topoclass(object):
         store = self.config.outputs.downscaled / self._downscaled_store_name()
         if store.exists():
             self.downscaled_pts = tu.open_downscaled_store(store)
+            self.plot.ds_down = self.downscaled_pts
             logger.info(f'---> Downscaled points {store.name} exists and loaded')
         else:
             logger.warning(f'Downscaled points {store.name} not found')
@@ -1065,9 +1067,9 @@ class Plotting:
         logger.info('to be implemented')
 
     def map_clusters(self, **kwargs):
-        tp.map_clusters(self.ds_down,
-                        self.toposub.ds_param,
-                        **kwargs)
+        tpl.map_clusters(self.ds_down,
+                         self.ds_param,
+                         **kwargs)
 
     def timeseries(self):
         logger.info('To be implemented')

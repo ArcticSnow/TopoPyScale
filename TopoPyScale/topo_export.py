@@ -449,6 +449,22 @@ def _write_cryogrid(fname, ds_pt, info, extra_pt, tstep, snow_partition_method, 
     fo.to_netcdf(fname, encoding=encod_dict)
 
 
+def with_latitude_longitude(df_pts):
+    """
+    Points with latitude and longitude columns: df_centroids holds lat and lon (Topoclass.extract_topo_param), a list
+    of points may hold latitude and longitude.
+    """
+    if df_pts is None:
+        return None
+    missing = {k: v for k, v in [('latitude', 'lat'), ('longitude', 'lon')] if k not in df_pts and v in df_pts}
+    if not missing:
+        return df_pts
+    df_pts = df_pts.copy()
+    for k, v in missing.items():
+        df_pts[k] = df_pts[v]
+    return df_pts
+
+
 def to_cryogrid(ds,
                 df_pts,
                 fname_format='Cryogrid_pt_*.nc',
@@ -474,6 +490,7 @@ def to_cryogrid(ds,
     """
     # Add logic to save maps of cluster labels in case of usage of topo_sub
 
+    df_pts = with_latitude_longitude(df_pts)
     ver_dict = tu.get_versionning()
     if label_map:
         if da_label is None:
@@ -1516,6 +1533,7 @@ def to_crocus(ds,
         n_jobs (int): number of processes writing the files (see export_points)
     """
     # one file per point, named by the index of the point, with the digits of the largest point number
+    df_pts = with_latitude_longitude(df_pts)
     names = ds.point_name.values
     numeric = all(str(n).isdigit() for n in names)
     n_digits = len(str(max(int(n) for n in names))) if numeric else len(str(len(names)))
@@ -1555,6 +1573,7 @@ def to_surfex(ds,
 
     """
     # create one file per point_name
+    df_pts = with_latitude_longitude(df_pts)
     n_digits = len(str(ds.point_name.max().values))
     ver_dict = tu.get_versionning()
 
