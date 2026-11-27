@@ -26,7 +26,7 @@ The radiative fluxes and the precipitation cover the accumulation window ending 
 
 ![Surface effect on temperature](img/science/temperature.svg)
 
-*Figure 4. Surface-effect correction. ERA5 resolves the near-surface air of its own smooth ground: $T_{2m}$ differs from the pressure-level temperature at the same elevation by $\Delta T$. Each point receives a share $w$ of this signal according to its terrain.*
+*Figure 6. Surface-effect correction. ERA5 resolves the near-surface air of its own smooth ground: $T_{2m}$ differs from the pressure-level temperature at the same elevation by $\Delta T$. Each point receives a share $w$ of this signal according to its terrain.*
 
 **Option `toposcale.surface_effect`** (method `redcapp` or `dreamit`, see [Features](07_features.md#surface-effect-correction-of-air-temperature)). The signal of the ERA5 surface,
 
@@ -100,7 +100,7 @@ This is free-atmosphere wind, without the drag of the surface. It is close to th
 
 ![Wind options](img/science/wind.svg)
 
-*Figure 5. (a) Blending with the ERA5 10 m wind. (b) Terrain factors of MicroMet.*
+*Figure 7. (a) Blending with the ERA5 10 m wind. (b) Terrain factors of MicroMet.*
 
 **Option `toposcale.wind_downscaling.surface_blend`.** The wind moves towards the ERA5 10 m wind interpolated to the point:
 
@@ -168,7 +168,7 @@ South of the equator, the month is shifted by six: January takes the July coeffi
 
 ![Shortwave on a slope](img/science/shortwave.svg)
 
-*Figure 6. Shortwave at a point P on a slope facing the sun: direct beam on the slope, diffuse from the part of the sky the point sees, and radiation reflected by the opposite slope. The ridge hides the sun from point V.*
+*Figure 8. Shortwave at a point P on a slope facing the sun: direct beam on the slope, diffuse from the part of the sky the point sees, and radiation reflected by the opposite slope. The ridge hides the sun from point V.*
 
 The shortwave is computed in six steps.
 
@@ -253,7 +253,7 @@ $$
 
 ![Longwave at a point](img/science/longwave.svg)
 
-*Figure 7. Longwave at a point: from the visible sky, with the clouds of ERA5, and from the surrounding terrain.*
+*Figure 9. Longwave at a point: from the visible sky, with the clouds of ERA5, and from the surrounding terrain.*
 
 **1. Clouds, from the grid.** ERA5 gives the all-sky emissivity of its surface. Removing the clear-sky part leaves the contribution of the clouds:
 

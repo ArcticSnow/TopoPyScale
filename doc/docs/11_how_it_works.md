@@ -65,13 +65,45 @@ Only the positive part of the integrand is kept. $V_d = 1$ on flat open ground a
 **TopoSUB clusters** (`sampling.method: toposub`). Each cell of the DEM is a vector of features: by default $x$, $y$, $z$, $S$, $\cos A$, $\sin A$ and $V_d$ (`sampling.toposub.clustering_features`).
 
 - Each feature is standardised (zero mean, unit variance), then multiplied by its importance weight.
-- k-means splits the cells into $n$ clusters (`n_clusters`). It minimises the spread of the features within the clusters: $\sum_c \sum_{i \in c} \lVert \mathbf{f}_i - \boldsymbol{\mu}_c \rVert^2$.
+- k-means splits the cells into $n$ clusters (`n_clusters`). It minimises the spread of the features within the clusters: $\sum_c \sum_{i \in c} \lVert \mathbf{f}_i - \mathbf{m}_c \rVert^2$, with $\mathbf{f}_i$ the features of cell $i$ and $\mathbf{m}_c$ the centre of cluster $c$.
 - Each cluster becomes one point:
-  - its clustering features are the cluster centre transformed back to physical units, the mean of its cells for k-means;
-  - its other parameters are means over its cells, and its aspect is the circular mean $\operatorname{atan2}(\overline{\sin A}, \overline{\cos A})$.
+    - its clustering features are the cluster centre transformed back to physical units, the mean of its cells for k-means;
+    - its other parameters are means over its cells, and its aspect is the circular mean $\operatorname{atan2}(\overline{\sin A}, \overline{\cos A})$.
 - Every cell keeps the label of its cluster. A map of any downscaled variable gives each cell the series of its cluster.
 
-**Fewer points than cells.** Projects typically use tens to a few hundred clusters. The series of a cluster is computed for the parameters of its centre, a typical cell of the cluster. It is not an average of the series of its cells.
+![k-means clustering of a DEM](img/science/clustering.svg)
+
+*Figure 2. TopoSUB on the SRTM DEM around Piz Kesch (Switzerland), at 100 m. (a) Each cell is a vector of features. (b) k-means gathers cells that are close in feature space. (c) The 300 clusters on the map. A cluster is a class of terrain, not a region: the cells of the red cluster lie in several places, and they all get the series computed for its centre.*
+
+**Fewer points than cells.** A project typically has tens to about a thousand clusters, far fewer than the cells of the DEM. The series of a cluster is computed for the parameters of its centre, a typical cell of the cluster. It is not an average of the series of its cells.
+
+**Mask** (`sampling.toposub.clustering_mask`). A raster of 0 and 1 on the DEM grid: only the cells at 1 are clustered, for instance the catchments of interest in a larger DEM (Figure 3a). The other cells, and the nodata cells of the DEM, get no cluster (`point_name` = `-9999`).
+
+**Groups of clusters** (`sampling.toposub.clustering_groups`). A raster of integers on the DEM grid: catchments, land cover, glaciers, *etc.* (Figure 3b). Groups do not change what a cluster is, they bound it: a group is much larger than a cluster and holds many of them. Without groups, a cluster gathers similar cells from anywhere in the mask, so its cells can lie in several catchments (Figure 3c). With groups, each group is clustered on its own:
+
+- Group $g$ gets $n_g = \lceil N w_g \rceil$ clusters, where $N$ is `n_clusters`. By default $w_g$ is the share of the clustered cells that lie in the group: $N$ is shared out in proportion to the areas, and the density of points is the same everywhere. A CSV file (`sampling.toposub.clustering_group_weights`, columns `group,weight`, weights summing to 1) sets other shares, for instance more points on a glacier. Rounding up gives up to one extra cluster per group: $\sum_g n_g \geq N$.
+- The features of a group are standardised with the mean and the standard deviation of that group. A group with a narrow range of elevation is still split along elevation.
+- The labels of group $g$ follow those of the previous groups: clusters $0 \ldots n_1 - 1$ belong to the first group, $n_1 \ldots n_1 + n_2 - 1$ to the second, and so on. No cluster crosses a group boundary (Figure 3d), and the map of groups is saved as `cluster_group` in `ds_param.nc`.
+
+![Mask and groups of clusters](img/science/groups.svg)
+
+*Figure 3. Mask and groups on the DEM of Figure 2. (a) The mask keeps three catchments of interest. (b) The groups raster gives each catchment its own integer. (c) With the mask only, $N = 150$: 29 clusters (red) have cells in two or three catchments. (d) With the groups, k-means runs in each catchment: 47, 46 and 58 clusters for area shares of 31, 30 and 39 %, and none crosses a divide.*
+
+**Values per catchment.** Since each cluster lies in one group, a catchment average is a weighted sum over its own clusters. The weight of cluster $c$ is its share of the cells of the catchment, $n_{c}/\sum_{c' \in g} n_{c'}$ (cells have the same area):
+
+```python
+import xarray as xr
+
+cells = mp.toposub.ds_param[['point_name', 'cluster_group']].to_dataframe()
+cells = cells[cells.point_name != '-9999']                  # cells outside the mask
+share = cells.groupby('cluster_group').point_name.value_counts(normalize=True)
+tp_basin = {}
+for g, w in share.groupby(level='cluster_group'):
+    w = xr.DataArray(w.values, coords={'point_name': w.index.get_level_values('point_name')})
+    tp_basin[g] = (mp.downscaled_pts.tp.sel(point_name=w.point_name) * w).sum('point_name')
+```
+
+`tp_basin[g]` is the mean precipitation of catchment $g$ at each time step. Multiplied by the area of the catchment, it gives a volume.
 
 **Points and grid.** With `sampling.method: points`, the parameters come from the cell of each given point (`nearest`), or are interpolated (`idw`, `linear`). With `grid`, every cell is a point.
 
@@ -79,7 +111,7 @@ Only the positive part of the integrand is kept. $V_d = 1$ on flat open ground a
 
 ![Horizontal and vertical interpolation](img/science/interpolation.svg)
 
-*Figure 2. (a) Horizontal interpolation from the 3 × 3 ERA5 nodes around the point. (b) Vertical interpolation between the two pressure levels around the elevation of the point.*
+*Figure 4. (a) Horizontal interpolation from the 3 × 3 ERA5 nodes around the point. (b) Vertical interpolation between the two pressure levels around the elevation of the point.*
 
 **Horizontal.** Each point takes the 3 × 3 ERA5 nodes around its nearest node. With `toposcale.interpolation_method: idw` (default), the weights decrease with the square of the distance $d_i$, measured in the projection of the DEM:
 
@@ -120,7 +152,7 @@ The ERA5 surface of the point, $z_s$, is used three times:
 
 ![Accumulation window](img/science/time_window.svg)
 
-*Figure 3. (a) Instantaneous fields at the time stamp $t$; fluxes accumulated over the hour before it, with the sun taken at the centre of that hour. (b) At 3 h time steps, the store holds the sum of the three hourly accumulations of each step.*
+*Figure 5. (a) Instantaneous fields at the time stamp $t$; fluxes accumulated over the hour before it, with the sun taken at the centre of that hour. (b) At 3 h time steps, the store holds the sum of the three hourly accumulations of each step.*
 
 **Instantaneous and accumulated fields.**
 

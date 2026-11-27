@@ -295,6 +295,8 @@ group,weight
 ```
 This will use 20% of clusters to group 4 and 80% for group 8.
 
+[How it works](11_how_it_works.md#2-sampling-the-terrain) shows with sketches what the mask and the groups do, for instance with one group per catchment, and how to compute a mean per catchment from the downscaled points.
+
 ## FSM integration
 
 As part of TPS, we integrated a number of functions to interact with the snow model **FSM**. 

@@ -16,7 +16,7 @@ const OUT = path.join(__dirname, '..', 'docs', 'img', 'science');
 const FONT = fs.readFileSync(path.join(__dirname, 'fonts', 'patrick-hand-subset.woff2')).toString('base64');
 const HAND = "'Patrick Hand', 'Comic Sans MS', cursive";
 const MATH = "'Cambria Math', 'STIX Two Math', 'STIX Two Text', Georgia, 'DejaVu Serif', serif";
-const SYMBOLS = /[Ͱ-Ͽ←-⇿∀-⋿]+/g;   // Greek, arrows, mathematical operators
+const SYMBOLS = /[\u0370-\u03ff\u2190-\u21ff\u2200-\u23ff]+/g;   // Greek, arrows, math operators, ⌈ ⌉
 const SHAPES = ['line', 'rect', 'circle', 'ellipse', 'path', 'polyline', 'polygon'];
 const SVGNS = 'http://www.w3.org/2000/svg';
 const SCALE = 1.35;   // Patrick Hand is narrower than the sans-serif of the sources: larger text, same width
@@ -71,7 +71,7 @@ function arrowhead(doc, x0, y0, x1, y1, color, width) {
 
 function pathEl(doc, p, stroke, width) {
   const e = doc.createElementNS(SVGNS, 'path');
-  e.setAttribute('d', p.d);
+  e.setAttribute('d', p.d.replace(/-?\d+\.\d+(e-?\d+)?/g, (m) => String(Math.round(+m * 10) / 10)));   // 0.1 px
   e.setAttribute('stroke', p.stroke === 'none' ? 'none' : (p.stroke || stroke));
   e.setAttribute('stroke-width', p.strokeWidth || width);
   e.setAttribute('fill', p.fill || 'none');
