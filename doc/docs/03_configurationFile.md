@@ -63,7 +63,7 @@ project:
 
 #.....................................................................................................
 climate:
-  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, Northern Hemisphere)
+  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, shifted by six months south of the equator)
   precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
 
   # Settings for the ERA5 atmospheric forcings
@@ -71,7 +71,7 @@ climate:
     path: inputs/climate/             # relative to the project directory, or absolute (e.g. a shared ERA5 archive)
     product: reanalysis               # ensemble not available yet
     timestep: 1h                      # 1h, 3h or 6h
-    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. ERA5: 1h whatever the timestep
+    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. Default: what the climate store holds (the timestep for ERA5 fetched by TopoPyScale)
 
     # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
@@ -178,13 +178,13 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 
 | Field             | Example Value      | Required | Possible Values | Description |
 |-------------------|--------------------|----------|-----------------|-------------|
-| precip_lapse_rate | True               | no       | True, False     | apply the precipitation lapse-rate correction, monthly factors of MicroMet [@listonMicroMet2006] (Northern Hemisphere). Default False |
+| precip_lapse_rate | True               | no       | True, False     | apply the precipitation lapse-rate correction, monthly factors of MicroMet [@listonMicroMet2006]. The factors were derived in the Northern Hemisphere: south of the equator the month is shifted by six (January takes the July factor). Default False |
 | precip_lapse_rate_max_factor | 5       | no       | float > 1       | bound of the precipitation elevation factor (1 + c dz)/(1 - c dz), which otherwise diverges for dz ~ 2.9 km in winter. Default 5 |
 | **era5**          |                    |          |                 | as of now TopoPyScale only supports ERA5 data |
 | path              | inputs/climate/    | yes      | string          | folder of the climate data, relative to the project directory or absolute. With an absolute path (e.g. a shared archive), no `tmp/` folder is created in it |
 | product           | reanalysis         | yes      | reanalysis      | no other product available at the moment |
-| timestep          | 1h                 | yes      | 1h, 3h, 6h      | time step of the download and of the downscaling. Lower case (pandas no longer accepts `1H`; it is converted). With 3h or 6h, radiation and precipitation are still the 1-h ERA5 accumulation ending at the time stamp: `tp` is that hour times the time step, sampled rather than summed |
-| accumulation_window | 1h               | no       | 1h, 3h, 0h      | window over which radiation is accumulated, ending at the time stamp (ERA5: 1h whatever the timestep). The solar geometry is computed at its centre, see [Solar geometry](07_features.md#solar-geometry). Default 1h |
+| timestep          | 1h                 | yes      | 1h, 3h, 6h      | time step of the download and of the downscaling. Lower case (pandas no longer accepts `1H`; it is converted). With 3h or 6h, the accumulated fields (tp, ssrd, strd) are fetched hourly and stored as their sums over the time step ending at the stamp, so precipitation and radiation are totals and means over the step. An hourly store downscaled at 3h or 6h is summed the same way. A 3h or 6h store fetched by an earlier version holds only the hour ending at each stamp: it is used with a warning (precipitation scaled by the time step), and must be deleted to fetch the sums |
+| accumulation_window | 1h               | no       | 1h, 3h, 6h, 0h  | window over which radiation is accumulated, ending at the time stamp. The solar geometry is computed at its centre, see [Solar geometry](07_features.md#solar-geometry). Default: the hours the accumulated fields of the climate store cover per time step (store attribute `accumulation_hours`: the timestep for stores fetched by TopoPyScale, 1h for stores built from netCDF files) |
 | plevels           | [700,800,900,1000] | yes      | array           | ERA5 pressure levels to use, in hPa. The lowest pressure level must lie above the highest elevation of the DEM |
 | download_threads  | 8                  | no       | integer         | number of parallel CDS requests, one month of one stream each. At most 10, the number of requests of a user the CDS runs at a time (more only wait in its queue, and lower the priority of the user). With GDEX: number of processes reading days in parallel, default 4 |
 | data_repository   | cds                | no       | cds, gdex       | where ERA5 is fetched from: `cds` (Copernicus Climate Data Store, default) or `gdex` (NCAR GDEX, best on NCAR systems). Both give the same store. See [Dataset Sources](04_datasetSources.md#from-ncar-gdex) |

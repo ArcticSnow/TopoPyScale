@@ -40,6 +40,32 @@ logger = logging.getLogger(__name__)
 PLEV_VARS = ['z', 't', 'q', 'u', 'v']
 SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
 SOLAR_VARS = ['mu0', 'SWtoa', 'zenith', 'azimuth', 'elevation', 'sunset']
+ACC_VARS = ['tp', 'ssrd', 'strd']   # accumulated over the hours ending at the time stamp
+
+
+def accumulation(era_times, era_attrs, tstep_h):
+    """
+    How the accumulated fields of an ERA5 store cover the time steps of the downscaling.
+
+    A store holds at each time stamp the accumulation over the accumulation_hours hours ending at the stamp (store
+    attribute; 1 h for ERA5 files and for stores written before it was recorded). When the store is finer than the
+    time step and its accumulations cover its own steps (an hourly store downscaled at 3 h), the k values of each
+    window are summed.
+
+    Args:
+        era_times (DatetimeIndex): time axis of the store
+        era_attrs (dict): attributes of the store
+        tstep_h (int): time step of the downscaling [h]
+
+    Returns:
+        k (int): number of stored values summed per time step, acc_hours (int): hours accumulated per time step
+    """
+    t = pd.DatetimeIndex(era_times)
+    step = int(round(np.median(np.diff(t.values)) / np.timedelta64(1, 'h'))) if t.size > 1 else tstep_h
+    hours = int(era_attrs.get('accumulation_hours', 1))
+    if step < tstep_h and hours == step and tstep_h % step == 0:
+        return tstep_h // step, tstep_h
+    return 1, hours
 
 varout_default = ['t', 'u', 'v', 'q', 'p', 'tp', 'precip_lapse_rate', 'wd', 'ws', 'w', 'vp', 'cse',
                   'LW', 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination']
@@ -110,8 +136,10 @@ class ClimateDownscaler:
         shading_substeps (int): sub-steps of the radiation accumulation window at which terrain shading is tested;
             the direct beam is scaled by the sunlit fraction of the window (1: one test at the centre, all or
             nothing). Default: solar_substeps (or the solar_substeps of ds_solar)
-        accumulation_window (str): window over which the radiation fluxes of the forcing are accumulated, ending at
-            the time stamp (ERA5: '1h' whatever the time step). Used when ds_solar is None
+        accumulation_window (str): window over which the radiation fluxes are accumulated, ending at the time stamp.
+            Default: the hours the accumulated fields cover per time step (see accumulation(): the time step for
+            stores of window sums or hourly stores, 1 h for stores sampling the hourly ERA5 accumulations). Used when
+            ds_solar is None
         solar_substeps (int): sub-steps of the window averaged for the top-of-atmosphere irradiance. Default 6
         solar_method (str): pvlib solar position method, default 'nrel_numpy' (vectorized)
         solar_constant (float): total solar irradiance at 1 AU [W m-2]
@@ -138,7 +166,7 @@ class ClimateDownscaler:
                  max_box_mb=2000,
                  surface_effect=None,
                  shading_substeps=None,
-                 accumulation_window='1h',
+                 accumulation_window=None,
                  solar_substeps=6,
                  solar_method='nrel_numpy',
                  solar_constant=sg.S0_DEFAULT):
@@ -160,7 +188,30 @@ class ClimateDownscaler:
             raise ValueError(f'tstep {tstep} not supported, use 1h, 3h or 6h')
         self.tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep,
                                   inclusive='left')
-        self.era_time_index = self._time_index(pd.DatetimeIndex(self.ERA.time.values), 'ERA5 store')
+        era_times = pd.DatetimeIndex(self.ERA.time.values)
+        self.era_time_index = self._time_index(era_times, 'ERA5 store')
+        self.acc_sum, self.acc_hours = accumulation(era_times, self.ERA.attrs, self.tstep_h)
+        if self.acc_sum > 1:
+            # indices of the stored values of each window, -1 before the start of the store
+            offsets = pd.to_timedelta(np.arange(self.acc_sum - 1, -1, -1) * (self.tstep_h // self.acc_sum), unit='h')
+            self.acc_index = era_times.get_indexer((self.tvec.values[:, None] - offsets.values[None, :]).ravel()) \
+                .reshape(self.tvec.size, self.acc_sum)
+            if (self.acc_index < 0).any():
+                logger.warning(f'The first accumulation window starts before the ERA5 store: its precipitation and '
+                               f'radiation are scaled from the {int((self.acc_index[0] >= 0).sum())} of '
+                               f'{self.acc_sum} values available')
+            logger.info(f'---> Accumulated fields (tp, ssrd, strd): sums of {self.acc_sum} values of the store per '
+                        f'{self.tstep_h} h time step')
+        elif self.acc_hours < self.tstep_h:
+            logger.warning(f'The accumulated fields of the ERA5 store cover {self.acc_hours} h of each {self.tstep_h} h '
+                           f'time step: precipitation is the last {self.acc_hours} h scaled by '
+                           f'{self.tstep_h / self.acc_hours:g}, and radiation the mean of the last {self.acc_hours} h. '
+                           f'Fetch the store again (window sums) or downscale an hourly store')
+        if accumulation_window is None:
+            accumulation_window = f'{self.acc_hours}h'
+        elif pd.Timedelta(accumulation_window) != pd.Timedelta(f'{self.acc_hours}h'):
+            logger.warning(f'accumulation_window {accumulation_window} differs from the {self.acc_hours} h the '
+                           f'accumulated fields of the ERA5 store cover per time step')
 
         self.df = df_centroids.reset_index(drop=True).copy()
         self.df['point_name'] = self.df.point_name.astype(str)
@@ -176,6 +227,7 @@ class ClimateDownscaler:
         self.horizon_profiles = np.asarray(hp.transpose('point', 'azimuth').values, dtype=float)
 
         self.lon, self.lat, _ = sg.point_coordinates(self.df, target_EPSG)
+        self.points['lat'] = self.lat   # season of the precipitation coefficients in each hemisphere
         self.ds_solar = None
         if ds_solar is None:
             # solar geometry computed block by block: only its time terms are kept for the whole period
@@ -263,6 +315,7 @@ class ClimateDownscaler:
                     'package_version': ver.get('package_version'), 'git_commit': ver.get('git_commit'),
                     'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                     'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'accumulation_hours': int(self.acc_hours),
                     **{k: (int(v) if isinstance(v, (np.integer,)) else v) for k, v in self.solar_attrs.items()}}
         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
         # chunks of up to 10 points x time block, grouped in shards of point_block points: each block writes whole
@@ -339,16 +392,29 @@ class ClimateDownscaler:
                for v in PLEV_VARS}
         nt = sub.sizes['time']
         for v in SURF_VARS:
-            if 'time' in sub[v].dims:
+            if v in ACC_VARS and self.acc_sum > 1:
+                era[v] = self._read_sums(v, t0, t1, box)
+            elif 'time' in sub[v].dims:
                 era[v] = np.asarray(sub[v].transpose('time', 'latitude', 'longitude').values, dtype=float)
             else:   # static field (z_surf of the stores written by era5_store)
                 field = np.asarray(sub[v].transpose('latitude', 'longitude').values, dtype=float)
                 era[v] = np.broadcast_to(field, (nt,) + field.shape)
         return era, box
 
+    def _read_sums(self, v, t0, t1, box):
+        """Sums of the acc_sum stored values of each window of time steps t0:t1 (partial windows rescaled)."""
+        idx = self.acc_index[t0:t1]
+        valid = idx >= 0
+        lo, hi = int(idx[valid].min()), int(idx.max()) + 1
+        arr = np.asarray(self.ERA[v].isel(time=slice(lo, hi), latitude=box[0], longitude=box[1])
+                         .transpose('time', 'latitude', 'longitude').values, dtype=float)
+        vals = arr[np.where(valid, idx - lo, 0)] * valid[:, :, None, None]
+        return vals.sum(axis=1) * (self.acc_sum / valid.sum(axis=1))[:, None, None]
+
     def _box_mb(self, box, nt):
         cells = (box[0].stop - box[0].start) * (box[1].stop - box[1].start)
-        return nt * cells * (len(PLEV_VARS) * self.level_hpa.size + len(SURF_VARS)) * 8 / 1e6
+        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(SURF_VARS) + len(ACC_VARS) * (self.acc_sum - 1)
+        return nt * cells * n_fields * 8 / 1e6
 
     def process_block(self, p0, p1, t0, t1, era=None):
         """
@@ -374,7 +440,7 @@ class ClimateDownscaler:
                            weight=None if self.surface.get('weight') is None else self.surface['weight'][p0:p1])
         out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
                                    self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
-                                   self.precip_lapse_rate_max_factor, surface)
+                                   self.precip_lapse_rate_max_factor, surface, acc_hours=self.acc_hours)
         group = zarr.open_group(str(self.store), mode='r+')
         for v in self.varout:
             group[v][p0:p1, t0:t1] = out[v].T.astype('float32')

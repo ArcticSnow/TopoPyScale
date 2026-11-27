@@ -9,6 +9,10 @@ whole period allocated. Chunks not yet written read as NaN.
 - z_surf (latitude, longitude): surface geopotential, static
 - filled_plev, filled_surf (time): 1 where the time step was written, after validation
 
+At 3 h or 6 h time steps, the accumulated surface fields (tp, ssrd, strd...) are fetched hourly and stored as the sum
+over the time step ending at the stamp (store attribute accumulation_hours), not as the hour ending at the stamp: the
+hours of the first window of a request on the previous day are fetched with it.
+
 Workers only transfer files. Every netCDF file is read by the main thread, one at a time, as netCDF-C and HDF5 are
 not thread safe. Each file is standardized (CDS names, ERA5/ERA5T expver, level order), checked (time steps,
 variables, levels, grid, missing values), written to its time slice of the store, then deleted.
@@ -68,7 +72,21 @@ REQUIRED = {'plev': ('z', 't', 'q', 'u', 'v'), 'surf': ('t2m', 'd2m', 'sp', 'tp'
             'zsurf': ('z_surf',)}
 DIMS = {'plev': ('time', 'level', 'latitude', 'longitude'), 'surf': ('time', 'latitude', 'longitude'),
         'zsurf': ('latitude', 'longitude')}
-REQUEST_KEYS = ('product', 'area', 'levels', 'timestep', 'plev_variables', 'surf_variables')
+REQUEST_KEYS = ('product', 'area', 'levels', 'timestep', 'plev_variables', 'surf_variables', 'accumulation_hours')
+# accumulated surface fields (short names): ERA5 gives at each hour the accumulation over the hour ending at it
+ACCUMULATED = {'tp', 'ssrd', 'strd', 'tisr', 'sf', 'fdir', 'cdir', 'ssr', 'str', 'e', 'ro', 'sshf', 'slhf', 'lsp',
+               'cp', 'smlt', 'es', 'pev', 'uvb', 'par'}
+
+
+def accumulated_names(variables):
+    """CDS variable names of accumulated fields."""
+    return [v for v in variables if SHORT_NAMES.get(v) in ACCUMULATED]
+
+
+def window_hours(stamps, acc_hours):
+    """Hours of the windows of acc_hours hours ending at each stamp, (stamp, hour)."""
+    offsets = np.arange(acc_hours - 1, -1, -1) * np.timedelta64(1, 'h')
+    return pd.DatetimeIndex(stamps).values[:, None] - offsets[None, :]
 
 
 @dataclass(frozen=True)
@@ -191,8 +209,8 @@ def open_raw(paths):
             parts.append(_load(path))
     if len(parts) == 1:
         return parts[0]
-    return xr.combine_by_coords(parts, data_vars='all', coords='minimal', compat='override', join='outer',
-                                combine_attrs='drop_conflicts')
+    # parts of a request split by days or by variables, or the hours of the previous day of window sums
+    return xr.merge(parts, compat='no_conflicts', join='outer', combine_attrs='drop_conflicts')
 
 
 def retry(fun, retries=3, wait=60., fatal=None, label=''):
@@ -233,6 +251,7 @@ class Era5Store:
         self.path = Path(path)
         self.request = _jsonable(request)
         self.step = self.request['timestep']
+        self.acc_hours = int(self.request.get('accumulation_hours') or 1)
         self.times = pd.DatetimeIndex(times)
         self.time_chunk, self.max_chunk_mb = int(time_chunk), max_chunk_mb
         self.compressor = compressor or BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
@@ -243,6 +262,43 @@ class Era5Store:
     @property
     def exists(self):
         return (self.path / 'zarr.json').is_file()
+
+    def task_times(self, task):
+        """
+        Time steps the downloaded data of a task hold: its time stamps, or for surface fields stored as window sums
+        all the hours of its windows, from the previous day.
+        """
+        stamps = task.times(self.step)
+        if task.stream != 'surf' or self.acc_hours == 1:
+            return stamps
+        return pd.DatetimeIndex(np.unique(window_hours(stamps, self.acc_hours).ravel()))
+
+    def aggregate(self, task, ds):
+        """
+        Hourly surface data of a task to its time stamps: instantaneous fields at the stamps, accumulated fields summed
+        over the acc_hours hours ending at each stamp.
+        """
+        stamps = task.times(self.step)
+        index = pd.DatetimeIndex(ds.time.values)
+        acc = [v for v in ds.data_vars if v in ACCUMULATED]
+        inst = [v for v in ds.data_vars if v not in ACCUMULATED]
+        missing = stamps.difference(index)
+        if missing.size:
+            raise ValueError(f'{task.key}: {missing.size} time steps missing (from {missing[0]})')
+        out = ds[inst].sel(time=stamps) if inst else xr.Dataset(coords={'time': stamps})
+        hours = window_hours(stamps, self.acc_hours)
+        idx = index.get_indexer(hours.ravel())
+        if (idx < 0).any():
+            raise ValueError(f'{task.key}: {(idx < 0).sum()} hours of the accumulation windows missing '
+                             f'(from {pd.Timestamp(hours.ravel()[idx < 0][0])})')
+        for v in acc:
+            da_ = ds[v].transpose('time', ...).isel(time=idx)
+            vals = da_.values.reshape((stamps.size, self.acc_hours) + da_.shape[1:])
+            if not np.isfinite(vals).all():
+                raise ValueError(f'{task.key}: {v} has missing values in its accumulation windows')
+            out[v] = (da_.dims, vals.sum(axis=1))
+            out[v].attrs = {'accumulation_hours': self.acc_hours}
+        return out.assign_coords({c: ds[c] for c in ds.coords if c != 'time' and c in ds.dims})
 
     # ---------------------------------------------------------------- reading
     def _group(self, mode='r'):
@@ -357,7 +413,8 @@ class Era5Store:
         flags = {f'filled_{s}': ('time', da.zeros(nt, dtype='uint8', chunks=self.time_chunk)) for s in STREAMS}
         base = xr.Dataset(flags, coords={'time': self.times, 'level': levels, 'latitude': lat, 'longitude': lon},
                           attrs={'era5_request': json.dumps(self.request),
-                                 'description': 'ERA5 for TopoPyScale, see TopoPyScale.era5_store'})
+                                 'description': 'ERA5 for TopoPyScale, see TopoPyScale.era5_store',
+                                 'accumulation_hours': self.acc_hours})
         base.time.encoding.update(units='hours since 1900-01-01', dtype='int64')
         encoding = {v: {'chunks': (self.time_chunk,)} for v in flags}
         self._to_zarr(base, mode='w', compute=False, encoding=encoding)
@@ -406,6 +463,8 @@ class Era5Store:
 
     def write(self, task, ds):
         """Check ds (a standardized dataset of the task) and write it to its time slice, then flag the time steps."""
+        if task.stream == 'surf' and self.acc_hours > 1:
+            ds = self.aggregate(task, ds)
         ds = self.check(task, ds)
         if not self.exists:
             self._create(ds)
@@ -498,10 +557,11 @@ class LegacyFiles:
             self._index[stream] = rows
         return self._index[stream]
 
-    def read(self, task, step, area):
+    def read(self, task, step, area, times=None):
         """
         Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the
-        variables of self.names ({'plev': [...], 'surf': [...]}, short names).
+        variables of self.names ({'plev': [...], 'surf': [...]}, short names) at times (default: the time stamps of
+        the task).
         """
         stream = 'surf' if task.stream == 'zsurf' else task.stream
         files = self.index(stream)
@@ -519,7 +579,7 @@ class LegacyFiles:
                 names = self.names
                 if not names.get(stream):
                     return None
-                times = task.times(step)
+                times = task.times(step) if times is None else pd.DatetimeIndex(times)
                 parts = []
                 for f, t0, t1 in files:
                     if t0 > times[-1] or t1 < times[0]:
@@ -557,7 +617,7 @@ def import_legacy(store, tasks, legacy, area, plev_variables, surf_variables):
         return tasks
     left, n = [], 0
     for task in tasks:
-        ds = legacy.read(task, store.step, area)
+        ds = legacy.read(task, store.step, area, store.task_times(task))
         if ds is not None:
             try:
                 store.write(task, ds)

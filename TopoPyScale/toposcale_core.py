@@ -59,6 +59,26 @@ def horizontal_weights(row, lats, lons, Xs, Ys, method='idw'):
     return weights / weights.sum()
 
 
+def seasonal_month(months, latitude=None):
+    """
+    Month of the northern-hemisphere season of each time step and point: the month itself north of the equator, the
+    month shifted by six south of it (January in the south is July in the north), for the monthly coefficients
+    derived in the northern hemisphere.
+
+    Args:
+        months (array): month of each time step (1-12), (time,) or (time, point)
+        latitude (array): latitude of the points [deg], (point,). None: months unchanged
+
+    Returns:
+        array: months (1-12), (time, point) if latitude is given
+    """
+    months = np.asarray(months)
+    if latitude is None:
+        return months
+    m = months[:, None] if months.ndim == 1 else months
+    return np.where(np.asarray(latitude, dtype=float)[None, :] < 0, (m + 5) % 12 + 1, m)
+
+
 def precip_lapse_factor(elev_diff, months, max_factor=PRECIP_LAPSE_MAX_FACTOR):
     """
     Precipitation elevation adjustment factor (1 + c dz) / (1 - c dz) of Liston and Elder (2006).
@@ -68,7 +88,7 @@ def precip_lapse_factor(elev_diff, months, max_factor=PRECIP_LAPSE_MAX_FACTOR):
 
     Args:
         elev_diff (array): elevation of the point minus elevation of the ERA5 surface [m]
-        months (array): month of each time step (1-12)
+        months (array): month of each time step (1-12), in the northern-hemisphere season (seasonal_month)
         max_factor (float): upper bound of the factor (> 1)
 
     Returns:
@@ -287,38 +307,48 @@ def wind_speed_direction(u, v):
     return np.sqrt(u ** 2 + v ** 2), np.mod(np.arctan2(-u, -v), 2 * np.pi)
 
 
-def precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=PRECIP_LAPSE_MAX_FACTOR):
+def precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=PRECIP_LAPSE_MAX_FACTOR,
+                  acc_hours=1, latitude=None):
     """
     Args:
-        tp_m (array): interpolated ERA5 precipitation [m] over the hour ending at the time stamp, (time, point)
+        tp_m (array): interpolated ERA5 precipitation [m] accumulated over the acc_hours hours ending at the time stamp,
+            (time, point)
         elev_diff (array): point elevation - ERA5 surface elevation [m], (time, point)
         months (array): month of each time step, (time,)
-        tstep_h (int): time step in hours
+        tstep_h (int): time step in hours. tp_m is scaled by tstep_h / acc_hours: 1 when the accumulation covers the
+            time step
+        acc_hours (int): hours accumulated in tp_m
+        latitude (array): latitude of the points [deg], (point,): the monthly coefficients follow the season of each
+            hemisphere. None: northern-hemisphere months
     Returns:
         tp [mm per time step], precip_lapse_rate [-], both (time, point)
     """
     if lapse_rate_flag:
-        factor = precip_lapse_factor(elev_diff, np.broadcast_to(months[:, None], elev_diff.shape), max_factor)
+        m = np.broadcast_to(seasonal_month(months, latitude) if latitude is not None else months[:, None],
+                            elev_diff.shape)
+        factor = precip_lapse_factor(elev_diff, m, max_factor)
     else:
         factor = np.ones_like(tp_m)
-    return factor * tp_m * tstep_h * 1e3, factor
+    return factor * tp_m * (tstep_h / acc_hours) * 1e3, factor
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 #  radiation
 # ---------------------------------------------------------------------------------------------------------------------
-def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag):
+def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag, acc_seconds=3600.):
     """
     Downwelling longwave [W m-2]: clear-sky emissivity at the point plus the cloud emissivity of ERA5.
 
     Args:
         t, vp: air temperature [K] and vapour pressure [Pa] at the points, (time, point)
-        t2m, vp_surf, strd: ERA5 surface temperature [K], vapour pressure [Pa], and strd [J m-2 over 1 h], (time, point)
+        t2m, vp_surf, strd: ERA5 surface temperature [K], vapour pressure [Pa], and strd [J m-2 accumulated over
+            acc_seconds], (time, point)
         svf, slope: sky view factor [-] and slope [rad], (point,)
+        acc_seconds (float): accumulation period of strd [s]
     """
     cse = 0.23 + LW_X1 * (vp / t) ** (1 / LW_X2)
     cse_grid = 0.23 + LW_X1 * (vp_surf / t2m) ** (1 / LW_X2)
-    cle = (strd / 3600.) / (SIGMA * t2m ** 4) - cse_grid
+    cle = (strd / acc_seconds) / (SIGMA * t2m ** 4) - cse_grid
     lw = svf * (cse + cle) * SIGMA * t ** 4
     if terrain_flag:
         lw = lw + 0.5 * (1 + np.cos(slope)) * (1 - svf) * 0.99 * SIGMA * T_TERRAIN ** 4
@@ -342,27 +372,28 @@ def horizon_at_sun(profiles, horizon_azimuth_deg, sun_azimuth):
     return profiles[np.arange(s.shape[1])[None, :], idx]
 
 
-def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade):
+def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
     """
     Shortwave partition and terrain corrections.
 
     Args:
-        ssrd (array): ERA5 ssrd [J m-2 over 1 h], (time, point)
+        ssrd (array): ERA5 ssrd [J m-2 accumulated over acc_seconds], (time, point)
         sp (array): ERA5 surface pressure [Pa], (time, point)
         p (array): pressure at the point [Pa], (time, point)
         solar (dict): 'mu0', 'SWtoa', 'zenith', 'azimuth' (rad), 'sunset' (bool), each (time, point)
         slope, aspect, svf (array): (point,), angles in rad, aspect 0 = south
         shade (bool array): sun behind the local horizon, (time, point)
+        acc_seconds (float): accumulation period of ssrd [s], the window of solar['SWtoa']
 
     Returns:
         dict: 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination', each (time, point)
     """
     mu0, swtoa, day = solar['mu0'], solar['SWtoa'], ~solar['sunset']
     with np.errstate(invalid='ignore', divide='ignore'):
-        kt = np.where(day, ssrd / 3600. / swtoa, 0.)
+        kt = np.where(day, ssrd / acc_seconds / swtoa, 0.)
         kt = np.clip(kt, 0, 1)
         kd = 0.952 - 1.041 * np.exp(-np.exp(2.3 - 4.702 * kt))
-        sw_grid = np.maximum(ssrd / 3600., 0.)
+        sw_grid = np.maximum(ssrd / acc_seconds, 0.)
         diffuse_grid = kd * sw_grid
         direct_grid = np.minimum(sw_grid - diffuse_grid, swtoa)
         # Beer's law: extinction coefficient of the ERA5 column, applied with the pressure at the point
@@ -379,7 +410,8 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade):
 #  full chain for one block of time steps and points
 # ---------------------------------------------------------------------------------------------------------------------
 def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h, lw_terrain_flag,
-                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None):
+                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None,
+                    acc_hours=1):
     """
     Downscale one block of time steps for a set of points.
 
@@ -390,13 +422,15 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
             'strd', each (time, point)
         level_hpa (array): pressure levels [hPa]
         months (array): month of each time step
-        points (dict): 'elevation', 'slope', 'aspect', 'svf', each (point,)
+        points (dict): 'elevation', 'slope', 'aspect', 'svf', each (point,), and optionally 'lat' [deg] for the
+            season of the precipitation coefficients
         solar (dict): see shortwave(), each (time, point)
         shade (bool array): (time, point)
         tstep_h (int): time step of the data in hours
         surface (dict): optional surface-effect correction (surface_effect.py): 'weight' (point,) or None for the
             diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the
             corrected temperature and humidity). None: no correction, outputs unchanged
+        acc_hours (int): hours accumulated in surf 'tp', 'ssrd' and 'strd' (ending at the time stamp)
 
     Returns:
         dict of (time, point) arrays: t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW,
@@ -417,13 +451,15 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
                 t_lw, q_lw = out['t'], out['q']
     out['ws'], out['wd'] = wind_speed_direction(out['u'], out['v'])
     out['tp'], out['precip_lapse_rate'] = precipitation(surf['tp'], elev[None, :] - surf['z_surf'] / G, months,
-                                                        tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor)
+                                                        tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor,
+                                                        acc_hours, points.get('lat'))
     out['w'] = mixing_ratio(out['q'])
     out['vp'] = vapor_pressure(out['p'], out['w'])
     vp_surf = vapor_pressure(surf['sp'], mixing_ratio(q_from_dewpoint(surf['d2m'], surf['sp'])))
     vp_lw = out['vp'] if q_lw is out['q'] else vapor_pressure(out['p'], mixing_ratio(q_lw))
+    acc_seconds = 3600. * acc_hours
     out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
-                                     points['slope'], lw_terrain_flag)
+                                     points['slope'], lw_terrain_flag, acc_seconds)
     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
-                         points['svf'], shade))
+                         points['svf'], shade, acc_seconds))
     return out

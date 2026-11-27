@@ -305,3 +305,31 @@ def test_unzip_and_remap_utilities(tmp_path):
     fe.remap_CDSbeta(str(tmp_path / 'PLEV_*.nc'), 'plev')   # already remapped: unchanged
     ds = xr.load_dataset(tmp_path / 'PLEV_20200101.nc')
     assert list(ds.t.dims) == ['time', 'level', 'latitude', 'longitude'] and list(ds.level.values) == [500, 1000]
+
+
+def test_3h_store_holds_window_sums_of_the_hourly_accumulations(cds, tmp_path):
+    fake = cds()
+    store = fetch(tmp_path, start='2020-01-31', end='2020-02-01', step='3h')
+    ds = xr.open_zarr(store)
+    times = es.time_axis('2020-01-31', '2020-02-01', '3h')
+    lat, lon = ds.latitude.values, ds.longitude.values
+    assert (ds.time.values == times.values).all() and ds.attrs['accumulation_hours'] == 3
+    for v in INSTANT:
+        np.testing.assert_allclose(ds[v].values, value(v, times, [0.], lat, lon)[:, 0], rtol=1e-6, err_msg=v)
+    for v in ACCUM:
+        expected = sum(value(v, times - pd.Timedelta(f'{h}h'), [0.], lat, lon)[:, 0] for h in range(3))
+        np.testing.assert_allclose(ds[v].values, expected, rtol=1e-6, err_msg=v)
+    # surface requests: all hours, and the last two hours of the previous day for the accumulated fields
+    surf = [c for c in fake.calls if c[0].startswith('surf')]
+    assert sorted(c[1] for c in surf) == [1, 1, 1, 1]
+    assert sum(set(c[2]) == {'total_precipitation', 'surface_solar_radiation_downwards',
+                             'surface_thermal_radiation_downwards'} for c in surf) == 2
+    assert es.store_gaps(store, '2020-01-31', '2020-02-01') == []
+    # a 3 h store of window sums is not mixed with sampled data
+    with pytest.raises(ValueError, match='accumulation_hours'):
+        es.Era5Store(store, {**json_request(store), 'accumulation_hours': None}, times)
+
+
+def json_request(store):
+    import json
+    return json.loads(xr.open_zarr(store).attrs['era5_request'])

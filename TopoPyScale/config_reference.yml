@@ -29,7 +29,7 @@ project:
 
 #.....................................................................................................
 climate:
-  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, Northern Hemisphere)
+  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, shifted by six months south of the equator)
   precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
 
   # Settings for the ERA5 atmospheric forcings
@@ -37,7 +37,7 @@ climate:
     path: inputs/climate/             # relative to the project directory, or absolute (e.g. a shared ERA5 archive)
     product: reanalysis               # ensemble not available yet
     timestep: 1h                      # 1h, 3h or 6h
-    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. ERA5: 1h whatever the timestep
+    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. Default: what the climate store holds (the timestep for ERA5 fetched by TopoPyScale)
 
     # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]

@@ -519,9 +519,21 @@ class Topoclass(object):
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
             logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
 
-    def _accumulation_window(self):
-        # radiation accumulation window of the climate forcing (ERA5: 1 h, whatever the sampling time step)
-        return self.config.climate[self.config.project.climate].accumulation_window or '1h'
+    def _accumulation_window(self, default=None):
+        """
+        Radiation accumulation window of the climate forcing: climate.<source>.accumulation_window, else the hours the
+        accumulated fields of the climate store cover per time step (topo_scale_zarr.accumulation), else default.
+        """
+        window = self.config.climate[self.config.project.climate].accumulation_window
+        if window or default is None:
+            return window
+        try:
+            with xr.open_zarr(str(self._climate_store())) as era:
+                tstep_h = int(pd.Timedelta(self.config.climate[self.config.project.climate].timestep or '1h')
+                              / pd.Timedelta('1h'))
+                return f'{tz.accumulation(era.time.values, era.attrs, tstep_h)[1]}h'
+        except (OSError, ValueError, KeyError, FileNotFoundError):
+            return default
 
     @staticmethod
     def _warn_old_solar_file(ds_solar, fname):
@@ -541,7 +553,7 @@ class Topoclass(object):
                                  fname=fname,
                                  project_ouput=self.config.outputs.path,
                                  method_solar=self.config.dem.solar_position_method or 'nrel_numpy',
-                                 accumulation_window=self._accumulation_window(),
+                                 accumulation_window=self._accumulation_window(default='1h'),
                                  solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
                                  n_substeps=self.config.toposcale.solar_substeps or 6)
 

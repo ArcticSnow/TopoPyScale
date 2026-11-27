@@ -462,12 +462,15 @@ def _gdex_surf_an(root, short, stem, times, box):
     return _gdex_load(path, lambda d: _gdex_box(d.sel(time=times), *box))
 
 
-def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
+def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1):
     """
     Write the file of one day and stream ('plev' or 'surf') to target, with the variables and layout of the CDS
-    files. The surface geopotential z_surf is added to surface files unless None.
+    files. The surface geopotential z_surf is added to surface files unless None. With acc_hours > 1, the accumulated
+    fields are read at every hour of the windows of acc_hours hours ending at the time steps (from the previous day),
+    to be summed by era5_store.
     """
     times = pd.date_range(day, periods=24, freq='1h')[::int(pd.Timedelta(step) / pd.Timedelta('1h'))]
+    acc_times = times if acc_hours == 1 else pd.DatetimeIndex(np.unique(es.window_hours(times, acc_hours).ravel()))
     if kind == 'plev':
         out = {}
         for name, stem in GDEX_PLEV.items():
@@ -477,10 +480,10 @@ def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
         ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact').sortby('level')
     else:
         out = {name: _gdex_surf_an(root, short, stem, times, box) for name, (short, stem) in GDEX_SURF_AN.items()}
-        out.update({name: _gdex_accumu(root, stem, times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
+        out.update({name: _gdex_accumu(root, stem, acc_times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
         if z_surf is not None:
             out['z'] = z_surf.expand_dims(time=times)
-        ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact')
+        ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact' if acc_hours == 1 else 'outer')
     ds = ds.drop_vars([c for c in ds.coords if c not in ('time', 'level', 'latitude', 'longitude')])
     ds.attrs = {'source': f'NCAR GDEX d633000 (ERA5), {root}'}
     tmp = Path(str(target) + '.part')
@@ -506,11 +509,17 @@ def _cds_client(verify=True):
     return _cds_local.client
 
 
-def cds_request(task, variables, area, step, plevels=None, product='reanalysis', download_format='unarchived'):
-    """CDS API request of a task: its days (one month at most), all time steps, the box on the 0.25 deg grid."""
+def cds_request(task, variables, area, step, plevels=None, product='reanalysis', download_format='unarchived',
+                hours=None):
+    """
+    CDS API request of a task: its days (one month at most), all time steps (or the given hours, e.g. [0, 1, ...]),
+    the box on the 0.25 deg grid.
+    """
     days = sorted(task.days)
     if task.stream == 'zsurf':
         days, hours = days[:1], ['00:00']
+    elif hours is not None:
+        hours = [f'{int(h):02d}:00' for h in hours]
     else:
         hours = [f'{h:02d}:00' for h in range(0, 24, es.STEP_HOURS[step])]
     if len({(d.year, d.month) for d in days}) > 1:
@@ -557,7 +566,7 @@ def _cds_download(dataset, request, stem, verify):
 
 
 def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_format, verify, retries,
-               retry_wait, stem=None):
+               retry_wait, stem=None, hours=None):
     """
     Download a task to raw_dir (runs in a worker thread: no netCDF reading here). Files left by an interrupted run
     are reused. A request over the CDS cost limit is split in two, by days, then by variables.
@@ -566,7 +575,7 @@ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_
     for ext in ('nc', 'zip'):
         if Path(f'{stem}.{ext}').is_file():
             return [Path(f'{stem}.{ext}')]
-    request = cds_request(task, variables, area, step, plevels, product, download_format)
+    request = cds_request(task, variables, area, step, plevels, product, download_format, hours)
     try:
         return [es.retry(lambda: _cds_download(CDS_DATASETS[task.stream], request, stem, verify), retries,
                          retry_wait, fatal=_cds_fatal, label=stem.name)]
@@ -585,15 +594,27 @@ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_
         logger.info(f'     {stem.name}: over the CDS cost limit, split in two requests')
         return [f for i, (t, v) in enumerate(parts)
                 for f in _cds_fetch(t, raw_dir, v, area, step, plevels, product, download_format, verify, retries,
-                                    retry_wait, stem=f'{stem}_{i}')]
+                                    retry_wait, stem=f'{stem}_{i}', hours=hours)]
 
 
-def _cds_fetch_task(task, plev_variables, surf_variables, **kwargs):
+def _cds_fetch_task(task, plev_variables, surf_variables, acc_hours=1, **kwargs):
+    """
+    Download a task. With acc_hours > 1, surface fields are fetched hourly, with the last acc_hours - 1 hours of the
+    previous day for the accumulated fields (a second request), to be summed over each time step by era5_store.
+    """
     variables = {'plev': plev_variables, 'surf': surf_variables, 'zsurf': ['geopotential']}[task.stream]
-    return _cds_fetch(task, variables=variables, **kwargs)
+    if task.stream != 'surf' or acc_hours == 1:
+        return _cds_fetch(task, variables=variables, **kwargs)
+    files = _cds_fetch(task, variables=variables, hours=range(24), **kwargs)
+    acc = es.accumulated_names(variables)
+    if acc:
+        lead_day = pd.Timestamp(min(task.days)) - pd.Timedelta('1D')
+        lead = es.Task(f'{task.key}_lead', 'surf', (lead_day,))
+        files += _cds_fetch(lead, variables=acc, hours=range(25 - acc_hours, 24), **kwargs)
+    return files
 
 
-def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait):
+def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, acc_hours=1):
     """Read a task from GDEX and write it to raw_dir (runs in a spawned process, HDF5 reads hold a global lock)."""
     target = Path(raw_dir) / f'{task.key}.nc'
     if target.is_file():
@@ -603,7 +624,7 @@ def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait):
 
     def get():
         if task.stream != 'zsurf':
-            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target))
+            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target, acc_hours))
         z = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
                        lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
         tmp = Path(f'{target}.part')
@@ -632,7 +653,8 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
         start, end: first and last day
         eraDir (Path): climate folder
         latN, latS, lonE, lonW (float): box [deg], reduced to the nodes of the 0.25 deg grid inside it
-        step (str): '1h', '3h' or '6h'
+        step (str): '1h', '3h' or '6h'. At 3h and 6h the accumulated surface fields are fetched hourly and stored as
+            their sums over the time step ending at the stamp
         plevels (list): pressure levels [hPa]
         streams (list): 'plev' and/or 'surf'
         source (str): 'cds' or 'gdex'
@@ -673,6 +695,10 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
                       if v not in ('geopotential', 'geopotential_at_surface')]
     request = {'product': product, 'area': area, 'levels': sorted(float(p) for p in (plevels or [])),
                'timestep': step, 'plev_variables': plev_variables, 'surf_variables': surf_variables}
+    acc_hours = es.STEP_HOURS[step]
+    if acc_hours > 1:
+        # accumulated fields stored as sums over the time step, from hourly data
+        request['accumulation_hours'] = acc_hours
     store = es.Era5Store(eraDir / zarr_store, request, es.time_axis(start, end, step), time_chunk=time_chunk)
 
     make_tasks = es.month_tasks if source == 'cds' else es.day_tasks
@@ -698,7 +724,7 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
         fetch = functools.partial(_cds_fetch_task, plev_variables=plev_variables, surf_variables=surf_variables,
                                   raw_dir=raw, area=area, step=step, plevels=plevels, product=product,
                                   download_format=download_format, verify=verify, retries=retries,
-                                  retry_wait=retry_wait)
+                                  retry_wait=retry_wait, acc_hours=acc_hours)
         es.run(store, todo, fetch, n_workers=n, processes=False)
     else:
         root = gdex_root_path(gdex_root)
@@ -707,7 +733,7 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
             logger.info(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
                   f'whatever the size of the domain. On NCAR systems they are read locally')
         fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
-                                  retries=retries, retry_wait=retry_wait)
+                                  retries=retries, retry_wait=retry_wait, acc_hours=acc_hours)
         es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
     shutil.rmtree(raw, ignore_errors=True)
     logger.info(f'===> {store.path.name} complete')

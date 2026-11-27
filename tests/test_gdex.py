@@ -110,10 +110,15 @@ def check(ds, step_h=1):
     for name, var in [('z', 'Z'), ('t', 'T'), ('u', 'U'), ('v', 'V'), ('q', 'Q')]:
         np.testing.assert_allclose(ds[name].transpose('time', 'level', 'latitude', 'longitude').values,
                                    value(var, times, [700, 850, 1000], lat, lon), rtol=1e-6, err_msg=name)
-    for name, var in [('t2m', 'VAR_2T'), ('d2m', 'VAR_2D'), ('sp', 'SP'), ('ssrd', 'SSRD'), ('strd', 'STRD'),
-                      ('tp', 'TP')]:
+    for name, var in [('t2m', 'VAR_2T'), ('d2m', 'VAR_2D'), ('sp', 'SP')]:
         np.testing.assert_allclose(ds[name].transpose('time', 'latitude', 'longitude').values,
                                    value(var, times, [0.], lat, lon)[:, 0], rtol=1e-6, err_msg=name)
+    # accumulated fields: sums of the hourly accumulations of each time step, from the previous day for the first
+    for name, var in [('ssrd', 'SSRD'), ('strd', 'STRD'), ('tp', 'TP')]:
+        expected = sum(value(var, times - pd.Timedelta(f'{h}h'), [0.], lat, lon)[:, 0] for h in range(step_h))
+        np.testing.assert_allclose(ds[name].transpose('time', 'latitude', 'longitude').values, expected, rtol=1e-6,
+                                   err_msg=name)
+    assert ds.attrs['accumulation_hours'] == step_h
     assert ds.z_surf.dims == ('latitude', 'longitude')
     np.testing.assert_allclose(ds.z_surf.values, 1000 * lat[:, None] + 0 * lon[None, :], rtol=1e-6)
 
