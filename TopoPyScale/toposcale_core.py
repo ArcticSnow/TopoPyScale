@@ -105,7 +105,9 @@ R = 287.05          # gas constant of dry air [J K-1 kg-1]
 EPS = 0.622         # ratio of molecular weights water / dry air [-]
 SIGMA = 5.67e-8     # Stefan-Boltzmann constant [W m-2 K-4]
 LW_X1, LW_X2 = 0.43, 5.7   # clear-sky emissivity coefficients
-T_TERRAIN = 273.15  # temperature of the surrounding terrain in the LW terrain term [K]
+T_TERRAIN = 273.15  # temperature of the surrounding terrain in the LW terrain term [K], option 'fixed'
+MU_MIN = np.cos(np.deg2rad(85.))   # floor of cos(zenith) in the beam ratio of the circumsolar diffuse
+DIFFUSE_MODELS = ['isotropic', 'hay_davies']
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -335,7 +337,7 @@ def precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=
 # ---------------------------------------------------------------------------------------------------------------------
 #  radiation
 # ---------------------------------------------------------------------------------------------------------------------
-def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag, acc_seconds=3600.):
+def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag, acc_seconds=3600., t_terrain=T_TERRAIN):
     """
     Downwelling longwave [W m-2]: clear-sky emissivity at the point plus the cloud emissivity of ERA5.
 
@@ -345,13 +347,15 @@ def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag, acc_seconds=36
             acc_seconds], (time, point)
         svf, slope: sky view factor [-] and slope [rad], (point,)
         acc_seconds (float): accumulation period of strd [s]
+        t_terrain (float or array): temperature of the surrounding terrain [K], scalar or (time, point), for the
+            longwave it emits (emissivity 0.99) when terrain_flag
     """
     cse = 0.23 + LW_X1 * (vp / t) ** (1 / LW_X2)
     cse_grid = 0.23 + LW_X1 * (vp_surf / t2m) ** (1 / LW_X2)
     cle = (strd / acc_seconds) / (SIGMA * t2m ** 4) - cse_grid
     lw = svf * (cse + cle) * SIGMA * t ** 4
     if terrain_flag:
-        lw = lw + 0.5 * (1 + np.cos(slope)) * (1 - svf) * 0.99 * SIGMA * T_TERRAIN ** 4
+        lw = lw + 0.5 * (1 + np.cos(slope)) * (1 - svf) * 0.99 * SIGMA * np.asarray(t_terrain, dtype=float) ** 4
     return lw, cse
 
 
@@ -372,7 +376,8 @@ def horizon_at_sun(profiles, horizon_azimuth_deg, sun_azimuth):
     return profiles[np.arange(s.shape[1])[None, :], idx]
 
 
-def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., fdir=None):
+def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., fdir=None,
+              diffuse_model='isotropic', albedo=0.):
     """
     Shortwave partition and terrain corrections.
 
@@ -387,9 +392,16 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., 
         fdir (array): ERA5 direct solar radiation on a horizontal surface [J m-2 accumulated over acc_seconds],
             (time, point). None: the direct/diffuse split of the grid comes from the clearness index (Ruiz-Arias et
             al., 2010)
+        diffuse_model (str): 'isotropic': sky diffuse scaled by the sky view factor; 'hay_davies': the circumsolar
+            part, a share of the diffuse equal to the anisotropy index (direct / TOA, Hay and Davies 1980), comes
+            from the direction of the sun (projected on the slope and shaded as the beam), the rest is isotropic
+        albedo (float or array): albedo of the surrounding terrain, scalar or (time, point). The terrain seen by
+            the point (1 - svf) reflects the global radiation of a level surface at the point, added to the diffuse.
+            0: no terrain reflection
 
     Returns:
-        dict: 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination', each (time, point)
+        dict: 'SW', 'SW_direct', 'SW_diffuse' (sky and terrain), 'cos_illumination', 'SW_terrain' (reflected by the
+        terrain, part of SW_diffuse), each (time, point)
     """
     mu0, swtoa, day = solar['mu0'], solar['SWtoa'], ~solar['sunset']
     with np.errstate(invalid='ignore', divide='ignore'):
@@ -410,8 +422,18 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., 
         cos_i = np.maximum(cos_i, 0.)
         direct_flat = np.where(day, swtoa * np.exp(-ka * p / (G * mu0)), 0.)
         direct = np.where(day, direct_flat * cos_i / mu0 * (1 - shade), 0.)
-    diffuse = svf * diffuse_grid
-    return {'SW': diffuse + direct, 'SW_direct': direct, 'SW_diffuse': diffuse, 'cos_illumination': cos_i}
+        if diffuse_model == 'hay_davies':
+            ai = np.where(day, np.clip(direct_grid / swtoa, 0., 1.), 0.)
+            rb = np.where(day, cos_i / np.maximum(mu0, MU_MIN), 0.)
+            diffuse = diffuse_grid * ((1 - ai) * svf + ai * rb * (1 - shade))
+        elif diffuse_model == 'isotropic':
+            diffuse = svf * diffuse_grid
+        else:
+            raise ValueError(f'diffuse_model {diffuse_model} not supported, use {" or ".join(DIFFUSE_MODELS)}')
+    terrain = np.asarray(albedo, dtype=float) * (1 - svf) * (direct_flat + diffuse_grid)
+    diffuse = diffuse + terrain
+    return {'SW': diffuse + direct, 'SW_direct': direct, 'SW_diffuse': diffuse, 'cos_illumination': cos_i,
+            'SW_terrain': terrain}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -419,7 +441,7 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., 
 # ---------------------------------------------------------------------------------------------------------------------
 def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h, lw_terrain_flag,
                     precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None,
-                    acc_hours=1):
+                    acc_hours=1, radiation=None):
     """
     Downscale one block of time steps for a set of points.
 
@@ -439,6 +461,10 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
             diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the
             corrected temperature and humidity). None: no correction, outputs unchanged
         acc_hours (int): hours accumulated in surf 'tp', 'ssrd' and 'strd' (ending at the time stamp)
+        radiation (dict): options of the radiation: 'lw_terrain_temperature' ('air': the air temperature at the
+            point, 'fixed': 273.15 K, a value [K], or an array (time, point)), 'diffuse_model' ('isotropic' or
+            'hay_davies'), 'albedo' (of the surrounding terrain, scalar or (time, point); 0: no reflection).
+            Default: fixed terrain temperature, isotropic diffuse, no reflection
 
     Returns:
         dict of (time, point) arrays: t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW,
@@ -466,8 +492,13 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
     vp_surf = vapor_pressure(surf['sp'], mixing_ratio(q_from_dewpoint(surf['d2m'], surf['sp'])))
     vp_lw = out['vp'] if q_lw is out['q'] else vapor_pressure(out['p'], mixing_ratio(q_lw))
     acc_seconds = 3600. * acc_hours
+    radiation = radiation or {}
+    t_terrain = radiation.get('lw_terrain_temperature', 'fixed')
+    if isinstance(t_terrain, str):
+        t_terrain = {'air': t_lw, 'fixed': T_TERRAIN}[t_terrain]
     out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
-                                     points['slope'], lw_terrain_flag, acc_seconds)
+                                     points['slope'], lw_terrain_flag, acc_seconds, t_terrain)
     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
-                         points['svf'], shade, acc_seconds, surf.get('fdir')))
+                         points['svf'], shade, acc_seconds, surf.get('fdir'),
+                         radiation.get('diffuse_model', 'isotropic'), radiation.get('albedo', 0.)))
     return out

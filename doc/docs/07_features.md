@@ -132,7 +132,21 @@ TopoSCALE splits the ERA5 shortwave of the grid into direct and diffuse before t
 - `empirical` (default): the diffuse fraction from the clearness index kt = SW / SWtoa, kd = 0.952 − 1.041 exp(−exp(2.3 − 4.702 kt)) (Ruiz-Arias et al., 2010). It depends on the hourly kt only: a thin cloud layer and a broken cloud field with the same kt get the same split.
 - `era5`: the direct radiation on a horizontal surface of the ERA5 radiation scheme (`fdir`, *total sky direct solar radiation at surface*), which accounts for the clouds, aerosols and water vapour of the reanalysis. The diffuse part is SW − fdir. `fdir` is fetched with the surface fields when the option is set (`get_era5()`; an existing store gets its surface stream fetched again). In the ECMWF radiation scheme, the direct flux includes part of the radiation scattered in the forward direction, so `fdir` is somewhat larger than what a pyrheliometer would measure (ECMWF, *Radiation quantities in the ECMWF model and MARS*).
 
-The output store records the option in its attribute `direct_diffuse`.
+**Sky diffuse on slopes.** `toposcale.diffuse_model: isotropic` (default) scales the grid diffuse by the sky view factor of the point. `hay_davies` (Hay and Davies, 1980) treats part of it as circumsolar: a share equal to the anisotropy index A = direct / SWtoa (both on a horizontal surface) comes from the direction of the sun, so it is projected on the slope with the beam ratio cos i / cos z (cos z floored at cos 85°) and removed in terrain shadow like the direct beam; the rest, 1 − A, is isotropic:
+
+D = D_grid [(1 − A) svf + A (cos i / cos z) (1 − shade)].
+
+On level open ground both give the grid diffuse. Under clear skies the circumsolar part brightens slopes facing the sun and darkens slopes facing away from it; under overcast skies (A → 0) the two models agree.
+
+The output store records the options in its attributes `direct_diffuse` and `diffuse_model`.
+
+## Terrain radiation
+
+The terrain around a point fills the part of its view that the sky does not, 1 − svf (the sky view factor is cosine weighted and counts the tilt of the slope, so 1 − svf is the configuration factor of the terrain).
+
+**Longwave.** With `toposcale.LW_terrain_contribution: True`, the terrain emits 0.99 σ T⁴ towards the point, weighted by ½ (1 + cos S)(1 − svf) as in TopoSCALE. `toposcale.LW_terrain_temperature` sets T: `air` (default), the air temperature at the point; `fixed`, 273.15 K, the value of earlier versions, which overestimates the longwave of cold snow-covered terrain by up to about 60 W m⁻² × the weight at −15 °C; or a temperature in K. `topo_scale_zarr.ClimateDownscaler` also takes a DataArray (point_name, time) of temperatures, the hook for surface temperatures of a snow model run on the points (e.g. FSM iterations).
+
+**Shortwave.** With `toposcale.SW_terrain_albedo` above 0, the terrain reflects the global radiation of a level surface at the point (the direct beam at the elevation of the point, unshaded, plus the grid diffuse) with that albedo: SW_terrain = α (1 − svf) (B_flat + D_grid). It is added to `SW_diffuse` and stored as `SW_terrain`. It is largest in deep valleys and on steep slopes facing bright slopes: with α = 0.8 (fresh snow), svf = 0.7 and 500 W m⁻², it adds 120 W m⁻². `ClimateDownscaler` also takes a DataArray (point_name, time) of albedos, the hook for the albedo of a snow model.
 
 
 ## Slope, aspect and sky view factor

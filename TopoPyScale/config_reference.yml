@@ -82,6 +82,9 @@ sampling:
 toposcale:
   interpolation_method: idw               # horizontal interpolation of ERA5: idw or linear
   LW_terrain_contribution: True           # (optional) terrain contribution to longwave. Default False
+  LW_terrain_temperature: air             # (optional) temperature of the terrain emitting that longwave: air (air temperature at the point), fixed (273.15 K) or a value in K. Default air
+  diffuse_model: isotropic                # (optional) sky diffuse on slopes: isotropic or hay_davies (circumsolar part from the sun direction). Default isotropic
+  SW_terrain_albedo: 0                    # (optional) albedo of the surrounding terrain reflecting shortwave to the point (output SW_terrain). 0: off. Default 0
   physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'warning' or 'error' (raise)
   point_block: 100                        # (optional) number of points downscaled together. Default 100
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year

@@ -89,7 +89,9 @@ VAR_ATTRS = {
     'SW': {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
            'standard_name': 'surface_downwelling_shortwave_flux_in_air'},
     'SW_direct': {'units': 'W m**-2', 'long_name': 'Surface direct solar radiation downwards'},
-    'SW_diffuse': {'units': 'W m**-2', 'long_name': 'Surface diffuse solar radiation downwards'},
+    'SW_diffuse': {'units': 'W m**-2', 'long_name': 'Surface diffuse solar radiation downwards (sky and terrain)'},
+    'SW_terrain': {'units': 'W m**-2', 'long_name': 'Solar radiation reflected by the surrounding terrain (part of '
+                                                    'SW_diffuse)'},
     'cos_illumination': {'units': '1', 'long_name': 'Cosine of the solar illumination angle on the slope'},
     't_pl': {'units': 'K', 'long_name': 'Pressure-level temperature before the surface-effect correction'},
     'dT_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on temperature: t2m - T_pl at the ERA5 surface'},
@@ -146,6 +148,12 @@ class ClimateDownscaler:
         solar_constant (float): total solar irradiance at 1 AU [W m-2]
         direct_diffuse (str): direct/diffuse split of the ERA5 shortwave: 'empirical' (default, from the clearness
             index, Ruiz-Arias et al. 2010) or 'era5' (the direct radiation fdir of the store)
+        lw_terrain_temperature: temperature of the terrain emitting longwave to the point (lw_terrain_flag): 'air'
+            (default, the air temperature at the point), 'fixed' (273.15 K), a value [K], or a DataArray
+            (point_name, time) [K], e.g. surface temperatures of a snow model
+        diffuse_model (str): 'isotropic' (default) or 'hay_davies' (circumsolar part from the sun direction)
+        terrain_albedo: albedo of the surrounding terrain reflecting shortwave to the point: 0 (default, off), a
+            value, or a DataArray (point_name, time), e.g. snow albedo of a snow model. Adds the output SW_terrain
     """
 
     def __init__(self,
@@ -173,7 +181,10 @@ class ClimateDownscaler:
                  solar_substeps=6,
                  solar_method='nrel_numpy',
                  solar_constant=sg.S0_DEFAULT,
-                 direct_diffuse='empirical'):
+                 direct_diffuse='empirical',
+                 lw_terrain_temperature='air',
+                 diffuse_model='isotropic',
+                 terrain_albedo=0.):
 
         store_name = store_name or 'down.zarr'
         if not str(store_name).endswith('.zarr'):
@@ -274,6 +285,14 @@ class ClimateDownscaler:
         self._setup_shading(window, default_substeps if shading_substeps is None else shading_substeps)
 
         self.lw_terrain_flag = lw_terrain_flag
+        if diffuse_model not in core.DIFFUSE_MODELS:
+            raise ValueError(f'diffuse_model {diffuse_model} not supported, use {" or ".join(core.DIFFUSE_MODELS)}')
+        if isinstance(lw_terrain_temperature, str) and lw_terrain_temperature not in ('air', 'fixed'):
+            raise ValueError(f"lw_terrain_temperature {lw_terrain_temperature} not supported: 'air', 'fixed', a "
+                             f"temperature [K] or a DataArray (point_name, time)")
+        self.radiation = {'lw_terrain_temperature': self._field(lw_terrain_temperature, 'lw_terrain_temperature'),
+                          'diffuse_model': diffuse_model,
+                          'albedo': self._field(0. if terrain_albedo is None else terrain_albedo, 'terrain_albedo')}
         self.precip_lapse_rate_flag = precip_lapse_rate_flag
         self.precip_lapse_rate_max_factor = precip_lapse_rate_max_factor or PRECIP_LAPSE_MAX_FACTOR
         self.varout = list(varout) if varout not in (None, 'all') else list(varout_default)
@@ -282,6 +301,9 @@ class ClimateDownscaler:
             self.surface['beta'] = se.beta_t(self.tvec, **self.surface['beta_coef'])
         if surface_effect is not None and surface_effect.get('diagnostics'):
             self.varout += [v for v in SURFACE_DIAGNOSTICS if v not in self.varout]
+        albedo = self.radiation['albedo']
+        if (isinstance(albedo, xr.DataArray) or albedo > 0) and 'SW_terrain' not in self.varout:
+            self.varout.append('SW_terrain')
         self.point_block = int(point_block)
         self.time_block = int(time_block) if time_block else int(round(365 * 24 / self.tstep_h))
         self.time_block = min(self.time_block, self.tvec.size)
@@ -295,6 +317,23 @@ class ClimateDownscaler:
         self.point_blocks = [(s, min(s + self.point_block, npts)) for s in range(0, npts, self.point_block)]
         self.time_blocks = [(s, min(s + self.time_block, self.tvec.size))
                             for s in range(0, self.tvec.size, self.time_block)]
+
+    def _field(self, value, name):
+        """A scalar option, or a DataArray (point_name, time) aligned on the points and time steps."""
+        if not isinstance(value, xr.DataArray):
+            return value
+        da_ = value.assign_coords(point_name=tu.as_str(value.point_name.values))
+        missing = sorted(set(self.df.point_name) - set(da_.point_name.values))
+        if missing:
+            raise ValueError(f'{name}: points {missing[:5]} missing')
+        da_ = da_.sel(point_name=self.df.point_name.values)
+        self._time_index(pd.DatetimeIndex(da_.time.values), name)
+        return da_.sel(time=self.tvec).transpose('time', 'point_name')
+
+    def _radiation(self, p0, p1, t0, t1):
+        """Radiation options of points p0:p1 and time steps t0:t1."""
+        return {k: (np.asarray(v[t0:t1, p0:p1].values, dtype=float) if isinstance(v, xr.DataArray) else v)
+                for k, v in self.radiation.items()}
 
     def _time_index(self, available, name):
         idx = available.get_indexer(self.tvec)
@@ -327,6 +366,13 @@ class ClimateDownscaler:
                     'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'accumulation_hours': int(self.acc_hours),
                     'direct_diffuse': self.direct_diffuse,
+                    'diffuse_model': self.radiation['diffuse_model'],
+                    'lw_terrain_temperature': (str(self.radiation['lw_terrain_temperature'])
+                                               if not isinstance(self.radiation['lw_terrain_temperature'],
+                                                                 xr.DataArray) else 'given (point_name, time)'),
+                    'terrain_albedo': (float(self.radiation['albedo'])
+                                       if not isinstance(self.radiation['albedo'], xr.DataArray)
+                                       else 'given (point_name, time)'),
                     **{k: (int(v) if isinstance(v, (np.integer,)) else v) for k, v in self.solar_attrs.items()}}
         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
         # chunks of up to 10 points x time block, grouped in shards of point_block points: each block writes whole
@@ -452,7 +498,8 @@ class ClimateDownscaler:
                            weight=None if self.surface.get('weight') is None else self.surface['weight'][p0:p1])
         out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
                                    self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
-                                   self.precip_lapse_rate_max_factor, surface, acc_hours=self.acc_hours)
+                                   self.precip_lapse_rate_max_factor, surface, acc_hours=self.acc_hours,
+                                   radiation=self._radiation(p0, p1, t0, t1))
         group = zarr.open_group(str(self.store), mode='r+')
         for v in self.varout:
             group[v][p0:p1, t0:t1] = out[v].T.astype('float32')

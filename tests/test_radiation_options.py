@@ -86,3 +86,73 @@ def test_era5_split_needs_fdir(case, tmp_path):
         run(case, path, rows, tmp_path, 'x.zarr', direct_diffuse='era5')
     with pytest.raises(ValueError, match='not supported'):
         run(case, path, rows, tmp_path, 'x.zarr', direct_diffuse='ecmwf')
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+#  terrain longwave, Hay-Davies diffuse, terrain reflection
+# ---------------------------------------------------------------------------------------------------------------------
+def shortwave(ssrd=500., fdir=None, slope=0., aspect=0., svf=1., shade=0., **kw):
+    sol = solar_noon()
+    sp = np.array([[85000.]])
+    return core.shortwave(np.array([[ssrd * 3600]]), sp, sp, sol, np.array([np.deg2rad(slope)]),
+                          np.array([np.deg2rad(aspect)]), np.array([svf]), np.array([[shade]]),
+                          fdir=None if fdir is None else np.array([[fdir * 3600]]), **kw)
+
+
+def test_terrain_longwave_from_air_temperature():
+    t = np.array([[258.15]])
+    args = (t, np.array([[200.]]), t, np.array([[200.]]), np.array([[250. * 3600]]), np.array([0.8]), np.array([0.]),
+            True)
+    fixed, _ = core.longwave(*args)
+    air, _ = core.longwave(*args, t_terrain=t)
+    np.testing.assert_allclose(fixed - air, 0.2 * 0.99 * core.SIGMA * (273.15 ** 4 - 258.15 ** 4))
+
+
+def test_hay_davies_diffuse():
+    iso = shortwave(fdir=350.)
+    hd = shortwave(fdir=350., diffuse_model='hay_davies')
+    np.testing.assert_allclose(hd['SW_diffuse'], iso['SW_diffuse'])          # level open ground: no change
+    # slope facing the sun: the circumsolar part follows the beam
+    iso = shortwave(fdir=350., slope=40., svf=0.88)
+    hd = shortwave(fdir=350., slope=40., svf=0.88, diffuse_model='hay_davies')
+    assert hd['SW_diffuse'][0, 0] > iso['SW_diffuse'][0, 0] + 5
+    # in terrain shadow it is lost with the beam
+    hd_shade = shortwave(fdir=350., slope=40., svf=0.88, shade=1., diffuse_model='hay_davies')
+    assert hd_shade['SW_diffuse'][0, 0] < iso['SW_diffuse'][0, 0]
+    # without direct beam the diffuse is isotropic
+    np.testing.assert_allclose(shortwave(fdir=0., slope=40., svf=0.88, diffuse_model='hay_davies')['SW_diffuse'],
+                               shortwave(fdir=0., slope=40., svf=0.88)['SW_diffuse'])
+    with pytest.raises(ValueError, match='not supported'):
+        shortwave(diffuse_model='perez')
+
+
+def test_terrain_reflection():
+    out = shortwave(fdir=350., svf=0.8, albedo=0.5)
+    np.testing.assert_allclose(out['SW_terrain'], 0.5 * 0.2 * 500.)
+    np.testing.assert_allclose(out['SW'], out['SW_direct'] + out['SW_diffuse'])
+    np.testing.assert_allclose(out['SW_diffuse'] - shortwave(fdir=350., svf=0.8)['SW_diffuse'], out['SW_terrain'])
+    np.testing.assert_allclose(shortwave(fdir=350., svf=1., albedo=0.5)['SW_terrain'], 0.)
+
+
+def test_downscaler_radiation_options_and_hooks(case, tmp_path):
+    rows = [syn.make_point(case, name='001', elevation=1500.),
+            syn.make_point(case, name='002', dx=2000., elevation=2200., slope_deg=35., aspect_deg=0., svf=0.8)]
+    path = store(case, tmp_path / 'opt.zarr')
+    names = [r.point_name for r in rows]
+    time = pd.date_range(case.start, periods=48, freq='1h')
+    albedo = xr.DataArray(np.full((2, 48), 0.6), dims=['point_name', 'time'], coords={'point_name': names,
+                                                                                      'time': time})
+    ref = run(case, path, rows, tmp_path, 'ref.zarr', lw_terrain_flag=True, lw_terrain_temperature='fixed')
+    out = run(case, path, rows, tmp_path, 'out.zarr', lw_terrain_flag=True, lw_terrain_temperature='air',
+              diffuse_model='hay_davies', terrain_albedo=albedo)
+    hook = run(case, path, rows, tmp_path, 'hook.zarr', lw_terrain_flag=True, terrain_albedo=0.6,
+               lw_terrain_temperature=albedo * 0 + 273.15)
+    assert 'SW_terrain' in out and 'SW_terrain' not in ref
+    assert out.attrs['diffuse_model'] == 'hay_davies' and ref.attrs['lw_terrain_temperature'] == 'fixed'
+    np.testing.assert_allclose(hook.LW.values, ref.LW.values, rtol=1e-6)        # 273.15 K given as a field
+    np.testing.assert_allclose(hook.SW_terrain.values, out.SW_terrain.values, rtol=1e-5, atol=1e-3)
+    # a summer day: the air is warmer than 0 degC, the terrain longwave increases
+    assert (out.LW - ref.LW).isel(point_name=1).mean() > 0
+    np.testing.assert_allclose(out.SW.values, (out.SW_direct + out.SW_diffuse).values, atol=1e-3)
+    with pytest.raises(ValueError, match='missing'):
+        run(case, path, rows, tmp_path, 'bad.zarr', terrain_albedo=albedo.isel(point_name=[0]))

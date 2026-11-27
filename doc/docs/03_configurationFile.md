@@ -116,6 +116,9 @@ sampling:
 toposcale:
   interpolation_method: idw               # horizontal interpolation of ERA5: idw or linear
   LW_terrain_contribution: True           # (optional) terrain contribution to longwave. Default False
+  LW_terrain_temperature: air             # (optional) temperature of the terrain emitting that longwave: air (air temperature at the point), fixed (273.15 K) or a value in K. Default air
+  diffuse_model: isotropic                # (optional) sky diffuse on slopes: isotropic or hay_davies (circumsolar part from the sun direction). Default isotropic
+  SW_terrain_albedo: 0                    # (optional) albedo of the surrounding terrain reflecting shortwave to the point (output SW_terrain). 0: off. Default 0
   physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'warning' or 'error' (raise)
   point_block: 100                        # (optional) number of points downscaled together. Default 100
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
@@ -228,6 +231,9 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
 |-------------------------|---------------|----------|-----------------|-------------|
 | interpolation_method    | idw           | yes      | idw, linear     | horizontal interpolation of ERA5 to the points: inverse squared distance weight, or bilinear in latitude/longitude |
 | LW_terrain_contribution | True          | no       | True, False     | add the longwave emitted by the surrounding terrain. Default False |
+| LW_terrain_temperature  | air           | no       | air, fixed, float | temperature of the surrounding terrain emitting longwave to the point (with `LW_terrain_contribution`), with emissivity 0.99: `air`, the air temperature at the point; `fixed`, 273.15 K (the value before version 1.1); or a temperature in K. Default air. See [Features](07_features.md#terrain-radiation) |
+| diffuse_model           | isotropic     | no       | isotropic, hay_davies | diffuse shortwave of the sky on slopes. `isotropic`: the grid diffuse scaled by the sky view factor. `hay_davies` (Hay and Davies, 1980): a share of the diffuse equal to the anisotropy index (direct / top of atmosphere) comes from the direction of the sun, projected on the slope and shaded by the terrain as the direct beam; the rest is isotropic. Default isotropic. See [Features](07_features.md#direct-and-diffuse-shortwave) |
+| SW_terrain_albedo       | 0.3           | no       | float in [0, 1] | albedo of the surrounding terrain: the terrain seen by the point (1 − svf) reflects the global radiation of a level surface at the point, added to `SW_diffuse` and stored as `SW_terrain`. 0: off. Default 0. See [Features](07_features.md#terrain-radiation) |
 | point_block             | 100           | no       | int             | number of points downscaled together (also the shard size of the output store). Default 100 |
 | time_block              | 8760          | no       | int             | number of time steps downscaled together (also the chunk size of the output store). Default: one year |
 | solar_constant          | 1361          | no       | float           | total solar irradiance at 1 AU [W m-2], scaled by the Earth-Sun distance to compute the top-of-atmosphere irradiance. Default 1361 |

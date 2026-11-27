@@ -706,7 +706,10 @@ class Topoclass(object):
             solar_substeps=self.config.toposcale.solar_substeps or 6,
             solar_method=self.config.dem.solar_position_method or 'nrel_numpy',
             solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
-            direct_diffuse=self.config.toposcale.direct_diffuse or 'empirical')
+            direct_diffuse=self.config.toposcale.direct_diffuse or 'empirical',
+            lw_terrain_temperature=self.config.toposcale.LW_terrain_temperature or 'air',
+            diffuse_model=self.config.toposcale.diffuse_model or 'isotropic',
+            terrain_albedo=self.config.toposcale.SW_terrain_albedo or 0.)
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
         return cda.downscale(n_core=n_core)
 
