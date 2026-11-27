@@ -17,13 +17,44 @@ Create the ERA5 store from yearly netcdf files with fetch_era5.netcdf_to_zarr().
 - **PLEV_VARS**
 - **SURF_VARS**
 - **SOLAR_VARS**
+- **ACC_VARS**
+- **DIRECT_DIFFUSE**
 - **varout_default**
 - **VAR_ATTRS**
 - **SURFACE_DIAGNOSTICS**
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L71"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L47"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `accumulation`
+
+```python
+accumulation(era_times, era_attrs, tstep_h)
+```
+
+How the accumulated fields of an ERA5 store cover the time steps of the downscaling. 
+
+A store holds at each time stamp the accumulation over the accumulation_hours hours ending at the stamp (store attribute; 1 h for ERA5 files and for stores written before it was recorded). When the store is finer than the time step and its accumulations cover its own steps (an hourly store downscaled at 3 h), the k values of each window are summed. 
+
+
+
+**Args:**
+ 
+ - <b>`era_times`</b> (DatetimeIndex):  time axis of the store 
+ - <b>`era_attrs`</b> (dict):  attributes of the store 
+ - <b>`tstep_h`</b> (int):  time step of the downscaling [h] 
+
+
+
+**Returns:**
+ 
+ - <b>`k`</b> (int):  number of stored values summed per time step, acc_hours (int): hours accumulated per time step 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L103"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `tp_attrs`
 
@@ -38,7 +69,7 @@ tp_attrs(tstep_h)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L77"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L109"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>class</kbd> `ClimateDownscaler`
 Downscale an ERA5 zarr store to a list of points. 
@@ -51,7 +82,8 @@ Downscale an ERA5 zarr store to a list of points.
  - <b>`output_path`</b> (str):  directory of the output store 
  - <b>`df_centroids`</b> (dataframe):  points with point_name, x, y, lat, lon, elevation, slope, aspect, svf 
  - <b>`da_horizon`</b> (dataarray):  horizon angles [rad] of the points (azimuth, point_name), from  topo_param.compute_horizon_points, or of the DEM grid (azimuth, y, x), taken at the nearest pixel 
- - <b>`ds_solar`</b> (dataset):  solar geometry (point_name, time), from solar_geom.get_solar_geom 
+ - <b>`ds_solar`</b> (dataset):  precomputed solar geometry (point_name, time), from solar_geom.get_solar_geom. None 
+ - <b>`(recommended)`</b>:  the solar geometry of each block of points and time steps is computed when the block is downscaled, from the coordinates of the points, without holding it for the whole period in memory 
  - <b>`target_EPSG`</b> (int):  EPSG code of x, y 
  - <b>`start_date, end_date (str)`</b>:  period to downscale (end_date included) 
  - <b>`tstep`</b> (str):  '1h', '3h' or '6h' 
@@ -68,9 +100,19 @@ Downscale an ERA5 zarr store to a list of points.
  - <b>`max_box_mb`</b> (float):  the ERA5 nodes around all points are read once per time block if they fit in this  memory (MB), otherwise once per point block 
  - <b>`shading_substeps`</b> (int):  sub-steps of the radiation accumulation window at which terrain shading is tested; 
  - <b>`the direct beam is scaled by the sunlit fraction of the window (1`</b>:  one test at the centre, all or 
- - <b>`nothing). Default`</b>:  the solar_substeps of ds_solar, else 6 
+ - <b>`nothing). Default`</b>:  solar_substeps (or the solar_substeps of ds_solar) 
+ - <b>`accumulation_window`</b> (str):  window over which the radiation fluxes are accumulated, ending at the time stamp. 
+ - <b>`Default`</b>:  the hours the accumulated fields cover per time step (see accumulation(): the time step for stores of window sums or hourly stores, 1 h for stores sampling the hourly ERA5 accumulations). Used when ds_solar is None 
+ - <b>`solar_substeps`</b> (int):  sub-steps of the window averaged for the top-of-atmosphere irradiance. Default 6 
+ - <b>`solar_method`</b> (str):  pvlib solar position method, default 'nrel_numpy' (vectorized) 
+ - <b>`solar_constant`</b> (float):  total solar irradiance at 1 AU [W m-2] 
+ - <b>`direct_diffuse`</b> (str):  direct/diffuse split of the ERA5 shortwave: 'empirical' (default, from the clearness  index, Ruiz-Arias et al. 2010) or 'era5' (the direct radiation fdir of the store) 
+ - <b>`lw_terrain_temperature`</b>:  temperature of the terrain emitting longwave to the point (lw_terrain_flag): 'air'  (default, the air temperature at the point), 'fixed' (273.15 K), a value [K], or a DataArray  (point_name, time) [K], e.g. surface temperatures of a snow model 
+ - <b>`diffuse_model`</b> (str):  'isotropic' (default) or 'hay_davies' (circumsolar part from the sun direction) 
+ - <b>`terrain_albedo`</b>:  albedo of the surrounding terrain reflecting shortwave to the point: 0 (default, off), a  value, or a DataArray (point_name, time), e.g. snow albedo of a snow model. Adds the output SW_terrain 
+ - <b>`wind`</b> (dict):  wind options from wind.setup() (None: pressure-level wind). Blending needs u10 and v10 in the  ERA5 store 
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L110"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L161"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.__init__`
 
@@ -95,7 +137,16 @@ __init__(
     time_block=None,
     max_box_mb=2000,
     surface_effect=None,
-    shading_substeps=None
+    shading_substeps=None,
+    accumulation_window=None,
+    solar_substeps=6,
+    solar_method='nrel_numpy',
+    solar_constant=1361.0,
+    direct_diffuse='empirical',
+    lw_terrain_temperature='air',
+    diffuse_model='isotropic',
+    terrain_albedo=0.0,
+    wind=None
 )
 ```
 
@@ -108,7 +159,7 @@ __init__(
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L349"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L527"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.downscale`
 
@@ -132,7 +183,7 @@ Downscale all points and write them to the output store.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L319"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L496"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.process_block`
 
@@ -150,7 +201,7 @@ Downscale points p0:p1 (positions in df_centroids) for time steps t0:t1 and writ
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L206"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_scale_zarr.py#L363"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `ClimateDownscaler.setup_output_store`
 

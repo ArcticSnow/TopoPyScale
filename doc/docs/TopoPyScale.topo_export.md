@@ -18,7 +18,7 @@ TODO;
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L35"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L37"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `point_file_names`
 
@@ -31,7 +31,7 @@ File name of each point: the point index, zero-padded to n_digits, in place of '
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L68"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L73"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `export_points`
 
@@ -45,7 +45,8 @@ export_points(
     extra=None,
     options=None,
     n_jobs=1,
-    label='files'
+    label='files',
+    max_block_mb=500
 )
 ```
 
@@ -66,6 +67,7 @@ The points are processed by blocks of consecutive points aligned on the chunks o
  - <b>`options`</b> (dict):  keyword arguments of write 
  - <b>`n_jobs`</b> (int):  number of processes. 1: in this process 
  - <b>`label`</b> (str):  what is written, for the progress messages 
+ - <b>`max_block_mb`</b> (float):  memory of the block of points read at once by each process (float64): fewer points  per block for long periods 
 
 
 
@@ -76,7 +78,7 @@ The points are processed by blocks of consecutive points aligned on the chunks o
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L116"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L124"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_scaling_and_offset`
 
@@ -96,7 +98,7 @@ Compute offset and scale factor for int conversion
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L138"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L146"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_netcdf`
 
@@ -118,7 +120,7 @@ Generic function to save a datatset to one single compressed netcdf file. Float 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L204"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L214"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_musa`
 
@@ -193,7 +195,7 @@ MuSA config.py settings for these files:  nc_forcing_path = "<path>/forcing/"  n
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L442"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L452"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_cryogrid`
 
@@ -229,7 +231,7 @@ Function to export TopoPyScale downscaled dataset in a netcdf format compatible 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L485"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L494"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm2`
 
@@ -272,7 +274,7 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L946"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L956"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm2oshd`
 
@@ -313,7 +315,7 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1232"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1242"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm`
 
@@ -354,7 +356,7 @@ See README.md file from FSM source code for further details
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1281"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1291"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_TC`
 
@@ -377,7 +379,7 @@ format is a text file with the following columns datetime    TA  P       PRESS R
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1329"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1339"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_micromet_single_station`
 
@@ -416,7 +418,7 @@ year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1487"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1497"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_crocus`
 
@@ -451,7 +453,7 @@ Functiont to export toposcale output to CROCUS netcdf format. Generates one file
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1521"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1531"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_surfex`
 
@@ -493,7 +495,7 @@ Function to export toposcale output to Surfex forcing netcdf format. Generates o
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1696"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1706"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_snowpack`
 
@@ -518,7 +520,7 @@ SMET 1.1 ASCII [HEADER] station_id       = meteoc1 station_name     = WFJ2 latit
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1761"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1771"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_geotop`
 

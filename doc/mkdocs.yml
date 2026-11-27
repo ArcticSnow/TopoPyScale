@@ -25,6 +25,7 @@ nav:
         - surface_calib: TopoPyScale.surface_calib.md
         - solar_geom: TopoPyScale.solar_geom.md
         - topo_param: TopoPyScale.topo_param.md
+        - wind: TopoPyScale.wind.md
         - fetch_era5: TopoPyScale.fetch_era5.md
         - era5_store: TopoPyScale.era5_store.md
         - fetch_dem: TopoPyScale.fetch_dem.md
@@ -38,6 +39,8 @@ nav:
         - topo_utils: TopoPyScale.topo_utils.md
         - topo_compare: TopoPyScale.topo_compare.md
         - topo_plot: TopoPyScale.topo_plot.md
+        - log: TopoPyScale.log.md
+        - config_check: TopoPyScale.config_check.md
 
 
 theme:

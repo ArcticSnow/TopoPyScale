@@ -13,6 +13,8 @@ The store (inputs/climate/ERA5.zarr by default) is created by the first data wri
 - z_surf (latitude, longitude): surface geopotential, static 
 - filled_plev, filled_surf (time): 1 where the time step was written, after validation 
 
+At 3 h or 6 h time steps, the accumulated surface fields (tp, ssrd, strd...) are fetched hourly and stored as the sum over the time step ending at the stamp (store attribute accumulation_hours), not as the hour ending at the stamp: the hours of the first window of a request on the previous day are fetched with it. 
+
 Workers only transfer files. Every netCDF file is read by the main thread, one at a time, as netCDF-C and HDF5 are not thread safe. Each file is standardized (CDS names, ERA5/ERA5T expver, level order), checked (time steps, variables, levels, grid, missing values), written to its time slice of the store, then deleted. 
 
 The filled flags make the store its own record of what was fetched: a rerun only fetches the missing time steps, a longer period extends the store, and the downscaling refuses a store with gaps. 
@@ -27,13 +29,41 @@ S. Filhol, J. Fiddes and contributors
 - **SHORT_NAMES**
 - **PLEV_VARIABLES**
 - **SURF_VARIABLES**
+- **FDIR**
 - **REQUIRED**
 - **DIMS**
 - **REQUEST_KEYS**
+- **ACCUMULATED**
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L88"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L85"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `accumulated_names`
+
+```python
+accumulated_names(variables)
+```
+
+CDS variable names of accumulated fields. 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L90"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `window_hours`
+
+```python
+window_hours(stamps, acc_hours)
+```
+
+Hours of the windows of acc_hours hours ending at each stamp, (stamp, hour). 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L113"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `time_axis`
 
@@ -46,7 +76,7 @@ Time steps from the first hour of start to the last time step of end.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L94"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L119"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `snap_area`
 
@@ -59,7 +89,7 @@ Box [N, W, S, E] on the nodes of the ERA5 grid inside it: the nodes the CDS and 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L107"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L132"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `grid_of`
 
@@ -72,7 +102,7 @@ Latitudes (descending) and longitudes (ascending) of the nodes of a box from sna
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L119"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L144"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `month_tasks`
 
@@ -85,7 +115,7 @@ One task per stream and calendar month (or part of it within the period), the re
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L127"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L152"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `day_tasks`
 
@@ -98,7 +128,7 @@ One task per stream and day.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L132"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L157"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `standardize`
 
@@ -111,7 +141,7 @@ Harmonize an ERA5 netCDF file: CDS names (valid_time, pressure_level), ERA5 comp
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L166"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L191"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `open_raw`
 
@@ -124,7 +154,7 @@ Read downloaded files into memory, standardized: netCDF files, or zip files of n
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L195"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L220"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `retry`
 
@@ -137,7 +167,7 @@ Call fun(); on failure call it again after wait, 2 wait, 4 wait... seconds, unle
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L443"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L530"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `store_gaps`
 
@@ -150,7 +180,7 @@ What a store lacks to cover the period [start, end]: a list of messages, empty i
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L546"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L634"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `import_legacy`
 
@@ -163,7 +193,7 @@ Write the tasks found in earlier netCDF files to the store. Returns the tasks st
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L568"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L659"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `run`
 
@@ -188,7 +218,7 @@ Raises RuntimeError listing the tasks that failed, after all the others are writ
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L71"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L96"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>class</kbd> `Task`
 One download: a stream over whole days. The stream is 'plev', 'surf' or 'zsurf' (the static surface geopotential, fetched once). 
@@ -210,7 +240,7 @@ __init__(key: str, stream: str, days: tuple) → None
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L81"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L106"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `Task.times`
 
@@ -225,7 +255,7 @@ times(step)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L215"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L240"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>class</kbd> `Era5Store`
 ERA5 zarr store written by time slices (see the module docstring). 
@@ -241,7 +271,7 @@ ERA5 zarr store written by time slices (see the module docstring).
  - <b>`max_chunk_mb`</b> (float):  target size of a pressure-level chunk, used to choose the spatial chunk size 
  - <b>`compressor`</b> (obj):  zarr codec. Default: BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle') 
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L229"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L254"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `Era5Store.__init__`
 
@@ -266,7 +296,19 @@ __init__(path, request, times, time_chunk=720, max_chunk_mb=16, compressor=None)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L287"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L280"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+### <kbd>method</kbd> `Era5Store.aggregate`
+
+```python
+aggregate(task, ds)
+```
+
+Hourly surface data of a task to its time stamps: instantaneous fields at the stamps, accumulated fields summed over the acc_hours hours ending at each stamp. 
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L371"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `Era5Store.check`
 
@@ -278,7 +320,7 @@ Check a standardized dataset against the task and the store; returned as float32
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L256"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L319"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `Era5Store.missing`
 
@@ -290,7 +332,19 @@ Tasks with time steps not yet written (and the surface geopotential task if it i
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L404"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L270"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+### <kbd>method</kbd> `Era5Store.task_times`
+
+```python
+task_times(task)
+```
+
+Time steps the downloaded data of a task hold: its time stamps, or for surface fields stored as window sums all the hours of its windows, from the previous day. 
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L489"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `Era5Store.write`
 
@@ -303,12 +357,12 @@ Check ds (a standardized dataset of the task) and write it to its time slice, th
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L470"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L557"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>class</kbd> `LegacyFiles`
 netCDF files of the earlier layout, read instead of downloading again: climate/yearly/PLEV_*.nc and SURF_*.nc, the same in the climate folder, and climate/daily/dPLEV_*.nc and dSURF_*.nc. 
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L478"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L565"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `LegacyFiles.__init__`
 
@@ -325,7 +379,7 @@ __init__(folder)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L483"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L570"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `LegacyFiles.index`
 
@@ -337,15 +391,15 @@ index(stream)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L498"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/era5_store.py#L585"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ### <kbd>method</kbd> `LegacyFiles.read`
 
 ```python
-read(task, step, area)
+read(task, step, area, times=None)
 ```
 
-Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the variables of self.names ({'plev': [...], 'surf': [...]}, short names). 
+Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the variables of self.names ({'plev': [...], 'surf': [...]}, short names) at times (default: the time stamps of the task). 
 
 
 

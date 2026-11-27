@@ -20,6 +20,8 @@ Formulas of TopoSCALE (Fiddes and Gruber, 2014), used by topo_scale_zarr.py.
 - **LW_X1**
 - **LW_X2**
 - **T_TERRAIN**
+- **MU_MIN**
+- **DIFFUSE_MODELS**
 
 ---
 
@@ -55,6 +57,32 @@ Weights of the ERA5 nodes surrounding a point for the horizontal interpolation.
 
 <a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L62"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
+## <kbd>function</kbd> `seasonal_month`
+
+```python
+seasonal_month(months, latitude=None)
+```
+
+Month of the northern-hemisphere season of each time step and point: the month itself north of the equator, the month shifted by six south of it (January in the south is July in the north), for the monthly coefficients derived in the northern hemisphere. 
+
+
+
+**Args:**
+ 
+ - <b>`months`</b> (array):  month of each time step (1-12), (time,) or (time, point) 
+ - <b>`latitude`</b> (array):  latitude of the points [deg], (point,). None: months unchanged 
+
+
+
+**Returns:**
+ 
+ - <b>`array`</b>:  months (1-12), (time, point) if latitude is given 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L82"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
 ## <kbd>function</kbd> `precip_lapse_factor`
 
 ```python
@@ -70,7 +98,7 @@ The factor diverges for c dz -> 1 (dz ~ 2.9 km with c = 0.35 km-1) and becomes n
 **Args:**
  
  - <b>`elev_diff`</b> (array):  elevation of the point minus elevation of the ERA5 surface [m] 
- - <b>`months`</b> (array):  month of each time step (1-12) 
+ - <b>`months`</b> (array):  month of each time step (1-12), in the northern-hemisphere season (seasonal_month) 
  - <b>`max_factor`</b> (float):  upper bound of the factor (> 1) 
 
 
@@ -82,7 +110,7 @@ The factor diverges for c dz -> 1 (dz ~ 2.9 km with c = 0.35 km-1) and becomes n
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L94"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L116"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `neighbours`
 
@@ -109,7 +137,7 @@ Indices of the 3x3 ERA5 nodes around each point and their interpolation weights.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L127"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L149"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `weight_matrix`
 
@@ -136,7 +164,7 @@ Interpolation weights as a matrix (node x point) on a box of nlat x nlon ERA5 no
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L150"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L172"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `apply_weights`
 
@@ -149,7 +177,7 @@ Horizontal interpolation of field (..., nlat, nlon) with a weight matrix from we
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L160"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L182"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `interpolate_horizontal`
 
@@ -176,7 +204,7 @@ Weighted sum over the 3x3 neighbours of each point.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L178"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L200"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `interpolate_vertical`
 
@@ -203,7 +231,7 @@ Linear interpolation in height between the two pressure levels bracketing each p
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L218"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L240"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `q_from_dewpoint`
 
@@ -216,7 +244,7 @@ Specific humidity [kg kg-1] from dew point [K] and pressure [Pa] (Magnus, as met
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L225"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L247"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `vapor_pressure_from_q`
 
@@ -229,7 +257,7 @@ Vapour pressure [Pa] from specific humidity and pressure (exact inverse of q_fro
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L252"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `dewpoint_from_vp`
 
@@ -242,7 +270,7 @@ Dew point [K] from vapour pressure [Pa] (inverse of the Magnus formula of q_from
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L236"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L258"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `surface_signal`
 
@@ -267,7 +295,7 @@ ERA5 surface effect at the grid surface: 2 m temperature and dew point minus the
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L253"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L275"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `surface_correction`
 
@@ -295,7 +323,7 @@ Add the terrain-weighted surface effect to pressure-level temperature and humidi
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L275"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L297"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `mixing_ratio`
 
@@ -308,7 +336,7 @@ As meteo_util.mixing_ratio.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L280"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L302"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `vapor_pressure`
 
@@ -321,7 +349,7 @@ As meteo_util.vapor_pressure [Pa].
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L285"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L307"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `wind_speed_direction`
 
@@ -334,22 +362,85 @@ Wind speed [m s-1] and direction the wind blows from, clockwise from north [rad,
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L290"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L312"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `wind_components`
+
+```python
+wind_components(ws, wd)
+```
+
+u, v [m s-1] of a wind of speed ws blowing from the direction wd (clockwise from north, rad). 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L317"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `wind_terrain`
+
+```python
+wind_terrain(
+    u,
+    v,
+    slope,
+    aspect,
+    curvature,
+    slope_scale,
+    slope_weight=0.58,
+    curvature_weight=0.42
+)
+```
+
+Wind weighting and diverting factors of MicroMet (Liston and Elder, 2006, eqs. 15-19). 
+
+
+
+**Args:**
+ 
+ - <b>`u, v (array)`</b>:  wind [m s-1], (time, point) 
+ - <b>`slope, aspect (array)`</b>:  [rad], (point,), aspect 0 = south, positive towards east (TopoPyScale convention) 
+ - <b>`curvature`</b> (array):  terrain curvature scaled to [-0.5, 0.5] over the DEM, (point,) 
+ - <b>`slope_scale`</b> (float):  twice the steepest slope of the DEM [rad], scaling the slope in the wind direction 
+ - <b>`slope_weight, curvature_weight (float)`</b>:  gs and gc 
+
+
+
+**Returns:**
+ 
+ - <b>`u, v (array)`</b>:  wind after the terrain modification, (time, point) 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L339"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `precipitation`
 
 ```python
-precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=5.0)
+precipitation(
+    tp_m,
+    elev_diff,
+    months,
+    tstep_h,
+    lapse_rate_flag,
+    max_factor=5.0,
+    acc_hours=1,
+    latitude=None
+)
 ```
 
 
 
 **Args:**
  
- - <b>`tp_m`</b> (array):  interpolated ERA5 precipitation [m] over the hour ending at the time stamp, (time, point) 
+ - <b>`tp_m`</b> (array):  interpolated ERA5 precipitation [m] accumulated over the acc_hours hours ending at the time stamp,  (time, point) 
  - <b>`elev_diff`</b> (array):  point elevation - ERA5 surface elevation [m], (time, point) 
  - <b>`months`</b> (array):  month of each time step, (time,) 
- - <b>`tstep_h`</b> (int):  time step in hours 
+ - <b>`tstep_h`</b> (int):  time step in hours. tp_m is scaled by tstep_h / acc_hours: 1 when the accumulation covers the  time step 
+ - <b>`acc_hours`</b> (int):  hours accumulated in tp_m 
+ - <b>`latitude`</b> (array):  latitude of the points [deg], (point,): the monthly coefficients follow the season of each 
+ - <b>`hemisphere. None`</b>:  northern-hemisphere months 
 
 **Returns:**
  tp [mm per time step], precip_lapse_rate [-], both (time, point) 
@@ -357,12 +448,23 @@ precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=5.0)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L310"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L367"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `longwave`
 
 ```python
-longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag)
+longwave(
+    t,
+    vp,
+    t2m,
+    vp_surf,
+    strd,
+    svf,
+    slope,
+    terrain_flag,
+    acc_seconds=3600.0,
+    t_terrain=273.15
+)
 ```
 
 Downwelling longwave [W m-2]: clear-sky emissivity at the point plus the cloud emissivity of ERA5. 
@@ -372,13 +474,15 @@ Downwelling longwave [W m-2]: clear-sky emissivity at the point plus the cloud e
 **Args:**
  
  - <b>`t, vp`</b>:  air temperature [K] and vapour pressure [Pa] at the points, (time, point) 
- - <b>`t2m, vp_surf, strd`</b>:  ERA5 surface temperature [K], vapour pressure [Pa], and strd [J m-2 over 1 h], (time, point) 
+ - <b>`t2m, vp_surf, strd`</b>:  ERA5 surface temperature [K], vapour pressure [Pa], and strd [J m-2 accumulated over  acc_seconds], (time, point) 
  - <b>`svf, slope`</b>:  sky view factor [-] and slope [rad], (point,) 
+ - <b>`acc_seconds`</b> (float):  accumulation period of strd [s] 
+ - <b>`t_terrain`</b> (float or array):  temperature of the surrounding terrain [K], scalar or (time, point), for the  longwave it emits (emissivity 0.99) when terrain_flag 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L328"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L389"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `horizon_at_sun`
 
@@ -399,12 +503,25 @@ Horizon angle in the direction of the sun (nearest azimuth bin, as xarray .sel(m
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L345"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L406"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `shortwave`
 
 ```python
-shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade)
+shortwave(
+    ssrd,
+    sp,
+    p,
+    solar,
+    slope,
+    aspect,
+    svf,
+    shade,
+    acc_seconds=3600.0,
+    fdir=None,
+    diffuse_model='isotropic',
+    albedo=0.0
+)
 ```
 
 Shortwave partition and terrain corrections. 
@@ -413,23 +530,29 @@ Shortwave partition and terrain corrections.
 
 **Args:**
  
- - <b>`ssrd`</b> (array):  ERA5 ssrd [J m-2 over 1 h], (time, point) 
+ - <b>`ssrd`</b> (array):  ERA5 ssrd [J m-2 accumulated over acc_seconds], (time, point) 
  - <b>`sp`</b> (array):  ERA5 surface pressure [Pa], (time, point) 
  - <b>`p`</b> (array):  pressure at the point [Pa], (time, point) 
  - <b>`solar`</b> (dict):  'mu0', 'SWtoa', 'zenith', 'azimuth' (rad), 'sunset' (bool), each (time, point) 
  - <b>`slope, aspect, svf (array)`</b>:  (point,), angles in rad, aspect 0 = south 
  - <b>`shade`</b> (bool array):  sun behind the local horizon, (time, point) 
+ - <b>`acc_seconds`</b> (float):  accumulation period of ssrd [s], the window of solar['SWtoa'] 
+ - <b>`fdir`</b> (array):  ERA5 direct solar radiation on a horizontal surface [J m-2 accumulated over acc_seconds], 
+ - <b>`(time, point). None`</b>:  the direct/diffuse split of the grid comes from the clearness index (Ruiz-Arias et al., 2010) 
+ - <b>`diffuse_model`</b> (str):  'isotropic': sky diffuse scaled by the sky view factor; 'hay_davies': the circumsolar  part, a share of the diffuse equal to the anisotropy index (direct / TOA, Hay and Davies 1980), comes  from the direction of the sun (projected on the slope and shaded as the beam), the rest is isotropic 
+ - <b>`albedo`</b> (float or array):  albedo of the surrounding terrain, scalar or (time, point). The terrain seen by  the point (1 - svf) reflects the global radiation of a level surface at the point, added to the diffuse. 
+ - <b>`0`</b>:  no terrain reflection 
 
 
 
 **Returns:**
  
- - <b>`dict`</b>:  'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination', each (time, point) 
+ - <b>`dict`</b>:  'SW', 'SW_direct', 'SW_diffuse' (sky and terrain), 'cos_illumination', 'SW_terrain' (reflected by the terrain, part of SW_diffuse), each (time, point) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L381"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/toposcale_core.py#L469"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `downscale_block`
 
@@ -446,7 +569,10 @@ downscale_block(
     lw_terrain_flag,
     precip_lapse_rate_flag,
     precip_lapse_rate_max_factor=5.0,
-    surface=None
+    surface=None,
+    acc_hours=1,
+    radiation=None,
+    wind=None
 )
 ```
 
@@ -457,15 +583,22 @@ Downscale one block of time steps for a set of points.
 **Args:**
  
  - <b>`plev`</b> (dict):  horizontally interpolated pressure-level fields 'z' (m2 s-2), 't', 'q', 'u', 'v',  each (time, level, point) 
- - <b>`surf`</b> (dict):  horizontally interpolated surface fields 'z_surf' (m2 s-2), 'sp', 't2m', 'd2m', 'tp', 'ssrd',  'strd', each (time, point) 
+ - <b>`surf`</b> (dict):  horizontally interpolated surface fields 'z_surf' (m2 s-2), 'sp', 't2m', 'd2m', 'tp', 'ssrd',  'strd', and optionally 'fdir' (direct/diffuse split of ERA5), each (time, point) 
  - <b>`level_hpa`</b> (array):  pressure levels [hPa] 
  - <b>`months`</b> (array):  month of each time step 
- - <b>`points`</b> (dict):  'elevation', 'slope', 'aspect', 'svf', each (point,) 
+ - <b>`points`</b> (dict):  'elevation', 'slope', 'aspect', 'svf', each (point,), and optionally 'lat' [deg] for the  season of the precipitation coefficients 
  - <b>`solar`</b> (dict):  see shortwave(), each (time, point) 
  - <b>`shade`</b> (bool array):  (time, point) 
  - <b>`tstep_h`</b> (int):  time step of the data in hours 
  - <b>`surface`</b> (dict):  optional surface-effect correction (surface_effect.py): 'weight' (point,) or None for the  diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the 
  - <b>`corrected temperature and humidity). None`</b>:  no correction, outputs unchanged 
+ - <b>`acc_hours`</b> (int):  hours accumulated in surf 'tp', 'ssrd' and 'strd' (ending at the time stamp) 
+ - <b>`radiation`</b> (dict):  options of the radiation: 'lw_terrain_temperature' ('air': the air temperature at the 
+ - <b>`point, 'fixed'`</b>:  273.15 K, a value [K], or an array (time, point)), 'diffuse_model' ('isotropic' or 
+ - <b>`'hay_davies'), 'albedo' (of the surrounding terrain, scalar or (time, point); 0`</b>:  no reflection). 
+ - <b>`Default`</b>:  fixed terrain temperature, isotropic diffuse, no reflection 
+ - <b>`wind`</b> (dict):  wind options (wind.setup): 'blend' (point,) weight of the ERA5 10 m wind surf['u10'],  surf['v10']; 'terrain' 'liston_elder' with 'curvature' (point,), 'slope_scale', 'slope_weight', 
+ - <b>`'curvature_weight'. None`</b>:  pressure-level wind 
 
 
 

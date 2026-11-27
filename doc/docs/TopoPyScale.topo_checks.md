@@ -11,9 +11,11 @@ Every check returns rows with the columns:  check, variable, status, n_fail, n_t
 
 Typical usage after a downscaling run: 
 
- from TopoPyScale import topo_checks as tc  report = tc.run_all_checks(mp.downscaled_pts,  ds_solar=mp.ds_solar,  df_centroids=mp.toposub.df_centroids,  ds_param=mp.toposub.ds_param)  print(tc.summarize(report))  tc.raise_on_failure(report, level='error') 
+ from TopoPyScale import topo_checks as tc  report = tc.run_all_checks(mp.downscaled_pts,  df_centroids=mp.toposub.df_centroids,  ds_param=mp.toposub.ds_param,  epsg=mp.config.dem.epsg)  print(tc.summarize(report))  tc.raise_on_failure(report, level='error') 
 
 or simply `mp.check_physics()` from a Topoclass object. 
+
+run_all_checks() reads the outputs by blocks of time steps (all points at once, as some checks compare points), so its memory does not grow with the length of the period. The solar geometry of each block is computed from the coordinates of the points (or read from ds_solar when given). 
 
 **Global Variables**
 ---------------
@@ -32,7 +34,7 @@ or simply `mp.check_physics()` from a Topoclass object.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L140"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L247"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `esat_water`
 
@@ -45,7 +47,7 @@ Saturation vapour pressure over water [Pa], same formula as meteo_util.q_2_rh (B
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L145"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L252"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `relative_humidity`
 
@@ -58,7 +60,7 @@ Unclipped relative humidity w.r.t. water [0-1] (meteo_util.q_2_rh clips to 1 and
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L154"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L261"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_time_axis`
 
@@ -73,7 +75,7 @@ check_time_axis(ds)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L172"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L279"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_finite`
 
@@ -88,7 +90,7 @@ check_finite(ds, variables=None)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L181"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L288"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_ranges`
 
@@ -103,7 +105,7 @@ check_ranges(ds, bounds=None)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L197"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L304"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_unit_attributes`
 
@@ -116,7 +118,7 @@ Compare the declared `units` attribute with the magnitude of the values.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L230"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L337"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_humidity`
 
@@ -131,7 +133,7 @@ check_humidity(ds, rh_tol=0.02)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L242"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L349"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_wind`
 
@@ -146,7 +148,7 @@ check_wind(ds)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L259"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L366"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_pressure_hypsometric`
 
@@ -159,7 +161,7 @@ Pressure differences between points must follow the hypsometric equation with th
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L274"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L381"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_lapse_rate`
 
@@ -172,22 +174,26 @@ Effective temperature lapse rate across points should not be super-adiabatic.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L301"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L408"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_shortwave`
 
 ```python
-check_shortwave(ds, sol=None, terrain=None, tol=1.0)
+check_shortwave(ds, sol=None, terrain=None, tol=1.0, pad=(0, 0))
 ```
 
+Closure SW = direct + diffuse, no direct beam with the sun down or behind the local horizon, no SW at night and the direct beam below its geometric bound. 
 
 
 
+**Args:**
+ 
+ - <b>`sol`</b> (dataset or dict):  solar geometry of the points of ds (ds_solar aligned with _align_solar, or (point,  time) arrays), holding pad = (before, after) extra time steps around those of ds 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L354"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L504"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_shortwave_timing`
 
@@ -202,12 +208,12 @@ check_shortwave_timing(
 )
 ```
 
-Compare the daily centroid (in local solar time) of downscaled SW with the one of the TOA irradiance computed from ds_solar, for nearly flat points. ERA5 ssrd at time t is the accumulation over [t - 1h, t]: if the solar geometry is evaluated at t instead of t - 30 min, SW lags the sun by about +30 min, which biases kt (low in the morning, clipped in the afternoon), the diffuse/direct split and the illumination on slopes. 
+Compare the daily centroid (in local solar time) of downscaled SW with the one of the TOA irradiance computed from the solar geometry, for nearly flat points. ERA5 ssrd at time t is the accumulation over [t - 1h, t]: if the solar geometry is evaluated at t instead of t - 30 min, SW lags the sun by about +30 min, which biases kt (low in the morning, clipped in the afternoon), the diffuse/direct split and the illumination on slopes. 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L389"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L517"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_longwave`
 
@@ -222,7 +228,7 @@ check_longwave(ds, terrain=None, tol=0.02, min_emissivity=0.4)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L402"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L530"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_precipitation`
 
@@ -237,7 +243,7 @@ check_precipitation(ds, max_factor=5.0)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L420"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L575"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_domain_precip_budget`
 
@@ -250,7 +256,7 @@ Area-weighted domain precipitation relative to the horizontally interpolated ERA
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L447"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L588"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_centroid_aspect`
 
@@ -271,7 +277,7 @@ The cluster centre (aspect_cos, aspect_sin) is the mean of the pixels only for k
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L471"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L612"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_dem_orientation`
 
@@ -284,7 +290,7 @@ slope/aspect (gradient_d8 with dy < 0) assume a north-up raster.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L480"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L621"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `check_snow_partition`
 
@@ -297,7 +303,7 @@ Probe meteo_util.partition_snow: closure, bounds, monotonic in T, and RH unit co
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L512"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L668"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `run_all_checks`
 
@@ -309,23 +315,27 @@ run_all_checks(
     ds_param=None,
     snow_partition_method=None,
     points=None,
-    bounds=None
+    bounds=None,
+    epsg=None,
+    max_block_mb=1000
 )
 ```
 
-Run all physics-consistency checks on downscaled outputs. 
+Run all physics-consistency checks on downscaled outputs, by blocks of time steps. 
 
 
 
 **Args:**
  
  - <b>`ds_down`</b> (dataset):  downscaled points (e.g. Topoclass.downscaled_pts), dims (point_name, time) 
- - <b>`ds_solar`</b> (dataset):  solar geometry (Topoclass.ds_solar) 
- - <b>`df_centroids`</b> (dataframe):  Topoclass.toposub.df_centroids (elevation, slope, aspect, svf, lon, hori_azi_*) 
+ - <b>`ds_solar`</b> (dataset):  optional precomputed solar geometry (solar_geom.get_solar_geom). Default: computed for  each block from the coordinates of the points in df_centroids and the attributes of ds_down 
+ - <b>`df_centroids`</b> (dataframe):  Topoclass.toposub.df_centroids (elevation, slope, aspect, svf, lon/lat or x/y,  hori_azi_*) 
  - <b>`ds_param`</b> (dataset):  Topoclass.toposub.ds_param, used for area weights of the precipitation budget 
  - <b>`snow_partition_method`</b> (str or list):  partition method(s) to probe, e.g. 'continuous' 
  - <b>`points`</b> (list):  optional subset of point_name to check 
  - <b>`bounds`</b> (dict):  optional override of DEFAULT_BOUNDS 
+ - <b>`epsg`</b> (int):  EPSG code of x, y in df_centroids, used when it has no lon/lat columns 
+ - <b>`max_block_mb`</b> (float):  memory of the block of time steps read at once (all points) 
 
 
 
@@ -336,7 +346,7 @@ Run all physics-consistency checks on downscaled outputs.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L561"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L747"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `summarize`
 
@@ -349,7 +359,7 @@ Human-readable summary of the checks at or above `min_status`.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L572"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L758"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `raise_on_failure`
 
@@ -364,7 +374,7 @@ raise_on_failure(report, level='error')
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L70"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_checks.py#L76"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>class</kbd> `PhysicsConsistencyError`
 

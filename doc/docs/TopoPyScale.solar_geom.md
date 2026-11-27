@@ -13,7 +13,7 @@ The solar position follows the NREL Solar Position Algorithm (Reda and Andreas, 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L35"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L38"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `spa_time_terms`
 
@@ -32,7 +32,7 @@ Location-independent part of the NREL SPA, for a DatetimeIndex in UTC.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L74"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L77"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `spa_positions`
 
@@ -59,7 +59,7 @@ Location-dependent part of the NREL SPA, broadcast over time and points.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L102"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L105"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `cos_zenith_geocentric`
 
@@ -72,7 +72,7 @@ Cosine of the geocentric solar zenith angle, (time, point): cheap, used to avera
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L114"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L117"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `sun_geocentric`
 
@@ -90,7 +90,7 @@ Geocentric solar elevation and azimuth, (time, point): cheap, used for the shadi
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L132"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L135"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `substep_offsets`
 
@@ -103,7 +103,88 @@ Offsets of the centres of n_substeps equal parts of the window (t - window, t], 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L147"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L150"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `point_coordinates`
+
+```python
+point_coordinates(df, epsg=None)
+```
+
+Longitude, latitude [deg] and elevation [m] of points: from the longitude/latitude or lon/lat columns, else from x, y in the projection epsg. 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L167"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `window_terms`
+
+```python
+window_terms(stamps, accumulation_window='1h', n_substeps=6)
+```
+
+Location-independent part of the solar geometry of time stamps, for solar_block(). 
+
+The radiation fluxes at a time stamp t are accumulated over (t - window, t]: the angles are evaluated at the centre of the window, and the top-of-atmosphere irradiance is the mean over n_substeps sub-steps of the window. 
+
+
+
+**Args:**
+ 
+ - <b>`stamps`</b> (DatetimeIndex):  time stamps (UTC, naive or aware) 
+ - <b>`accumulation_window`</b> (str):  window of the fluxes ('0h' for instantaneous fluxes) 
+ - <b>`n_substeps`</b> (int):  sub-steps of the window averaged for SWtoa 
+
+
+
+**Returns:**
+ 
+ - <b>`dict`</b>:  stamps, t_mid (window centres), mid (spa_time_terms at t_mid), sub (spa_time_terms of the sub-steps, arrays (time, n_sub)), n_sub, window 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L199"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `solar_block`
+
+```python
+solar_block(
+    terms,
+    lon,
+    lat,
+    elev,
+    t0=0,
+    t1=None,
+    method='nrel_numpy',
+    solar_constant=1361.0
+)
+```
+
+Solar geometry of points for the time steps t0:t1 of window_terms(), as (time, point) arrays. 
+
+
+
+**Args:**
+ 
+ - <b>`terms`</b> (dict):  from window_terms() 
+ - <b>`lon, lat (array)`</b>:  degrees, (point,) 
+ - <b>`elev`</b> (array):  m, (point,) 
+ - <b>`t0, t1 (int)`</b>:  time steps 
+ - <b>`method`</b> (str):  pvlib solar position method. 'nrel_numpy' is vectorized over points 
+ - <b>`solar_constant`</b> (float):  total solar irradiance at 1 AU [W m-2] 
+
+
+
+**Returns:**
+ 
+ - <b>`dict`</b>:  zenith, azimuth (0 towards south, positive towards east), elevation [rad], mu0, SWtoa [W m-2] (mean over the window, including the Earth-Sun distance), sunset (sun below 1 degree) 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/solar_geom.py#L233"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `get_solar_geom`
 
