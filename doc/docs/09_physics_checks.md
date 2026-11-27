@@ -46,14 +46,14 @@ from TopoPyScale import topo_utils as tu
 
 ds_down = tu.read_downscaled('outputs/downscaled/down.zarr')
 report = tc.run_all_checks(ds_down,
-                           ds_solar=xr.open_dataset('outputs/ds_solar.nc'),
                            df_centroids=pd.read_pickle('outputs/df_centroids.pck'),
-                           ds_param=xr.open_dataset('outputs/ds_param.nc'))
+                           ds_param=xr.open_dataset('outputs/ds_param.nc'),
+                           epsg=32632)   # dem.epsg: only used if df_centroids has no lon/lat columns
 print(tc.summarize(report))
 tc.raise_on_failure(report, level='error')
 ```
 
-The optional inputs widen the set of checks: `ds_solar` enables the shortwave geometry and timing checks, `df_centroids` the checks across points and on the clusters, and `ds_param` the DEM orientation check and the area weights of the precipitation budget. A check whose inputs are missing is reported with status `info` and a note starting with `skipped:`. Older zarr outputs with a `point_ind` dimension are supported when `df_centroids` is given.
+The checks read the outputs by blocks of time steps holding all points (`max_block_mb`, default 1000 MB), so their memory does not depend on the length of the period. The solar geometry of each block is computed from the coordinates of the points in `df_centroids` and the settings recorded in the attributes of the output store; a precomputed `ds_solar` can be given instead. The optional inputs widen the set of checks: the solar geometry enables the shortwave geometry and timing checks, `df_centroids` the checks across points and on the clusters, and `ds_param` the DEM orientation check and the area weights of the precipitation budget. A check whose inputs are missing is reported with status `info` and a note starting with `skipped:`. Older zarr outputs with a `point_ind` dimension are supported when `df_centroids` is given.
 
 ### Reading the report
 
@@ -128,7 +128,7 @@ Default bounds of the `range` check, in the units written by `TopoPyScale`. They
 | `direct_in_terrain_shadow` | error | no direct beam when the sun is behind the local horizon over the whole accumulation window (at the previous, current and next time steps). Within the window, the direct beam is scaled by its sunlit fraction |
 | `sw_timing` | warning | the daily centroid of SW (in local solar time, for points with slope < 10°) matches the one of the top-of-atmosphere irradiance within 15 min. `worst` is the median offset in minutes; positive means SW lags the sun |
 
-ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`, whatever the time step of the downloaded data. The solar geometry is therefore computed at the centre of this window (`t − 30 min`). The length of the window is set by `climate.<source>.accumulation_window` (default `1h`). The top-of-atmosphere irradiance `SWtoa`, used for the clearness index, is the mean over the same window, including the Earth–Sun distance (see [Features](07_features.md)). A solar file `ds_solar.nc` computed by an older version of `TopoPyScale` uses the time stamps; `sw_timing` then reports a lag of about +30 min, and `compute_solar_geometry()` prints a warning. Delete the file to recompute it.
+ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`, whatever the time step of the downloaded data. The solar geometry is therefore computed at the centre of this window (`t − 30 min`). The length of the window is set by `climate.<source>.accumulation_window` (default `1h`). The top-of-atmosphere irradiance `SWtoa`, used for the clearness index, is the mean over the same window, including the Earth–Sun distance (see [Features](07_features.md)). Outputs downscaled by an older version of `TopoPyScale` with a solar file `ds_solar.nc` evaluated at the time stamps show a lag of about +30 min in `sw_timing`. The downscaling now computes the solar geometry itself, at the centre of the window.
 
 ### Longwave radiation
 
@@ -178,7 +178,7 @@ The exporters convert precipitation to rates with the actual time step of the da
 ## What to do when a check fails
 
 - **`units_attr`, `range` or `finite` errors** usually come from a modified or outdated version of the code, or from data written by another tool. Compare with the conventions above.
-- **`sw_timing`**: delete `outputs/ds_solar.nc` and rerun `compute_solar_geometry()` and `downscale_climate()`. For a forcing other than ERA5, set `accumulation_window` to its accumulation period.
+- **`sw_timing`**: rerun `downscale_climate()` with the current version. For a forcing other than ERA5, set `accumulation_window` to its accumulation period.
 - **`supersaturation` warnings** of a few percent can come from interpolating `q` linearly between pressure levels, since saturation humidity is not linear in temperature. Larger values point to inconsistent inputs.
 - **`hypsometric` warnings** are expected when points lie in different ERA5 cells with a strong synoptic pressure gradient. They indicate a problem when they occur for points within one ERA5 cell.
 - **`domain_precip_budget` or `precip_factor_bounded` warnings** show how much water the precipitation lapse rate adds or removes compared with ERA5. Large ratios suggest lowering `precip_lapse_rate_max_factor` or turning the lapse rate off. ERA5 already resolves part of the orographic enhancement at its own resolution.

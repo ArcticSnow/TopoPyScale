@@ -109,12 +109,14 @@ TPS uses parallelization for a number of steps: threads sending download request
 
 ## Solar geometry
 
-`solar_geom.get_solar_geom()` computes, for every point and time step:
+The downscaling computes the solar geometry of each block of points and time steps when it downscales the block (`solar_geom.window_terms()` once for the period, then `solar_geom.solar_block()`), so it never holds the geometry of all points for the whole period: for 1000 points and 30 years of hourly data that would be about 8 GB. `mp.compute_solar_geometry()` only saves the same values to `outputs/ds_solar.nc` when `toposcale.save_solar_geometry` is true (`solar_geom.get_solar_geom()`, by blocks of points), for plots and analysis. The output store records the settings in its attributes (`accumulation_window`, `solar_substeps`, `solar_constant`, `solar_position_method`), which the physics checks read to recompute the geometry.
+
+For every point and time step, the solar geometry holds:
 
 - the solar zenith, azimuth and elevation angles at the centre of the radiation accumulation window (`t − 30 min` for ERA5), with the NREL Solar Position Algorithm of pvlib (`nrel_numpy`, about 0.0003° accuracy). The time-dependent part of the algorithm is computed once for all points; only the location-dependent part is evaluated per point, as arrays. For 2400 points and one year of hourly data this takes about 12 s, instead of about 65 s point by point;
 - the top-of-atmosphere irradiance on a horizontal surface `SWtoa`, averaged over the accumulation window with `toposcale.solar_substeps` sub-steps (default 6). It uses the solar constant `toposcale.solar_constant` (default 1361 W m⁻²) scaled by the Earth–Sun distance, consistently with the accumulated ERA5 fluxes it is compared to (clearness index). Averaging over the window matters at sunrise and sunset, where the value at the window centre differs from the hourly mean by up to about 35 W m⁻².
 
-`ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it.
+`ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it. The downscaling no longer reads it.
 
 **Terrain shading within the window.** ERA5 shortwave is a mean over the accumulation window, so a point can be lit for part of it: the sun clears or drops behind a ridge during the hour. The downscaling tests the horizon at the same `toposcale.solar_substeps` sub-steps of the window and scales the direct beam by the sunlit fraction, each sub-step weighted by the beam it brings to the slope (cosine of the illumination angle). The sun positions of the sub-steps are geocentric (within 0.01° of the SPA); only terrain shading counts, not the sun below the astronomical horizon. With `solar_substeps: 1` the horizon is tested once, at the centre of the window, and the beam is kept or removed for the whole window. On the Davos points (January 2020), the 57 hours the sun crosses the horizon of DAV get an RMSE of 20.6 W m⁻² against the station instead of 30.3; the cost does not show in the downscaling time.
 

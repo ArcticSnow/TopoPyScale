@@ -40,19 +40,22 @@ def point_file_names(fname_format, n_points, n_digits):
     return [parts[0] + str(i).zfill(n_digits) + parts[1] for i in range(n_points)]
 
 
-def _point_blocks(ds, variables, n_jobs, max_points=100):
+def _point_blocks(ds, variables, n_jobs, max_points=100, max_block_mb=500):
     """
-    Slices of consecutive points, aligned on the chunks of the store along point_name, of about max_points points
-    and at least 4 per process.
+    Slices of consecutive points, aligned on the chunks of the store along point_name, of about max_points points,
+    at least 4 per process, and whose variables fit in max_block_mb (as float64) for long periods.
     """
     n = ds.sizes['point_name']
-    target = max(1, min(max_points, -(-n // (4 * n_jobs))))
+    nt = int(np.prod([ds.sizes[d] for d in ds[variables[0]].dims if d != 'point_name']))
+    cap = max(1, int(max_block_mb * 1e6 // (max(1, nt) * len(variables) * 8)))
+    target = max(1, min(max_points, cap, -(-n // (4 * n_jobs))))
     da_ = ds[variables[0]]
     sizes = da_.chunks[da_.dims.index('point_name')] if da_.chunks is not None else (1,) * n
     blocks, start = [], 0
     for end in np.cumsum(sizes):
         if end - start >= target or end == n:
-            blocks.append(slice(start, int(end)))
+            # a block of large chunks is split to stay within the memory cap
+            blocks += [slice(s, min(s + cap, int(end))) for s in range(start, int(end), cap)]
             start = int(end)
     return blocks
 
@@ -67,7 +70,8 @@ def _write_block(ds, variables, write, fnames, info, extra, options):
     return len(fnames)
 
 
-def export_points(ds, variables, write, fnames, info=None, extra=None, options=None, n_jobs=1, label='files'):
+def export_points(ds, variables, write, fnames, info=None, extra=None, options=None, n_jobs=1, label='files',
+                  max_block_mb=500):
     """
     Write one file per point with write(fname, ds_pt, info, extra_pt, **options).
 
@@ -86,6 +90,8 @@ def export_points(ds, variables, write, fnames, info=None, extra=None, options=N
         options (dict): keyword arguments of write
         n_jobs (int): number of processes. 1: in this process
         label (str): what is written, for the progress messages
+        max_block_mb (float): memory of the block of points read at once by each process (float64): fewer points
+            per block for long periods
 
     Returns:
         list: the files written
@@ -96,7 +102,7 @@ def export_points(ds, variables, write, fnames, info=None, extra=None, options=N
         raise ValueError(f'{len(fnames)} file names for {n} points')
     info = [None] * n if info is None else list(info)
     n_jobs = max(1, int(n_jobs or 1))
-    blocks = _point_blocks(ds, variables, n_jobs)
+    blocks = _point_blocks(ds, variables, n_jobs, max_block_mb=max_block_mb)
     names = ds.point_name.values
 
     def args(b):

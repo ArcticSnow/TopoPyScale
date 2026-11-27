@@ -15,16 +15,22 @@ Typical usage after a downscaling run:
 
     from TopoPyScale import topo_checks as tc
     report = tc.run_all_checks(mp.downscaled_pts,
-                               ds_solar=mp.ds_solar,
                                df_centroids=mp.toposub.df_centroids,
-                               ds_param=mp.toposub.ds_param)
+                               ds_param=mp.toposub.ds_param,
+                               epsg=mp.config.dem.epsg)
     print(tc.summarize(report))
     tc.raise_on_failure(report, level='error')
 
 or simply `mp.check_physics()` from a Topoclass object.
+
+run_all_checks() reads the outputs by blocks of time steps (all points at once, as some checks compare points), so
+its memory does not grow with the length of the period. The solar geometry of each block is computed from the
+coordinates of the points (or read from ds_solar when given).
 """
 import numpy as np
 import pandas as pd
+
+from TopoPyScale import solar_geom as sg
 
 # Constants consistent with toposcale_core.py / meteo_util.py / solar_geom.py
 G = 9.81            # gravity [m s-2]
@@ -74,7 +80,11 @@ class PhysicsConsistencyError(RuntimeError):
 # ---------------------------------------------------------------------------------------------------------------------
 #  helpers
 # ---------------------------------------------------------------------------------------------------------------------
-def _row(check, variable, n_fail, n_total, severity, worst=np.nan, note=''):
+def _row(check, variable, n_fail, n_total, severity, worst=np.nan, note='', agg='max'):
+    """
+    One row of the report. agg says how the worst values of several blocks of time steps combine: 'max', 'min' or
+    'absmax' (largest magnitude).
+    """
     n_fail, n_total = int(n_fail), int(n_total)
     return {'check': check,
             'variable': variable,
@@ -83,7 +93,37 @@ def _row(check, variable, n_fail, n_total, severity, worst=np.nan, note=''):
             'n_total': n_total,
             'frac_fail': n_fail / n_total if n_total else np.nan,
             'worst': np.nan if worst is None else float(worst),
-            'note': note}
+            'note': note,
+            '_severity': severity,
+            '_agg': agg}
+
+
+class _Rows:
+    """Rows of the checks merged over blocks of time steps: counts summed, worst values combined."""
+
+    def __init__(self):
+        self.rows = {}
+
+    def add(self, rows):
+        for r in rows:
+            key = (r['check'], r['variable'])
+            old = self.rows.get(key)
+            if old is None:
+                self.rows[key] = dict(r)
+                continue
+            if r['note'].startswith('skipped') or '_severity' not in r:
+                continue
+            old['n_fail'] += r['n_fail']
+            old['n_total'] += r['n_total']
+            w = [x for x in (old['worst'], r['worst']) if np.isfinite(x)]
+            if w:
+                agg = r.get('_agg', 'max')
+                old['worst'] = (min(w) if agg == 'min' else max(w, key=abs) if agg == 'absmax' else max(w))
+            old['status'] = r['_severity'] if old['n_fail'] > 0 else 'pass'
+            old['frac_fail'] = old['n_fail'] / old['n_total'] if old['n_total'] else np.nan
+
+    def __iter__(self):
+        return iter(self.rows.values())
 
 
 def _skip(check, variable, note):
@@ -130,6 +170,73 @@ def _arr(ds, var):
     return np.asarray(ds[var].transpose('point_name', 'time').values, dtype=float)
 
 
+def _sol(sol, var):
+    """(point, time) array of a solar variable, from a dataset (ds_solar) or a dict of arrays."""
+    if isinstance(sol, dict):
+        return np.asarray(sol[var], dtype=float)
+    return np.asarray(sol[var].transpose('point_name', 'time').values, dtype=float)
+
+
+def _prev_cur_next(ext, pad, n):
+    """
+    Values at the previous, current and next time steps of n steps, from an array (point, time) holding pad = (before,
+    after) extra steps around them. Without an extra step the first (last) value is repeated.
+    """
+    pb, pa = pad
+    cur = ext[:, pb:pb + n]
+    prev = ext[:, pb - 1:pb - 1 + n] if pb else np.concatenate([cur[:, :1], cur[:, :-1]], axis=1)
+    nxt = ext[:, pb + 1:pb + 1 + n] if pa else np.concatenate([cur[:, 1:], cur[:, -1:]], axis=1)
+    return prev, cur, nxt
+
+
+def _window_from_attrs(attrs):
+    """Radiation accumulation window recorded in the attributes of a downscaled store (default 1 h)."""
+    if 'accumulation_window' in attrs:
+        return pd.Timedelta(attrs['accumulation_window'])
+    try:
+        return 2 * pd.Timedelta(str(attrs.get('solar_geometry_time_offset')).lstrip('-'))
+    except ValueError:
+        return pd.Timedelta('1h')
+
+
+class _Solar:
+    """Solar geometry of the points of ds for blocks of time steps: from ds_solar, or computed from coordinates."""
+
+    def __init__(self, ds, ds_solar=None, terrain=None, epsg=None):
+        self.sol, self.terms, self.note = None, None, ''
+        if ds_solar is not None:
+            self.sol = _align_solar(ds, ds_solar)
+            return
+        if terrain is None:
+            self.note = 'needs ds_solar or df_centroids'
+            return
+        try:
+            self.lon, self.lat, self.elev = sg.point_coordinates(terrain, epsg)
+        except (ValueError, AttributeError):
+            self.note = 'needs ds_solar, or lon/lat (or x/y and epsg) in df_centroids'
+            return
+        attrs = ds.attrs
+        self.terms = sg.window_terms(pd.DatetimeIndex(ds.time.values), _window_from_attrs(attrs),
+                                     int(attrs.get('solar_substeps', 6)))
+        self.method = attrs.get('solar_position_method', 'nrel_numpy')
+        self.solar_constant = float(attrs.get('solar_constant', sg.S0_DEFAULT))
+
+    @property
+    def available(self):
+        return self.sol is not None or self.terms is not None
+
+    def block(self, t0, t1):
+        """dict of (point, time) arrays for time steps t0:t1, or None."""
+        if self.sol is not None:
+            sub = self.sol.isel(time=slice(t0, t1))
+            return {v: _sol(sub, v) for v in ['zenith', 'azimuth', 'elevation', 'SWtoa'] if v in sub}
+        if self.terms is None:
+            return None
+        out = sg.solar_block(self.terms, self.lon, self.lat, self.elev, t0, t1, method=self.method,
+                             solar_constant=self.solar_constant)
+        return {v: out[v].T for v in ['zenith', 'azimuth', 'elevation', 'SWtoa']}
+
+
 def _tstep_seconds(ds):
     t = pd.DatetimeIndex(ds.time.values)
     if t.size < 2:
@@ -156,7 +263,7 @@ def check_time_axis(ds):
     t = pd.DatetimeIndex(ds.time.values)
     dt = np.diff(t.values).astype('timedelta64[s]').astype(float)
     rows.append(_row('time_monotonic', 'time', (dt <= 0).sum(), dt.size, 'error',
-                     worst=dt.min() if dt.size else np.nan, note='time steps must be strictly increasing'))
+                     worst=dt.min() if dt.size else np.nan, note='time steps must be strictly increasing', agg='min'))
     if dt.size:
         med = np.median(dt)
         rows.append(_row('time_regular', 'time', (dt != med).sum(), dt.size, 'warning',
@@ -190,7 +297,7 @@ def check_ranges(ds, bounds=None):
         bad = np.isfinite(x) & ((x < lo) | (x > hi))
         worst = x[bad][np.argmax(np.abs(x[bad]))] if bad.any() else np.nan
         rows.append(_row('range', var, bad.sum(), np.isfinite(x).sum(), 'error', worst=worst,
-                         note=f'expected in [{lo:g}, {hi:g}]'))
+                         note=f'expected in [{lo:g}, {hi:g}]', agg='absmax'))
     return rows
 
 
@@ -232,7 +339,7 @@ def check_humidity(ds, rh_tol=0.02):
         return [_skip('humidity', 'q', 'needs t, p, q')]
     T, p, q = _arr(ds, 't'), _arr(ds, 'p'), _arr(ds, 'q')
     rh = relative_humidity(T, p, q)
-    rows = [_row('q_non_negative', 'q', (q < 0).sum(), q.size, 'error', worst=np.nanmin(q))]
+    rows = [_row('q_non_negative', 'q', (q < 0).sum(), q.size, 'error', worst=np.nanmin(q), agg='min')]
     bad = rh > 1 + rh_tol
     rows.append(_row('supersaturation', 'q', bad.sum(), np.isfinite(rh).sum(), 'warning', worst=np.nanmax(rh),
                      note=f'RH w.r.t. water > {1 + rh_tol:g} (q_2_rh clips this silently)'))
@@ -283,7 +390,7 @@ def check_lapse_rate(ds, terrain, min_range=300.):
     slope = (zc[:, None] * (T - T.mean(axis=0))).sum(axis=0) / (zc ** 2).sum()  # K m-1 per time step
     bad = slope < -(G / 1004.) - 5e-4
     return [_row('lapse_rate', 't', bad.sum(), slope.size, 'warning', worst=np.nanmin(slope) * 1e3,
-                 note='super-adiabatic dT/dz across points (worst in K/km)')]
+                 note='super-adiabatic dT/dz across points (worst in K/km)', agg='min')]
 
 
 def _horizon_at_sun(terrain, sun_azimuth):
@@ -298,7 +405,15 @@ def _horizon_at_sun(terrain, sun_azimuth):
     return np.take_along_axis(hor, idx, axis=1)
 
 
-def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
+def check_shortwave(ds, sol=None, terrain=None, tol=1.0, pad=(0, 0)):
+    """
+    Closure SW = direct + diffuse, no direct beam with the sun down or behind the local horizon, no SW at night and
+    the direct beam below its geometric bound.
+
+    Args:
+        sol (dataset or dict): solar geometry of the points of ds (ds_solar aligned with _align_solar, or (point,
+            time) arrays), holding pad = (before, after) extra time steps around those of ds
+    """
     need = ['SW', 'SW_direct', 'SW_diffuse']
     if not all(v in ds for v in need):
         return [_skip('shortwave', 'SW', f'needs {need}')]
@@ -308,25 +423,26 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
     rows.append(_row('sw_closure', 'SW', (err > tol).sum(), SW.size, 'error', worst=np.nanmax(err),
                      note='SW != SW_direct + SW_diffuse'))
     if sol is None:
-        rows.append(_skip('sw_geometry', 'SW_direct', 'needs ds_solar'))
+        rows.append(_skip('sw_geometry', 'SW_direct', 'needs ds_solar or the coordinates of the points'))
         return rows
-    elev = np.asarray(sol.elevation.transpose('point_name', 'time').values, dtype=float)
-    sun_down = elev <= 0
-    rows.append(_row('direct_with_sun_down', 'SW_direct', ((dr > tol) & sun_down).sum(), sun_down.sum(), 'error',
-                     worst=np.nanmax(np.where(sun_down, dr, 0)), note='direct beam while sun below astronomical horizon'))
+    n = SW.shape[1]
+    elev_ext = _sol(sol, 'elevation')
+    down_ext = elev_ext <= 0
     # sun down at the previous, current and next evaluation times: down over the whole accumulation window,
     # whether the geometry is evaluated at the end or at the centre of the window
-    prev_down = np.concatenate([sun_down[:, :1], sun_down[:, :-1]], axis=1)
-    next_down = np.concatenate([sun_down[:, 1:], sun_down[:, -1:]], axis=1)
+    prev_down, sun_down, next_down = _prev_cur_next(down_ext, pad, n)
+    rows.append(_row('direct_with_sun_down', 'SW_direct', ((dr > tol) & sun_down).sum(), sun_down.sum(), 'error',
+                     worst=np.nanmax(np.where(sun_down, dr, 0)), note='direct beam while sun below astronomical horizon'))
     night = sun_down & prev_down & next_down
     rows.append(_row('sw_at_night', 'SW', ((SW > tol) & night).sum(), night.sum(), 'error',
                      worst=np.nanmax(np.where(night, SW, 0)),
                      note='SW > 0 although sun is down over the whole accumulation window'))
+    azi_ext = _sol(sol, 'azimuth')
+    azi = azi_ext[:, pad[0]:pad[0] + n]
     if 'cos_illumination' in ds:
         cos_i = _arr(ds, 'cos_illumination')
     elif terrain is not None:
-        zen = np.asarray(sol.zenith.transpose('point_name', 'time').values, dtype=float)
-        azi = np.asarray(sol.azimuth.transpose('point_name', 'time').values, dtype=float)
+        zen = _sol(sol, 'zenith')[:, pad[0]:pad[0] + n]
         s, a = terrain.slope.values[:, None], terrain.aspect.values[:, None]
         cos_i = np.clip(np.cos(zen) * np.cos(s) + np.sin(zen) * np.sin(s) * np.cos(azi - a), 0, None)
     else:
@@ -336,14 +452,11 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
         rows.append(_row('direct_beam_bound', 'SW_direct', (excess > tol).sum(), dr.size, 'error',
                          worst=np.nanmax(excess), note='SW_direct > S0 * cos(illumination angle)'))
     if terrain is not None:
-        azi = np.asarray(sol.azimuth.transpose('point_name', 'time').values, dtype=float)
-        hor = _horizon_at_sun(terrain, azi)
+        hor = _horizon_at_sun(terrain, azi_ext)
         if hor is not None:
             # behind the horizon at the previous, current and next evaluation times: shaded over the whole
             # accumulation window (the direct beam is scaled by the sunlit fraction of the window)
-            behind = hor > elev
-            prev_b = np.concatenate([behind[:, :1], behind[:, :-1]], axis=1)
-            next_b = np.concatenate([behind[:, 1:], behind[:, -1:]], axis=1)
+            prev_b, behind, next_b = _prev_cur_next(hor > elev_ext, pad, n)
             shade = behind & prev_b & next_b & ~sun_down
             rows.append(_row('direct_in_terrain_shadow', 'SW_direct', ((dr > tol) & shade).sum(), shade.sum(), 'error',
                              worst=np.nanmax(np.where(shade, dr, 0)),
@@ -351,39 +464,54 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0):
     return rows
 
 
-def check_shortwave_timing(ds, sol, terrain, max_slope_deg=10., tol_minutes=15., min_days=5):
-    """
-    Compare the daily centroid (in local solar time) of downscaled SW with the one of the TOA irradiance computed
-    from ds_solar, for nearly flat points. ERA5 ssrd at time t is the accumulation over [t - 1h, t]: if the solar
-    geometry is evaluated at t instead of t - 30 min, SW lags the sun by about +30 min, which biases kt (low in the
-    morning, clipped in the afternoon), the diffuse/direct split and the illumination on slopes.
-    """
+def _timing_setup(ds, sol, terrain, max_slope_deg):
+    """Flat points and longitude column for the timing check, or the reason to skip it."""
     if sol is None or terrain is None or 'SW' not in ds:
-        return [_skip('sw_timing', 'SW', 'needs SW, ds_solar and df_centroids')]
+        return None, 'needs SW, the solar geometry and df_centroids'
     flat = terrain.slope.values < np.deg2rad(max_slope_deg)
     if not flat.any():
-        return [_skip('sw_timing', 'SW', f'no point with slope < {max_slope_deg:g} deg')]
+        return None, f'no point with slope < {max_slope_deg:g} deg'
     lon_col = 'lon' if 'lon' in terrain.columns else ('longitude' if 'longitude' in terrain.columns else None)
     if lon_col is None:
-        return [_skip('sw_timing', 'SW', 'df_centroids has no lon/longitude column')]
+        return None, 'df_centroids has no lon/longitude column'
+    return (flat, lon_col), ''
+
+
+def _timing_offsets(ds, toa, terrain, flat, lon_col):
+    """Daily centroid offsets SW - SWtoa [min] of the flat points, for the time steps of ds."""
     times = pd.DatetimeIndex(ds.time.values)
     SW = _arr(ds, 'SW')
-    TOA = np.asarray(sol.SWtoa.transpose('point_name', 'time').values, dtype=float)
     offsets = []
     for i in np.where(flat)[0]:
         local = times + pd.to_timedelta(terrain[lon_col].values[i] / 15., unit='h')
-        df = pd.DataFrame({'sw': SW[i], 'toa': TOA[i], 'day': local.floor('D'),
+        df = pd.DataFrame({'sw': SW[i], 'toa': toa[i], 'day': local.floor('D'),
                            'h': (local - local.floor('D')) / pd.Timedelta('1h')})
         df['sw_h'], df['toa_h'] = df.sw * df.h, df.toa * df.h
         d = df.groupby('day')[['sw', 'toa', 'sw_h', 'toa_h']].sum()
         d = d[(d.toa > 0) & (d.sw > 0.05 * d.toa)]
         offsets.append(((d.sw_h / d.sw) - (d.toa_h / d.toa)) * 60.)
-    off = pd.concat(offsets) if offsets else pd.Series(dtype=float)
+    return pd.concat(offsets) if offsets else pd.Series(dtype=float)
+
+
+def _timing_row(off, tol_minutes, min_days):
     if off.size < min_days:
         return [_skip('sw_timing', 'SW', f'fewer than {min_days} usable days')]
     med = float(np.median(off))
     return [_row('sw_timing', 'SW', int(abs(med) > tol_minutes), 1, 'warning', worst=med,
                  note='median daily centroid offset SW - SWtoa in minutes (> 0: SW lags solar geometry)')]
+
+
+def check_shortwave_timing(ds, sol, terrain, max_slope_deg=10., tol_minutes=15., min_days=5):
+    """
+    Compare the daily centroid (in local solar time) of downscaled SW with the one of the TOA irradiance computed
+    from the solar geometry, for nearly flat points. ERA5 ssrd at time t is the accumulation over [t - 1h, t]: if the
+    solar geometry is evaluated at t instead of t - 30 min, SW lags the sun by about +30 min, which biases kt (low in
+    the morning, clipped in the afternoon), the diffuse/direct split and the illumination on slopes.
+    """
+    setup, why = _timing_setup(ds, sol, terrain, max_slope_deg)
+    if setup is None:
+        return [_skip('sw_timing', 'SW', why)]
+    return _timing_row(_timing_offsets(ds, _sol(sol, 'SWtoa'), terrain, *setup), tol_minutes, min_days)
 
 
 def check_longwave(ds, terrain=None, tol=0.02, min_emissivity=0.4):
@@ -396,25 +524,52 @@ def check_longwave(ds, terrain=None, tol=0.02, min_emissivity=0.4):
     return [_row('lw_emissivity_upper', 'LW', (LW > (1 + tol) * upper).sum(), LW.size, 'warning',
                  worst=np.nanmax(LW / upper), note='implied all-sky emissivity > 1'),
             _row('lw_emissivity_lower', 'LW', (eps_eff < min_emissivity * svf).sum(), LW.size, 'warning',
-                 worst=np.nanmin(eps_eff), note=f'implied emissivity < {min_emissivity:g} * svf')]
+                 worst=np.nanmin(eps_eff), note=f'implied emissivity < {min_emissivity:g} * svf', agg='min')]
 
 
 def check_precipitation(ds, max_factor=5.):
     if 'tp' not in ds:
         return [_skip('precipitation', 'tp', 'needs tp')]
     tp = _arr(ds, 'tp')
-    rows = [_row('tp_non_negative', 'tp', (tp < -1e-6).sum(), tp.size, 'error', worst=np.nanmin(tp))]
+    rows = [_row('tp_non_negative', 'tp', (tp < -1e-6).sum(), tp.size, 'error', worst=np.nanmin(tp), agg='min')]
     if 'precip_lapse_rate' in ds:
         f = _arr(ds, 'precip_lapse_rate')
         rows.append(_row('precip_factor_positive', 'precip_lapse_rate', (~np.isfinite(f) | (f <= 0)).sum(), f.size,
-                         'error', worst=np.nanmin(f), note='elevation factor must be finite and > 0'))
+                         'error', worst=np.nanmin(f), note='elevation factor must be finite and > 0', agg='min'))
         rows.append(_row('precip_factor_bounded', 'precip_lapse_rate', (f > max_factor).sum(), f.size, 'warning',
                          worst=np.nanmax(f), note=f'elevation factor > {max_factor:g}'))
         with np.errstate(divide='ignore', invalid='ignore'):
             tp0 = tp / f
         rows.append(_row('era5_tp_non_negative', 'tp', (tp0 < -1e-6).sum(), tp0.size, 'error', worst=np.nanmin(tp0),
-                         note='tp / precip_lapse_rate (interpolated ERA5 precipitation) < 0'))
+                         note='tp / precip_lapse_rate (interpolated ERA5 precipitation) < 0', agg='min'))
     return rows
+
+
+def _area_weights(ds, ds_param=None, weights=None):
+    """Area weight of each point: its number of pixels in ds_param (1 for all points without ds_param)."""
+    names = ds.point_name.values
+    if weights is None and ds_param is not None and 'point_name' in ds_param:
+        counts = pd.Series(np.asarray(ds_param.point_name.values).ravel().astype(str)).value_counts()
+        weights = counts.reindex(names).fillna(0).values
+        if weights.sum() == 0:
+            weights = None
+    if weights is None:
+        weights = np.ones(names.size)
+    return np.asarray(weights, dtype=float)
+
+
+def _precip_sums(ds, w):
+    """Area-weighted sums of the downscaled and of the interpolated ERA5 precipitation."""
+    tp, f = _arr(ds, 'tp'), _arr(ds, 'precip_lapse_rate')
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.nansum(w[:, None] * tp), np.nansum(w[:, None] * tp / f)
+
+
+def _precip_budget_row(num, den, bounds):
+    ratio = num / den if den else np.nan
+    bad = not (bounds[0] <= ratio <= bounds[1])
+    return [_row('domain_precip_budget', 'tp', int(bad), 1, 'warning', worst=ratio,
+                 note=f'area-weighted sum(tp) / sum(ERA5 tp), expected in [{bounds[0]:g}, {bounds[1]:g}]')]
 
 
 def check_domain_precip_budget(ds, ds_param=None, weights=None, bounds=(0.67, 1.5)):
@@ -424,21 +579,7 @@ def check_domain_precip_budget(ds, ds_param=None, weights=None, bounds=(0.67, 1.
     """
     if 'tp' not in ds or 'precip_lapse_rate' not in ds:
         return [_skip('domain_precip_budget', 'tp', 'needs tp and precip_lapse_rate')]
-    names = ds.point_name.values
-    if weights is None and ds_param is not None and 'point_name' in ds_param:
-        counts = pd.Series(np.asarray(ds_param.point_name.values).ravel().astype(str)).value_counts()
-        weights = counts.reindex(names).fillna(0).values
-        if weights.sum() == 0:
-            weights = None
-    if weights is None:
-        weights = np.ones(names.size)
-    w = np.asarray(weights, dtype=float)[:, None]
-    tp, f = _arr(ds, 'tp'), _arr(ds, 'precip_lapse_rate')
-    with np.errstate(divide='ignore', invalid='ignore'):
-        ratio = np.nansum(w * tp) / np.nansum(w * tp / f)
-    bad = not (bounds[0] <= ratio <= bounds[1])
-    return [_row('domain_precip_budget', 'tp', int(bad), 1, 'warning', worst=ratio,
-                 note=f'area-weighted sum(tp) / sum(ERA5 tp), expected in [{bounds[0]:g}, {bounds[1]:g}]')]
+    return _precip_budget_row(*_precip_sums(ds, _area_weights(ds, ds_param, weights)), bounds)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -509,19 +650,38 @@ def check_snow_partition(method='continuous', n_draws=2000):
 # ---------------------------------------------------------------------------------------------------------------------
 #  orchestration
 # ---------------------------------------------------------------------------------------------------------------------
+def _time_blocks(ds, n_vars, max_block_mb):
+    """Blocks of whole days of time steps holding all points within max_block_mb, aligned on the store chunks."""
+    nt, npts = ds.sizes['time'], ds.sizes['point_name']
+    per_day = max(1, int(round(86400 / _tstep_seconds(ds)))) if nt > 1 else 1
+    # float64 copies of the variables and a few intermediate arrays of the checks
+    n = max(per_day, int(max_block_mb * 1e6 // (npts * (n_vars + 12) * 8)))
+    n = max(per_day, n // per_day * per_day)
+    chunks = [ds[v].chunks for v in ds.data_vars if ds[v].chunks is not None]
+    if chunks:
+        c = chunks[0][ds[next(v for v in ds.data_vars if ds[v].chunks is not None)].dims.index('time')][0]
+        if c <= n:
+            n = n // c * c
+    return [(t0, min(t0 + n, nt)) for t0 in range(0, nt, n)]
+
+
 def run_all_checks(ds_down, ds_solar=None, df_centroids=None, ds_param=None, snow_partition_method=None,
-                   points=None, bounds=None):
+                   points=None, bounds=None, epsg=None, max_block_mb=1000):
     """
-    Run all physics-consistency checks on downscaled outputs.
+    Run all physics-consistency checks on downscaled outputs, by blocks of time steps.
 
     Args:
         ds_down (dataset): downscaled points (e.g. Topoclass.downscaled_pts), dims (point_name, time)
-        ds_solar (dataset): solar geometry (Topoclass.ds_solar)
-        df_centroids (dataframe): Topoclass.toposub.df_centroids (elevation, slope, aspect, svf, lon, hori_azi_*)
+        ds_solar (dataset): optional precomputed solar geometry (solar_geom.get_solar_geom). Default: computed for
+            each block from the coordinates of the points in df_centroids and the attributes of ds_down
+        df_centroids (dataframe): Topoclass.toposub.df_centroids (elevation, slope, aspect, svf, lon/lat or x/y,
+            hori_azi_*)
         ds_param (dataset): Topoclass.toposub.ds_param, used for area weights of the precipitation budget
         snow_partition_method (str or list): partition method(s) to probe, e.g. 'continuous'
         points (list): optional subset of point_name to check
         bounds (dict): optional override of DEFAULT_BOUNDS
+        epsg (int): EPSG code of x, y in df_centroids, used when it has no lon/lat columns
+        max_block_mb (float): memory of the block of time steps read at once (all points)
 
     Returns:
         dataframe: report, worst status first
@@ -530,30 +690,56 @@ def run_all_checks(ds_down, ds_solar=None, df_centroids=None, ds_param=None, sno
     if points is not None:
         ds = ds.sel(point_name=[str(p) for p in points])
     terrain = _terrain(df_centroids, ds.point_name.values)
-    sol = _align_solar(ds, ds_solar)
+    solar = _Solar(ds, ds_solar, terrain, epsg)
+    bounds = dict(DEFAULT_BOUNDS if bounds is None else bounds)
+    if 'tp' in ds:
+        bounds.setdefault('tp', (0., MAX_PRECIP_RATE * _tstep_seconds(ds) / 3600))
+    numeric = [v for v in ds.data_vars if np.issubdtype(ds[v].dtype, np.number) and
+               {'point_name', 'time'} <= set(ds[v].dims)]
+    timing, why = _timing_setup(ds, {} if solar.available else None, terrain, 10.)
+    budget = 'tp' in ds and 'precip_lapse_rate' in ds
+    w = _area_weights(ds, ds_param) if budget else None
 
-    rows = []
-    rows += check_dem_orientation(ds_param)
-    rows += check_centroid_aspect(df_centroids)
-    rows += check_time_axis(ds)
-    rows += check_finite(ds)
-    rows += check_ranges(ds, bounds)
-    rows += check_unit_attributes(ds)
-    rows += check_humidity(ds)
-    rows += check_wind(ds)
-    rows += check_pressure_hypsometric(ds, terrain)
-    rows += check_lapse_rate(ds, terrain)
-    rows += check_shortwave(ds, sol, terrain)
-    rows += check_shortwave_timing(ds, sol, terrain)
-    rows += check_longwave(ds, terrain)
-    rows += check_precipitation(ds)
-    rows += check_domain_precip_budget(ds, ds_param)
+    rows = _Rows()
+    rows.add(check_dem_orientation(ds_param))
+    rows.add(check_centroid_aspect(df_centroids))
+    rows.add(check_time_axis(ds))
+    offsets, sums = [], [0., 0.]
+    nt = ds.sizes['time']
+    for i, (t0, t1) in enumerate(_time_blocks(ds, len(numeric), max_block_mb)):
+        blk = ds[numeric].isel(time=slice(t0, t1)).load()
+        a, b = max(0, t0 - 1), min(nt, t1 + 1)
+        sol = solar.block(a, b)
+        if i == 0:
+            rows.add(check_unit_attributes(blk))
+        rows.add(check_finite(blk))
+        rows.add(check_ranges(blk, bounds))
+        rows.add(check_humidity(blk))
+        rows.add(check_wind(blk))
+        rows.add(check_pressure_hypsometric(blk, terrain))
+        rows.add(check_lapse_rate(blk, terrain))
+        rows.add(check_shortwave(blk, sol, terrain, pad=(t0 - a, b - t1)))
+        if timing is not None:
+            offsets.append(_timing_offsets(blk, sol['SWtoa'][:, t0 - a:t0 - a + t1 - t0], terrain, *timing))
+        rows.add(check_longwave(blk, terrain))
+        rows.add(check_precipitation(blk))
+        if budget:
+            num, den = _precip_sums(blk, w)
+            sums = [sums[0] + num, sums[1] + den]
+    if not solar.available:
+        rows.add([_skip('sw_geometry', 'SW_direct', solar.note)])
+    if timing is None:
+        rows.add([_skip('sw_timing', 'SW', why)])
+    else:
+        rows.add(_timing_row(pd.concat(offsets) if offsets else pd.Series(dtype=float), 15., 5))
+    rows.add(_precip_budget_row(*sums, (0.67, 1.5)) if budget else
+             [_skip('domain_precip_budget', 'tp', 'needs tp and precip_lapse_rate')])
     if snow_partition_method is not None:
         methods = [snow_partition_method] if isinstance(snow_partition_method, str) else snow_partition_method
         for m in methods:
-            rows += check_snow_partition(m)
+            rows.add(check_snow_partition(m))
 
-    report = pd.DataFrame(rows, columns=REPORT_COLUMNS)
+    report = pd.DataFrame(list(rows), columns=REPORT_COLUMNS)
     report['_order'] = report.status.map(STATUS_ORDER)
     return report.sort_values(['_order', 'check'], ascending=[False, True]).drop(columns='_order').reset_index(drop=True)
 

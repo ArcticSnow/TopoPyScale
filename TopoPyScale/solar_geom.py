@@ -147,6 +147,89 @@ def _positions(times, terms, lat, lon, elev, method):
     return tuple(np.stack([c[k].values for c in cols], axis=1) for k in ['zenith', 'azimuth', 'elevation'])
 
 
+def point_coordinates(df, epsg=None):
+    """
+    Longitude, latitude [deg] and elevation [m] of points: from the longitude/latitude or lon/lat columns, else from
+    x, y in the projection epsg.
+    """
+    if {'longitude', 'latitude'} <= set(df.columns):
+        lon, lat = df.longitude.values, df.latitude.values
+    elif {'lon', 'lat'} <= set(df.columns):
+        lon, lat = df.lon.values, df.lat.values
+    else:
+        if epsg is None:
+            raise ValueError('points need lon/lat (or longitude/latitude) columns, or x/y with their EPSG code')
+        trans = Transformer.from_crs(f'epsg:{epsg}', 'epsg:4326', always_xy=True)
+        lon, lat = trans.transform(df.x.values, df.y.values)
+    return np.asarray(lon, float), np.asarray(lat, float), np.asarray(df.elevation.values, float)
+
+
+def window_terms(stamps, accumulation_window='1h', n_substeps=6):
+    """
+    Location-independent part of the solar geometry of time stamps, for solar_block().
+
+    The radiation fluxes at a time stamp t are accumulated over (t - window, t]: the angles are evaluated at the
+    centre of the window, and the top-of-atmosphere irradiance is the mean over n_substeps sub-steps of the window.
+
+    Args:
+        stamps (DatetimeIndex): time stamps (UTC, naive or aware)
+        accumulation_window (str): window of the fluxes ('0h' for instantaneous fluxes)
+        n_substeps (int): sub-steps of the window averaged for SWtoa
+
+    Returns:
+        dict: stamps, t_mid (window centres), mid (spa_time_terms at t_mid), sub (spa_time_terms of the sub-steps,
+        arrays (time, n_sub)), n_sub, window
+    """
+    stamps = pd.DatetimeIndex(stamps)
+    times = stamps.tz_localize('UTC') if stamps.tz is None else stamps.tz_convert('UTC')
+    window = pd.Timedelta(accumulation_window)
+    t_mid = times - window / 2
+    n_sub = int(n_substeps) if (window > pd.Timedelta(0) and n_substeps and n_substeps > 1) else 1
+    mid = spa_time_terms(t_mid)
+    if n_sub > 1:
+        # centres of n_sub equal parts of the window (t - window, t]
+        offsets = substep_offsets(window, n_sub)
+        t_sub = pd.DatetimeIndex((times.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
+        sub = {k: np.asarray(v).reshape(times.size, n_sub) for k, v in spa_time_terms(t_sub).items()}
+    else:
+        sub = {k: np.asarray(v).reshape(times.size, 1) for k, v in mid.items()}
+    return {'stamps': stamps, 't_mid': t_mid, 'mid': mid, 'sub': sub, 'n_sub': n_sub, 'window': window}
+
+
+def solar_block(terms, lon, lat, elev, t0=0, t1=None, method='nrel_numpy', solar_constant=S0_DEFAULT):
+    """
+    Solar geometry of points for the time steps t0:t1 of window_terms(), as (time, point) arrays.
+
+    Args:
+        terms (dict): from window_terms()
+        lon, lat (array): degrees, (point,)
+        elev (array): m, (point,)
+        t0, t1 (int): time steps
+        method (str): pvlib solar position method. 'nrel_numpy' is vectorized over points
+        solar_constant (float): total solar irradiance at 1 AU [W m-2]
+
+    Returns:
+        dict: zenith, azimuth (0 towards south, positive towards east), elevation [rad], mu0, SWtoa [W m-2] (mean
+        over the window, including the Earth-Sun distance), sunset (sun below 1 degree)
+    """
+    t1 = terms['stamps'].size if t1 is None else t1
+    lon, lat, elev = (np.asarray(a, float) for a in (lon, lat, elev))
+    mid = {k: np.asarray(v)[t0:t1] for k, v in terms['mid'].items()}
+    z, a, e = _positions(terms['t_mid'][t0:t1], mid, lat, lon, elev, method)
+    n_sub = terms['n_sub']
+    if n_sub == 1:
+        mu_sub = np.clip(np.cos(np.deg2rad(z)), 0, None) / mid['R'][:, None] ** 2
+        toa = solar_constant * mu_sub
+    else:
+        sub = {k: v[t0:t1].ravel() for k, v in terms['sub'].items()}
+        mu_sub = np.clip(cos_zenith_geocentric(sub, lat, lon), 0, None) / sub['R'][:, None] ** 2
+        toa = solar_constant * mu_sub.reshape(t1 - t0, n_sub, -1).mean(axis=1)
+    zenith = np.deg2rad(z)
+    mu0 = np.cos(zenith) * (np.cos(zenith) > 0)
+    return {'zenith': zenith, 'azimuth': np.deg2rad(180 - a), 'elevation': np.deg2rad(e), 'mu0': mu0, 'SWtoa': toa,
+            'sunset': mu0 < np.cos(89 * np.pi / 180)}
+
+
 def get_solar_geom(df_position,
                    start_date,
                    end_date,
@@ -181,59 +264,33 @@ def get_solar_geom(df_position,
         dataset: zenith, azimuth, elevation [rad], mu0, SWtoa [W m-2], sunset (point_name, time)
     """
     logger.info('\n---> Computing solar geometry')
-    df = df_position.copy()
-    if {'longitude', 'latitude'} <= set(df.columns):
-        lon, lat = df.longitude.values, df.latitude.values
-    elif {'lon', 'lat'} <= set(df.columns):
-        lon, lat = df.lon.values, df.lat.values
-    else:
-        trans = Transformer.from_crs(f'epsg:{sr_epsg}', 'epsg:4326', always_xy=True)
-        lon, lat = trans.transform(df.x.values, df.y.values)
-    lon, lat, elev = np.asarray(lon, float), np.asarray(lat, float), df.elevation.values.astype(float)
-
+    lon, lat, elev = point_coordinates(df_position, sr_epsg)
     stamps = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
-    times = stamps.tz_localize('UTC')
-    window = pd.Timedelta(accumulation_window)
-    eval_offset = window / 2
-    t_mid = times - eval_offset
-    n_sub = int(n_substeps) if (window > pd.Timedelta(0) and n_substeps and n_substeps > 1) else 1
-    if n_sub > 1:
-        # centres of n_sub equal parts of the window (t - window, t]
-        offsets = substep_offsets(window, n_sub)
-        t_sub = pd.DatetimeIndex((times.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
-    else:
-        t_sub = t_mid
-
-    terms_mid = spa_time_terms(t_mid)
-    terms_sub = spa_time_terms(t_sub) if n_sub > 1 else terms_mid
-    nt, npts = times.size, len(df)
-    zen, azi, ele, toa = (np.empty((npts, nt)) for _ in range(4))
+    terms = window_terms(stamps, accumulation_window, n_substeps)
+    eval_offset, n_sub = terms['window'] / 2, terms['n_sub']
+    nt, npts = stamps.size, lon.size
+    out = {v: np.empty((npts, nt)) for v in ['zenith', 'azimuth', 'elevation', 'SWtoa']}
     block = max(1, int(2e7 // (nt * n_sub)))
     for p0 in range(0, npts, block):
         sl = slice(p0, min(p0 + block, npts))
-        z, a, e = _positions(t_mid, terms_mid, lat[sl], lon[sl], elev[sl], method_solar)
-        zen[sl], azi[sl], ele[sl] = z.T, a.T, e.T
-        if n_sub == 1:
-            mu_sub = np.clip(np.cos(np.deg2rad(z)), 0, None)
-        else:
-            mu_sub = np.clip(cos_zenith_geocentric(terms_sub, lat[sl], lon[sl]), 0, None)
-        mu_sub = mu_sub / terms_sub['R'][:, None] ** 2
-        toa[sl] = (solar_constant * mu_sub.reshape(nt, n_sub, -1).mean(axis=1)).T
+        sol = solar_block(terms, lon[sl], lat[sl], elev[sl], method=method_solar, solar_constant=solar_constant)
+        for v in out:
+            out[v][sl] = sol[v].T
 
     ds = xr.Dataset(
         {
-            "zenith": (["point_name", "time"], np.deg2rad(zen)),
-            "azimuth": (["point_name", "time"], np.deg2rad(180 - azi)),
-            "elevation": (["point_name", "time"], np.deg2rad(ele)),
+            "zenith": (["point_name", "time"], out['zenith']),
+            "azimuth": (["point_name", "time"], out['azimuth']),
+            "elevation": (["point_name", "time"], out['elevation']),
         },
         coords={
-            "point_name": (("point_name"), df.point_name.values),
+            "point_name": (("point_name"), df_position.point_name.values),
             "time": stamps,
             "reference_time": pd.Timestamp(start_date),
         },
     )
     ds['mu0'] = np.cos(ds.zenith) * (np.cos(ds.zenith) > 0)
-    ds['SWtoa'] = (["point_name", "time"], toa)
+    ds['SWtoa'] = (["point_name", "time"], out['SWtoa'])
     ds['sunset'] = ds.mu0 < np.cos(89 * np.pi / 180)
     ds.attrs['solar_geometry_time_offset'] = f'-{eval_offset}'
     ds.attrs['solar_geometry_note'] = ('solar angles evaluated at time - offset, the centre of the '

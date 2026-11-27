@@ -99,7 +99,7 @@ Geotop is a hydrological model
 
 - `ds_param.nc`: this file includes elevation, slope, aspect (zero pointed to South), sky view fraction, and cluster map when using `toposub`.
 - `df_centroids.pckl`: a pandas dataframe (saved as pickle) containing information relevant at the point scale.In case of `toposub`, this table is the list of the clusters' centroids.
-- `ds_solar.nc`: timeseries of incoming SW radiations (top of atmosphere), and sun geometry
+- `ds_solar.nc`: solar geometry and top-of-atmosphere irradiance of the points, only written by `mp.compute_solar_geometry()` with `toposcale.save_solar_geometry: true` (the downscaling computes it block by block)
 - `da_horizon.nc`: horizon angles of the points [rad], dimensions (`azimuth`, `point_name`), with the point coordinates `x`, `y`. Azimuth in degrees: 0 = south, 90 = east, ±180 = north. See [Horizons](07_features.md#horizons).
 
 

@@ -145,6 +145,14 @@ def test_blocks_follow_the_chunks(ds):
                                                slice(16, 20), slice(20, 24), slice(24, 25)]
 
 
+def test_blocks_stay_within_the_memory_cap(ds):
+    nt = ds.sizes['time']
+    mb = 3 * nt * 2 * 8 / 1e6   # 3 points of 2 variables
+    blocks = te._point_blocks(ds, ['t', 'SW'], 1, max_block_mb=mb)
+    assert max(b.stop - b.start for b in blocks) == 3
+    assert [i for b in blocks for i in range(b.start, b.stop)] == list(range(ds.sizes['point_name']))
+
+
 def test_fsm2oshd_met_files(ds, tmp_path):
     rng = np.random.default_rng(1)
     x, y = np.arange(0, 1e4 + 1, 500.), np.arange(1e4, -1, -500.)

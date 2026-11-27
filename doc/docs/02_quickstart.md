@@ -24,8 +24,7 @@ mp.compute_dem_param()
 mp.extract_topo_param()
 
 # ========= STEP 3 ==========
-# compute solar geometry and horizon angles
-mp.compute_solar_geometry()
+# compute horizon angles (the solar geometry is computed during the downscaling)
 mp.compute_horizon()
 
 # ========= STEP 4 ==========

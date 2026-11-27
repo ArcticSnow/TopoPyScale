@@ -183,8 +183,6 @@ class Topoclass(object):
             self.ds_solar = xr.open_dataset(
                 self.config.outputs.path / self.config.outputs.file.ds_solar)
             logger.info(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
-        else:
-            logger.warning(f'Solar file {self.config.outputs.file.ds_solar} not found')
 
         if (self.config.outputs.path / self.config.outputs.file.da_horizon).is_file():
             self.da_horizon = xr.open_dataarray(
@@ -547,7 +545,24 @@ class Topoclass(object):
                                  solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
                                  n_substeps=self.config.toposcale.solar_substeps or 6)
 
-    def compute_solar_geometry(self):
+    def compute_solar_geometry(self, save=None):
+        """
+        Solar geometry of the points for the project period, saved to outputs/ds_solar.nc (or loaded if the file
+        exists) and kept as self.ds_solar.
+
+        The downscaling does not need it: it computes the solar geometry of each block of points and time steps when
+        it downscales the block. The file is only written when save is True or toposcale.save_solar_geometry is
+        true, for plots and analysis; it holds (points x time steps) values and can be large.
+
+        Args:
+            save (bool): write (or load) the file. Default: toposcale.save_solar_geometry (false)
+        """
+        if save is None:
+            save = bool(self.config.toposcale.save_solar_geometry)
+        if not save:
+            logger.info('---> Solar geometry: computed block by block during the downscaling '
+                        '(set toposcale.save_solar_geometry: true to also save ds_solar.nc)')
+            return
         fname = self.config.outputs.path / self.config.outputs.file.ds_solar
         if fname.is_file():
             self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
@@ -660,7 +675,7 @@ class Topoclass(object):
             output_path=downscaled_dir,
             df_centroids=self.toposub.df_centroids,
             da_horizon=self.da_horizon,
-            ds_solar=self.ds_solar,
+            ds_solar=None,
             target_EPSG=self.config.dem.epsg,
             start_date=self.config.project.start,
             end_date=self.config.project.end,
@@ -674,7 +689,11 @@ class Topoclass(object):
             point_block=self.config.toposcale.point_block or 100,
             time_block=self.config.toposcale.time_block,
             surface_effect=surface,
-            shading_substeps=self.config.toposcale.solar_substeps or None)
+            shading_substeps=self.config.toposcale.solar_substeps or None,
+            accumulation_window=self._accumulation_window(),
+            solar_substeps=self.config.toposcale.solar_substeps or 6,
+            solar_method=self.config.dem.solar_position_method or 'nrel_numpy',
+            solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT)
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
         return cda.downscale(n_core=n_core)
 
@@ -700,7 +719,8 @@ class Topoclass(object):
                                    df_centroids=self.toposub.df_centroids,
                                    ds_param=self.toposub.ds_param,
                                    snow_partition_method=snow_partition_method,
-                                   points=points)
+                                   points=points,
+                                   epsg=getattr(self.config.dem, 'epsg', None))
         report.to_csv(self.config.outputs.path / fname, index=False)
         logger.info(tc.summarize(report, min_status='warning'))
         logger.info(f'---> Physics-consistency report saved to {fname}')

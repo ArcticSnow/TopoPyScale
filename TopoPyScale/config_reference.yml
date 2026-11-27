@@ -87,6 +87,7 @@ toposcale:
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
   solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
+  save_solar_geometry: False             # (optional) also save the solar geometry of the points to outputs/ds_solar.nc (the downscaling computes it block by block). Default False
   surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
     method: none                          # none, redcapp or dreamit
     coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
