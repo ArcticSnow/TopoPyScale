@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 PLEV_VARS = ['z', 't', 'q', 'u', 'v']
 SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
 SOLAR_VARS = ['mu0', 'SWtoa', 'zenith', 'azimuth', 'elevation', 'sunset']
-ACC_VARS = ['tp', 'ssrd', 'strd']   # accumulated over the hours ending at the time stamp
+ACC_VARS = ['tp', 'ssrd', 'strd', 'fdir']   # accumulated over the hours ending at the time stamp
+DIRECT_DIFFUSE = ['empirical', 'era5']
 
 
 def accumulation(era_times, era_attrs, tstep_h):
@@ -143,6 +144,8 @@ class ClimateDownscaler:
         solar_substeps (int): sub-steps of the window averaged for the top-of-atmosphere irradiance. Default 6
         solar_method (str): pvlib solar position method, default 'nrel_numpy' (vectorized)
         solar_constant (float): total solar irradiance at 1 AU [W m-2]
+        direct_diffuse (str): direct/diffuse split of the ERA5 shortwave: 'empirical' (default, from the clearness
+            index, Ruiz-Arias et al. 2010) or 'era5' (the direct radiation fdir of the store)
     """
 
     def __init__(self,
@@ -169,16 +172,23 @@ class ClimateDownscaler:
                  accumulation_window=None,
                  solar_substeps=6,
                  solar_method='nrel_numpy',
-                 solar_constant=sg.S0_DEFAULT):
+                 solar_constant=sg.S0_DEFAULT,
+                 direct_diffuse='empirical'):
 
         store_name = store_name or 'down.zarr'
         if not str(store_name).endswith('.zarr'):
             raise ValueError('store_name must end with .zarr')
 
         self.ERA = xr.open_zarr(str(era5_zarr_path))
-        missing = [v for v in PLEV_VARS + SURF_VARS if v not in self.ERA]
+        self.direct_diffuse = direct_diffuse or 'empirical'
+        if self.direct_diffuse not in DIRECT_DIFFUSE:
+            raise ValueError(f'direct_diffuse {direct_diffuse} not supported, use {" or ".join(DIRECT_DIFFUSE)}')
+        self.surf_vars = SURF_VARS + (['fdir'] if self.direct_diffuse == 'era5' else [])
+        missing = [v for v in PLEV_VARS + self.surf_vars if v not in self.ERA]
         if missing:
-            raise ValueError(f'Variables {missing} missing from the ERA5 store {era5_zarr_path}')
+            hint = (' (direct_diffuse: era5 needs the direct solar radiation: run get_era5() with '
+                    'toposcale.direct_diffuse: era5 to add it)' if missing == ['fdir'] else '')
+            raise ValueError(f'Variables {missing} missing from the ERA5 store {era5_zarr_path}{hint}')
         self.ERA = self.ERA.sortby('level')  # level=-1 must be the lowest in altitude
         self.level_hpa = self.ERA.level.values.astype(float)
 
@@ -316,6 +326,7 @@ class ClimateDownscaler:
                     'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
                     'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'accumulation_hours': int(self.acc_hours),
+                    'direct_diffuse': self.direct_diffuse,
                     **{k: (int(v) if isinstance(v, (np.integer,)) else v) for k, v in self.solar_attrs.items()}}
         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
         # chunks of up to 10 points x time block, grouped in shards of point_block points: each block writes whole
@@ -387,11 +398,11 @@ class ClimateDownscaler:
         """Read the ERA5 variables for time steps t0:t1 on a box of nodes, as float64 numpy arrays."""
         tidx = self.era_time_index[t0:t1]
         tsel = slice(tidx[0], tidx[-1] + 1) if np.all(np.diff(tidx) == 1) else tidx
-        sub = self.ERA[PLEV_VARS + SURF_VARS].isel(time=tsel, latitude=box[0], longitude=box[1])
+        sub = self.ERA[PLEV_VARS + self.surf_vars].isel(time=tsel, latitude=box[0], longitude=box[1])
         era = {v: np.asarray(sub[v].transpose('time', 'level', 'latitude', 'longitude').values, dtype=float)
                for v in PLEV_VARS}
         nt = sub.sizes['time']
-        for v in SURF_VARS:
+        for v in self.surf_vars:
             if v in ACC_VARS and self.acc_sum > 1:
                 era[v] = self._read_sums(v, t0, t1, box)
             elif 'time' in sub[v].dims:
@@ -413,7 +424,8 @@ class ClimateDownscaler:
 
     def _box_mb(self, box, nt):
         cells = (box[0].stop - box[0].start) * (box[1].stop - box[1].start)
-        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(SURF_VARS) + len(ACC_VARS) * (self.acc_sum - 1)
+        n_acc = len([v for v in self.surf_vars if v in ACC_VARS])
+        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(self.surf_vars) + n_acc * (self.acc_sum - 1)
         return nt * cells * n_fields * 8 / 1e6
 
     def process_block(self, p0, p1, t0, t1, era=None):
@@ -429,7 +441,7 @@ class ClimateDownscaler:
         W = core.weight_matrix(self.ilat[p0:p1] - box[0].start, self.ilon[p0:p1] - box[1].start,
                                self.weights[p0:p1], box[0].stop - box[0].start, box[1].stop - box[1].start)
         plev = {v: core.apply_weights(fields[v], W) for v in PLEV_VARS}
-        surf = {v: core.apply_weights(fields[v], W) for v in SURF_VARS}
+        surf = {v: core.apply_weights(fields[v], W) for v in self.surf_vars}
         solar = self._read_solar(p0, p1, t0, t1)
         shade = self._shade(p0, p1, t0, t1, solar)
         points = {k: v[p0:p1] for k, v in self.points.items()}

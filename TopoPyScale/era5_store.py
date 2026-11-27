@@ -59,6 +59,8 @@ SHORT_NAMES = {'geopotential': 'z', 'temperature': 't', 'u_component_of_wind': '
                '2m_temperature': 't2m', '2m_dewpoint_temperature': 'd2m', 'surface_pressure': 'sp',
                'total_precipitation': 'tp', 'surface_solar_radiation_downwards': 'ssrd',
                'surface_thermal_radiation_downwards': 'strd', 'toa_incident_solar_radiation': 'tisr',
+               'total_sky_direct_solar_radiation_at_surface': 'fdir',
+               'clear_sky_direct_solar_radiation_at_surface': 'cdir',
                '10m_u_component_of_wind': 'u10', '10m_v_component_of_wind': 'v10', 'snowfall': 'sf',
                'total_cloud_cover': 'tcc', 'mean_sea_level_pressure': 'msl', 'skin_temperature': 'skt',
                'snow_depth': 'sd', 'friction_velocity': 'zust',
@@ -68,6 +70,8 @@ SHORT_NAMES = {'geopotential': 'z', 'temperature': 't', 'u_component_of_wind': '
 PLEV_VARIABLES = ['geopotential', 'temperature', 'u_component_of_wind', 'v_component_of_wind', 'specific_humidity']
 SURF_VARIABLES = ['2m_temperature', '2m_dewpoint_temperature', 'surface_pressure', 'total_precipitation',
                   'surface_solar_radiation_downwards', 'surface_thermal_radiation_downwards']
+# direct solar radiation on a horizontal surface, for toposcale.direct_diffuse: era5
+FDIR = 'total_sky_direct_solar_radiation_at_surface'
 REQUIRED = {'plev': ('z', 't', 'q', 'u', 'v'), 'surf': ('t2m', 'd2m', 'sp', 'tp', 'ssrd', 'strd'),
             'zsurf': ('z_surf',)}
 DIMS = {'plev': ('time', 'level', 'latitude', 'longitude'), 'surf': ('time', 'latitude', 'longitude'),
@@ -338,6 +342,27 @@ class Era5Store:
                              f'set climate.<source>.zarr_store to another name')
         stored = json.loads(stored) if isinstance(stored, str) else stored
         diff = [k for k in REQUEST_KEYS if not _same(stored.get(k), self.request.get(k))]
+        # fewer variables than the store holds: the store keeps fetching all of them
+        for k in [k for k in diff if k in ('plev_variables', 'surf_variables')
+                  and set(self.request.get(k) or []) < set(stored.get(k) or [])]:
+            self.request[k] = stored[k]
+            diff.remove(k)
+        # variables added to a stream: the stream is fetched again, the other one is kept
+        added = [k for k in diff if k in ('plev_variables', 'surf_variables')
+                 and set(stored.get(k) or []) < set(self.request.get(k) or [])]
+        if added and not set(diff) - set(added):
+            g = self._group('r+')
+            for k in added:
+                stream = k.split('_')[0]
+                g[f'filled_{stream}'][:] = 0
+                new = sorted(set(self.request[k]) - set(stored.get(k) or []))
+                logger.info(f'---> {self.path.name}: {", ".join(new)} added to the {stream} variables, the {stream} '
+                            f'stream is fetched again')
+            g.attrs['era5_request'] = json.dumps(self.request)
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', message='Consolidated metadata')
+                zarr.consolidate_metadata(str(self.path), zarr_format=3)
+            return
         if diff:
             details = '; '.join(f'{k}: store {stored.get(k)}, now {self.request.get(k)}' for k in diff)
             raise ValueError(f'{self.path.name} holds other ERA5 data than requested ({details}). Delete it, or set '

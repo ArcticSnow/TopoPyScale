@@ -705,7 +705,8 @@ class Topoclass(object):
             accumulation_window=self._accumulation_window(),
             solar_substeps=self.config.toposcale.solar_substeps or 6,
             solar_method=self.config.dem.solar_position_method or 'nrel_numpy',
-            solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT)
+            solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
+            direct_diffuse=self.config.toposcale.direct_diffuse or 'empirical')
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
         return cda.downscale(n_core=n_core)
 

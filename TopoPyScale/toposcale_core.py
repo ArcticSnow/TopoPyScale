@@ -372,7 +372,7 @@ def horizon_at_sun(profiles, horizon_azimuth_deg, sun_azimuth):
     return profiles[np.arange(s.shape[1])[None, :], idx]
 
 
-def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
+def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., fdir=None):
     """
     Shortwave partition and terrain corrections.
 
@@ -384,6 +384,9 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
         slope, aspect, svf (array): (point,), angles in rad, aspect 0 = south
         shade (bool array): sun behind the local horizon, (time, point)
         acc_seconds (float): accumulation period of ssrd [s], the window of solar['SWtoa']
+        fdir (array): ERA5 direct solar radiation on a horizontal surface [J m-2 accumulated over acc_seconds],
+            (time, point). None: the direct/diffuse split of the grid comes from the clearness index (Ruiz-Arias et
+            al., 2010)
 
     Returns:
         dict: 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination', each (time, point)
@@ -392,10 +395,15 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
     with np.errstate(invalid='ignore', divide='ignore'):
         kt = np.where(day, ssrd / acc_seconds / swtoa, 0.)
         kt = np.clip(kt, 0, 1)
-        kd = 0.952 - 1.041 * np.exp(-np.exp(2.3 - 4.702 * kt))
         sw_grid = np.maximum(ssrd / acc_seconds, 0.)
-        diffuse_grid = kd * sw_grid
-        direct_grid = np.minimum(sw_grid - diffuse_grid, swtoa)
+        if fdir is None:
+            kd = 0.952 - 1.041 * np.exp(-np.exp(2.3 - 4.702 * kt))
+            diffuse_grid = kd * sw_grid
+            direct_grid = np.minimum(sw_grid - diffuse_grid, swtoa)
+        else:
+            # split of the ERA5 radiation scheme, the direct beam kept within [0, SW] and below the TOA irradiance
+            direct_grid = np.where(day, np.clip(fdir / acc_seconds, 0., np.minimum(sw_grid, swtoa)), 0.)
+            diffuse_grid = sw_grid - direct_grid
         # Beer's law: extinction coefficient of the ERA5 column, applied with the pressure at the point
         ka = np.where(day, G * mu0 / sp * np.log(swtoa / direct_grid), 0.)
         cos_i = mu0 * np.cos(slope) + np.sin(solar['zenith']) * np.sin(slope) * np.cos(solar['azimuth'] - aspect)
@@ -419,7 +427,7 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
         plev (dict): horizontally interpolated pressure-level fields 'z' (m2 s-2), 't', 'q', 'u', 'v',
             each (time, level, point)
         surf (dict): horizontally interpolated surface fields 'z_surf' (m2 s-2), 'sp', 't2m', 'd2m', 'tp', 'ssrd',
-            'strd', each (time, point)
+            'strd', and optionally 'fdir' (direct/diffuse split of ERA5), each (time, point)
         level_hpa (array): pressure levels [hPa]
         months (array): month of each time step
         points (dict): 'elevation', 'slope', 'aspect', 'svf', each (point,), and optionally 'lat' [deg] for the
@@ -461,5 +469,5 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
     out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
                                      points['slope'], lw_terrain_flag, acc_seconds)
     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
-                         points['svf'], shade, acc_seconds))
+                         points['svf'], shade, acc_seconds, surf.get('fdir')))
     return out

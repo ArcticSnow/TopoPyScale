@@ -20,7 +20,8 @@ from TopoPyScale import fetch_era5 as fe
 REF = pd.Timestamp('2020-01-01')
 BOX = dict(latN=46.6, latS=46.1, lonW=7.1, lonE=7.6)   # nodes 46.5..46.25 N, 7.25..7.5 E
 LEVELS = [1000, 700, 850]
-CODE = {'z': 1, 't': 2, 'u': 3, 'v': 4, 'q': 5, 't2m': 6, 'd2m': 7, 'sp': 8, 'ssrd': 9, 'strd': 10, 'tp': 11}
+CODE = {'z': 1, 't': 2, 'u': 3, 'v': 4, 'q': 5, 't2m': 6, 'd2m': 7, 'sp': 8, 'ssrd': 9, 'strd': 10, 'tp': 11,
+        'fdir': 12}
 INSTANT, ACCUM = ['t2m', 'd2m', 'sp'], ['tp', 'ssrd', 'strd']
 
 
@@ -83,7 +84,7 @@ class FakeCDS:
             return target
         # surface: a zip of an instantaneous and an accumulated file, whatever download_format says
         buffers = {}
-        for kind, names in [('instant', INSTANT), ('accum', ACCUM)]:
+        for kind, names in [('instant', INSTANT), ('accum', ACCUM + ['fdir'])]:
             part = {v: fields[v] for v in names if v in fields}
             if part:
                 buffers[kind] = xr.Dataset(part, coords=coords).to_netcdf(engine='scipy')
@@ -333,3 +334,36 @@ def test_3h_store_holds_window_sums_of_the_hourly_accumulations(cds, tmp_path):
 def json_request(store):
     import json
     return json.loads(xr.open_zarr(store).attrs['era5_request'])
+
+
+def test_adding_fdir_fetches_the_surface_stream_again(cds, tmp_path):
+    cds()
+    fetch(tmp_path)
+    fake = cds()
+    store = fetch(tmp_path, surf_variables=es.SURF_VARIABLES + [es.FDIR])
+    assert sorted(k for k, _, _ in fake.calls) == ['surf_2020-01', 'surf_2020-02']
+    ds = xr.open_zarr(store)
+    times = es.time_axis('2020-01-30', '2020-02-02', '1h')
+    np.testing.assert_allclose(ds.fdir.sel(time=times).values,
+                               value('fdir', times, [0.], ds.latitude.values, ds.longitude.values)[:, 0], rtol=1e-6)
+    assert es.store_gaps(store, '2020-01-30', '2020-02-02') == []
+    assert es.FDIR in json_request(store)['surf_variables']
+    # requesting fewer variables than the store holds: it keeps all, and nothing is missing
+    fake = cds()
+    fetch(tmp_path, surf_variables=es.SURF_VARIABLES)
+    assert fake.calls == []
+    fetch(tmp_path, end='2020-02-03', surf_variables=es.SURF_VARIABLES)
+    assert all(es.FDIR in v for k, _, v in fake.calls if k.startswith('surf'))
+
+
+def test_fetcher_adds_fdir_for_the_era5_split(cds, tmp_path, monkeypatch):
+    from munch import DefaultMunch
+    seen = {}
+    monkeypatch.setattr(fe, 'fetch_era5_to_zarr', lambda *a, **k: seen.update(k))
+    config = DefaultMunch.fromDict({'project': {'start': '2020-01-30', 'end': '2020-02-02', 'climate': 'era5',
+                                                'extent': {'latN': 46.6, 'latS': 46.1, 'lonW': 7.1, 'lonE': 7.6}},
+                                    'climate': {'path': str(tmp_path), 'era5': {'timestep': '1h', 'plevels': LEVELS}},
+                                    'toposcale': {'direct_diffuse': 'era5'}})
+    with contextlib.redirect_stdout(io.StringIO()):
+        fe.FetchERA5(config).go_fetch('all')
+    assert seen['surf_variables'] == es.SURF_VARIABLES + [es.FDIR]

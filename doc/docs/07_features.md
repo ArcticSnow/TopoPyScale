@@ -48,6 +48,10 @@ era.go_fetch()
 
 This way it is possible to use routines for TPS project but not only.
 
+**Time steps of 3 h and 6 h.** ERA5 gives the accumulated fields (precipitation, radiation) as the accumulation over the hour ending at each time stamp. With `climate.era5.timestep: 3h` or `6h`, the pressure levels and the instantaneous surface fields are fetched at the time step, and the accumulated fields hourly: the store holds their sums over the time step ending at the stamp (store attribute `accumulation_hours`). The first window of each request starts on the previous day: from the CDS, its hours come with a small second request (the accumulated fields, for 2 or 5 hours); from GDEX, they are read with the day. The downscaling then gives precipitation totals and mean radiation over each time step, and computes the solar geometry over the same window. An hourly store downscaled at 3 h or 6 h is summed the same way. A 3 h store fetched by an earlier version holds only the hour ending at each stamp: it is used with a warning, and refused by `get_era5()` (delete it to fetch the sums).
+
+**Variables added to an existing store.** A store keeps fetching every variable it holds. When a variable is added to a stream (e.g. the direct solar radiation `fdir` for `toposcale.direct_diffuse: era5`), that stream is fetched again for the whole period and the other one is kept.
+
 
 ## Convert ERA5 to Zarr
 
@@ -119,6 +123,16 @@ For every point and time step, the solar geometry holds:
 `ds_solar.nc` is stored as float32. A file computed by an older version prints a warning when loaded; delete it to recompute it. The downscaling no longer reads it.
 
 **Terrain shading within the window.** ERA5 shortwave is a mean over the accumulation window, so a point can be lit for part of it: the sun clears or drops behind a ridge during the hour. The downscaling tests the horizon at the same `toposcale.solar_substeps` sub-steps of the window and scales the direct beam by the sunlit fraction, each sub-step weighted by the beam it brings to the slope (cosine of the illumination angle). The sun positions of the sub-steps are geocentric (within 0.01° of the SPA); only terrain shading counts, not the sun below the astronomical horizon. With `solar_substeps: 1` the horizon is tested once, at the centre of the window, and the beam is kept or removed for the whole window. On the Davos points (January 2020), the 57 hours the sun crosses the horizon of DAV get an RMSE of 20.6 W m⁻² against the station instead of 30.3; the cost does not show in the downscaling time.
+
+
+## Direct and diffuse shortwave
+
+TopoSCALE splits the ERA5 shortwave of the grid into direct and diffuse before the terrain corrections: the diffuse part is scaled by the sky view factor, the direct part is extrapolated to the elevation of the point (Beer's law with the extinction of the ERA5 column), projected on the slope and removed in terrain shadow. `toposcale.direct_diffuse` chooses the split:
+
+- `empirical` (default): the diffuse fraction from the clearness index kt = SW / SWtoa, kd = 0.952 − 1.041 exp(−exp(2.3 − 4.702 kt)) (Ruiz-Arias et al., 2010). It depends on the hourly kt only: a thin cloud layer and a broken cloud field with the same kt get the same split.
+- `era5`: the direct radiation on a horizontal surface of the ERA5 radiation scheme (`fdir`, *total sky direct solar radiation at surface*), which accounts for the clouds, aerosols and water vapour of the reanalysis. The diffuse part is SW − fdir. `fdir` is fetched with the surface fields when the option is set (`get_era5()`; an existing store gets its surface stream fetched again). In the ECMWF radiation scheme, the direct flux includes part of the radiation scattered in the forward direction, so `fdir` is somewhat larger than what a pyrheliometer would measure (ECMWF, *Radiation quantities in the ECMWF model and MARS*).
+
+The output store records the option in its attribute `direct_diffuse`.
 
 
 ## Slope, aspect and sky view factor

@@ -45,10 +45,11 @@ def write_store(case, path, step=1, attrs=None):
     ds = xr.merge([plev, surf]).astype('float32')
     if step > 1:
         # window sums (the first window, before the period, rescaled), or the hour ending at the stamp
-        acc = ds[tz.ACC_VARS]
+        names = [v for v in tz.ACC_VARS if v in ds]
+        acc = ds[names]
         if attrs:
             acc = acc.rolling(time=step, min_periods=1).mean() * step
-        ds = ds.drop_vars(tz.ACC_VARS).merge(acc).isel(time=slice(0, None, step))
+        ds = ds.drop_vars(names).merge(acc).isel(time=slice(0, None, step))
     ds.attrs = attrs or {}
     ds.to_zarr(path, mode='w', zarr_format=3)
     return path
