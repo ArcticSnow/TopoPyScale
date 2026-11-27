@@ -1,0 +1,593 @@
+From a7c3098bcc26f42241c65b4d523ce8446c40ddeb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 27 Nov 2026 11:58:57 +0100
+Subject: [PATCH 05/10] Option to split the shortwave with the ERA5 direct
+ radiation (fdir)
+
+toposcale.direct_diffuse: empirical (default, diffuse fraction from the
+clearness index) or era5: the direct radiation on a horizontal surface of
+the ERA5 radiation scheme, the diffuse being SW - fdir. get_era5() then
+fetches fdir with the surface fields, from the CDS or GDEX. A store keeps
+fetching every variable it holds, and a variable added to a stream makes
+that stream be fetched again (the other is kept), instead of refusing the
+store. The output store records the option.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012FMkEYDUJxvxmd3SbUsJfP
+---
+ TopoPyScale/config_reference.yml |  1 +
+ TopoPyScale/era5_store.py        | 25 +++++++++
+ TopoPyScale/fetch_era5.py        | 32 ++++++++----
+ TopoPyScale/topo_scale_zarr.py   | 28 +++++++---
+ TopoPyScale/topoclass.py         |  3 +-
+ TopoPyScale/toposcale_core.py    | 20 +++++---
+ doc/docs/03_configurationFile.md |  2 +
+ doc/docs/07_features.md          | 14 +++++
+ tests/test_accumulation.py       |  5 +-
+ tests/test_era5_store.py         | 38 +++++++++++++-
+ tests/test_radiation_options.py  | 88 ++++++++++++++++++++++++++++++++
+ 11 files changed, 228 insertions(+), 28 deletions(-)
+ create mode 100644 tests/test_radiation_options.py
+
+diff --git a/TopoPyScale/config_reference.yml b/TopoPyScale/config_reference.yml
+index a8a428c..3df49d6 100644
+--- a/TopoPyScale/config_reference.yml
++++ b/TopoPyScale/config_reference.yml
+@@ -88,6 +88,7 @@ toposcale:
+   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
+   solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
+   save_solar_geometry: False             # (optional) also save the solar geometry of the points to outputs/ds_solar.nc (the downscaling computes it block by block). Default False
++  direct_diffuse: empirical               # (optional) direct/diffuse split of the ERA5 shortwave: empirical (from the clearness index) or era5 (ERA5 direct radiation fdir, fetched with the surface fields). Default empirical
+   surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
+     method: none                          # none, redcapp or dreamit
+     coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
+diff --git a/TopoPyScale/era5_store.py b/TopoPyScale/era5_store.py
+index 7014aec..d481409 100644
+--- a/TopoPyScale/era5_store.py
++++ b/TopoPyScale/era5_store.py
+@@ -59,6 +59,8 @@ SHORT_NAMES = {'geopotential': 'z', 'temperature': 't', 'u_component_of_wind': '
+                '2m_temperature': 't2m', '2m_dewpoint_temperature': 'd2m', 'surface_pressure': 'sp',
+                'total_precipitation': 'tp', 'surface_solar_radiation_downwards': 'ssrd',
+                'surface_thermal_radiation_downwards': 'strd', 'toa_incident_solar_radiation': 'tisr',
++               'total_sky_direct_solar_radiation_at_surface': 'fdir',
++               'clear_sky_direct_solar_radiation_at_surface': 'cdir',
+                '10m_u_component_of_wind': 'u10', '10m_v_component_of_wind': 'v10', 'snowfall': 'sf',
+                'total_cloud_cover': 'tcc', 'mean_sea_level_pressure': 'msl', 'skin_temperature': 'skt',
+                'snow_depth': 'sd', 'friction_velocity': 'zust',
+@@ -68,6 +70,8 @@ SHORT_NAMES = {'geopotential': 'z', 'temperature': 't', 'u_component_of_wind': '
+ PLEV_VARIABLES = ['geopotential', 'temperature', 'u_component_of_wind', 'v_component_of_wind', 'specific_humidity']
+ SURF_VARIABLES = ['2m_temperature', '2m_dewpoint_temperature', 'surface_pressure', 'total_precipitation',
+                   'surface_solar_radiation_downwards', 'surface_thermal_radiation_downwards']
++# direct solar radiation on a horizontal surface, for toposcale.direct_diffuse: era5
++FDIR = 'total_sky_direct_solar_radiation_at_surface'
+ REQUIRED = {'plev': ('z', 't', 'q', 'u', 'v'), 'surf': ('t2m', 'd2m', 'sp', 'tp', 'ssrd', 'strd'),
+             'zsurf': ('z_surf',)}
+ DIMS = {'plev': ('time', 'level', 'latitude', 'longitude'), 'surf': ('time', 'latitude', 'longitude'),
+@@ -338,6 +342,27 @@ class Era5Store:
+                              f'set climate.<source>.zarr_store to another name')
+         stored = json.loads(stored) if isinstance(stored, str) else stored
+         diff = [k for k in REQUEST_KEYS if not _same(stored.get(k), self.request.get(k))]
++        # fewer variables than the store holds: the store keeps fetching all of them
++        for k in [k for k in diff if k in ('plev_variables', 'surf_variables')
++                  and set(self.request.get(k) or []) < set(stored.get(k) or [])]:
++            self.request[k] = stored[k]
++            diff.remove(k)
++        # variables added to a stream: the stream is fetched again, the other one is kept
++        added = [k for k in diff if k in ('plev_variables', 'surf_variables')
++                 and set(stored.get(k) or []) < set(self.request.get(k) or [])]
++        if added and not set(diff) - set(added):
++            g = self._group('r+')
++            for k in added:
++                stream = k.split('_')[0]
++                g[f'filled_{stream}'][:] = 0
++                new = sorted(set(self.request[k]) - set(stored.get(k) or []))
++                logger.info(f'---> {self.path.name}: {", ".join(new)} added to the {stream} variables, the {stream} '
++                            f'stream is fetched again')
++            g.attrs['era5_request'] = json.dumps(self.request)
++            with warnings.catch_warnings():
++                warnings.filterwarnings('ignore', message='Consolidated metadata')
++                zarr.consolidate_metadata(str(self.path), zarr_format=3)
++            return
+         if diff:
+             details = '; '.join(f'{k}: store {stored.get(k)}, now {self.request.get(k)}' for k in diff)
+             raise ValueError(f'{self.path.name} holds other ERA5 data than requested ({details}). Delete it, or set '
+diff --git a/TopoPyScale/fetch_era5.py b/TopoPyScale/fetch_era5.py
+index 5e1bb8c..0280d22 100644
+--- a/TopoPyScale/fetch_era5.py
++++ b/TopoPyScale/fetch_era5.py
+@@ -126,13 +126,19 @@ class FetchERA5():
+         if clim.rm_daily:
+             logger.info('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
+         extent = self.config.project.extent
++        surf_variables = self.varoi_surf
++        if (getattr(self.config.toposcale, 'direct_diffuse', None) or 'empirical') == 'era5':
++            # direct solar radiation for the direct/diffuse split
++            surf_variables = list(surf_variables or es.SURF_VARIABLES)
++            if es.FDIR not in surf_variables:
++                surf_variables.append(es.FDIR)
+         return fetch_era5_to_zarr(self.config.project.start, self.config.project.end, self.config.climate.path,
+                                   latN=extent.get('latN') + 0.4, latS=extent.get('latS') - 0.4,
+                                   lonE=extent.get('lonE') + 0.4, lonW=extent.get('lonW') - 0.4,
+                                   step=clim.timestep or '1h', plevels=clim.plevels, streams=streams, source=source,
+                                   product=clim.product or 'reanalysis', zarr_store=clim.zarr_store or 'ERA5.zarr',
+                                   n_workers=clim.download_threads or None, plev_variables=self.varoi_plev,
+-                                  surf_variables=self.varoi_surf, gdex_root=clim.gdex_root or None,
++                                  surf_variables=surf_variables, gdex_root=clim.gdex_root or None,
+                                   download_format=clim.cds_download_format or 'unarchived', verify=self.verify_flag)
+ 
+     def get_era5_snowmapper(self, surf_plev, lastday):
+@@ -351,6 +357,7 @@ GDEX_SURF_AN = {'t2m': ('2t', '128_167_2t.ll025sc'), 'd2m': ('2d', '128_168_2d.l
+                 'sp': ('sp', '128_134_sp.ll025sc')}
+ # accumulations over the hour ending at the valid time (forecast start + step, steps 1 to 12), as on the CDS
+ GDEX_SURF_ACCUMU = {'ssrd': '128_169_ssrd.ll025sc', 'strd': '128_175_strd.ll025sc', 'tp': '128_228_tp.ll025sc'}
++GDEX_FDIR = {'fdir': '228_021_fdir.ll025sc'}   # direct solar radiation, read when requested
+ GDEX_INVARIANT_Z = 'e5.oper.invariant/197901/e5.oper.invariant.128_129_z.ll025sc.1979010100_1979010100.nc'
+ 
+ 
+@@ -462,12 +469,12 @@ def _gdex_surf_an(root, short, stem, times, box):
+     return _gdex_load(path, lambda d: _gdex_box(d.sel(time=times), *box))
+ 
+ 
+-def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1):
++def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1, accumu=None):
+     """
+     Write the file of one day and stream ('plev' or 'surf') to target, with the variables and layout of the CDS
+     files. The surface geopotential z_surf is added to surface files unless None. With acc_hours > 1, the accumulated
+     fields are read at every hour of the windows of acc_hours hours ending at the time steps (from the previous day),
+-    to be summed by era5_store.
++    to be summed by era5_store. accumu: accumulated fields {name: GDEX stem}, default GDEX_SURF_ACCUMU.
+     """
+     times = pd.date_range(day, periods=24, freq='1h')[::int(pd.Timedelta(step) / pd.Timedelta('1h'))]
+     acc_times = times if acc_hours == 1 else pd.DatetimeIndex(np.unique(es.window_hours(times, acc_hours).ravel()))
+@@ -480,7 +487,8 @@ def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1):
+         ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact').sortby('level')
+     else:
+         out = {name: _gdex_surf_an(root, short, stem, times, box) for name, (short, stem) in GDEX_SURF_AN.items()}
+-        out.update({name: _gdex_accumu(root, stem, acc_times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
++        out.update({name: _gdex_accumu(root, stem, acc_times, box)
++                    for name, stem in (accumu or GDEX_SURF_ACCUMU).items()})
+         if z_surf is not None:
+             out['z'] = z_surf.expand_dims(time=times)
+         ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact' if acc_hours == 1 else 'outer')
+@@ -614,7 +622,7 @@ def _cds_fetch_task(task, plev_variables, surf_variables, acc_hours=1, **kwargs)
+     return files
+ 
+ 
+-def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, acc_hours=1):
++def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, acc_hours=1, accumu=None):
+     """Read a task from GDEX and write it to raw_dir (runs in a spawned process, HDF5 reads hold a global lock)."""
+     target = Path(raw_dir) / f'{task.key}.nc'
+     if target.is_file():
+@@ -624,7 +632,8 @@ def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, a
+ 
+     def get():
+         if task.stream != 'zsurf':
+-            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target, acc_hours))
++            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target, acc_hours,
++                                  accumu))
+         z = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
+                        lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
+         tmp = Path(f'{target}.part')
+@@ -686,8 +695,10 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+         if product not in [None, 'reanalysis']:
+             raise ValueError(f'GDEX only holds the ERA5 reanalysis, not {product}')
+         if (plev_variables and list(plev_variables) != es.PLEV_VARIABLES) or \
+-                (surf_variables and [v for v in surf_variables if v != 'geopotential'] != es.SURF_VARIABLES):
+-            raise ValueError('GDEX gives the variables of the downscaling only: leave varoi_plev and varoi_surf empty')
++                (surf_variables and [v for v in surf_variables if v not in ('geopotential', es.FDIR)]
++                 != es.SURF_VARIABLES):
++            raise ValueError('GDEX gives the variables of the downscaling only (and the direct solar radiation): '
++                             'leave varoi_plev and varoi_surf empty')
+     area = es.snap_area(latN, latS, lonW, lonE)
+     plev_variables = list(plev_variables or es.PLEV_VARIABLES)
+     # the surface geopotential is static: fetched once, not with every month
+@@ -700,6 +711,8 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+         # accumulated fields stored as sums over the time step, from hourly data
+         request['accumulation_hours'] = acc_hours
+     store = es.Era5Store(eraDir / zarr_store, request, es.time_axis(start, end, step), time_chunk=time_chunk)
++    # an existing store may hold more variables than requested: it keeps getting all of them
++    plev_variables, surf_variables = store.request['plev_variables'], store.request['surf_variables']
+ 
+     make_tasks = es.month_tasks if source == 'cds' else es.day_tasks
+     tasks = ([es.Task('zsurf', 'zsurf', (pd.Timestamp(start).normalize(),))] if 'surf' in streams else []) \
+@@ -732,8 +745,9 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+             n_days = sum(t.stream == 'plev' for t in todo) / es.STEP_HOURS[step]
+             logger.info(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
+                   f'whatever the size of the domain. On NCAR systems they are read locally')
++        accumu = {**GDEX_SURF_ACCUMU, **(GDEX_FDIR if es.FDIR in surf_variables else {})}
+         fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
+-                                  retries=retries, retry_wait=retry_wait, acc_hours=acc_hours)
++                                  retries=retries, retry_wait=retry_wait, acc_hours=acc_hours, accumu=accumu)
+         es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
+     shutil.rmtree(raw, ignore_errors=True)
+     logger.info(f'===> {store.path.name} complete')
+diff --git a/TopoPyScale/topo_scale_zarr.py b/TopoPyScale/topo_scale_zarr.py
+index 8b1ec57..2498554 100644
+--- a/TopoPyScale/topo_scale_zarr.py
++++ b/TopoPyScale/topo_scale_zarr.py
+@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
+ PLEV_VARS = ['z', 't', 'q', 'u', 'v']
+ SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
+ SOLAR_VARS = ['mu0', 'SWtoa', 'zenith', 'azimuth', 'elevation', 'sunset']
+-ACC_VARS = ['tp', 'ssrd', 'strd']   # accumulated over the hours ending at the time stamp
++ACC_VARS = ['tp', 'ssrd', 'strd', 'fdir']   # accumulated over the hours ending at the time stamp
++DIRECT_DIFFUSE = ['empirical', 'era5']
+ 
+ 
+ def accumulation(era_times, era_attrs, tstep_h):
+@@ -143,6 +144,8 @@ class ClimateDownscaler:
+         solar_substeps (int): sub-steps of the window averaged for the top-of-atmosphere irradiance. Default 6
+         solar_method (str): pvlib solar position method, default 'nrel_numpy' (vectorized)
+         solar_constant (float): total solar irradiance at 1 AU [W m-2]
++        direct_diffuse (str): direct/diffuse split of the ERA5 shortwave: 'empirical' (default, from the clearness
++            index, Ruiz-Arias et al. 2010) or 'era5' (the direct radiation fdir of the store)
+     """
+ 
+     def __init__(self,
+@@ -169,16 +172,23 @@ class ClimateDownscaler:
+                  accumulation_window=None,
+                  solar_substeps=6,
+                  solar_method='nrel_numpy',
+-                 solar_constant=sg.S0_DEFAULT):
++                 solar_constant=sg.S0_DEFAULT,
++                 direct_diffuse='empirical'):
+ 
+         store_name = store_name or 'down.zarr'
+         if not str(store_name).endswith('.zarr'):
+             raise ValueError('store_name must end with .zarr')
+ 
+         self.ERA = xr.open_zarr(str(era5_zarr_path))
+-        missing = [v for v in PLEV_VARS + SURF_VARS if v not in self.ERA]
++        self.direct_diffuse = direct_diffuse or 'empirical'
++        if self.direct_diffuse not in DIRECT_DIFFUSE:
++            raise ValueError(f'direct_diffuse {direct_diffuse} not supported, use {" or ".join(DIRECT_DIFFUSE)}')
++        self.surf_vars = SURF_VARS + (['fdir'] if self.direct_diffuse == 'era5' else [])
++        missing = [v for v in PLEV_VARS + self.surf_vars if v not in self.ERA]
+         if missing:
+-            raise ValueError(f'Variables {missing} missing from the ERA5 store {era5_zarr_path}')
++            hint = (' (direct_diffuse: era5 needs the direct solar radiation: run get_era5() with '
++                    'toposcale.direct_diffuse: era5 to add it)' if missing == ['fdir'] else '')
++            raise ValueError(f'Variables {missing} missing from the ERA5 store {era5_zarr_path}{hint}')
+         self.ERA = self.ERA.sortby('level')  # level=-1 must be the lowest in altitude
+         self.level_hpa = self.ERA.level.values.astype(float)
+ 
+@@ -316,6 +326,7 @@ class ClimateDownscaler:
+                     'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                     'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                     'accumulation_hours': int(self.acc_hours),
++                    'direct_diffuse': self.direct_diffuse,
+                     **{k: (int(v) if isinstance(v, (np.integer,)) else v) for k, v in self.solar_attrs.items()}}
+         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+         # chunks of up to 10 points x time block, grouped in shards of point_block points: each block writes whole
+@@ -387,11 +398,11 @@ class ClimateDownscaler:
+         """Read the ERA5 variables for time steps t0:t1 on a box of nodes, as float64 numpy arrays."""
+         tidx = self.era_time_index[t0:t1]
+         tsel = slice(tidx[0], tidx[-1] + 1) if np.all(np.diff(tidx) == 1) else tidx
+-        sub = self.ERA[PLEV_VARS + SURF_VARS].isel(time=tsel, latitude=box[0], longitude=box[1])
++        sub = self.ERA[PLEV_VARS + self.surf_vars].isel(time=tsel, latitude=box[0], longitude=box[1])
+         era = {v: np.asarray(sub[v].transpose('time', 'level', 'latitude', 'longitude').values, dtype=float)
+                for v in PLEV_VARS}
+         nt = sub.sizes['time']
+-        for v in SURF_VARS:
++        for v in self.surf_vars:
+             if v in ACC_VARS and self.acc_sum > 1:
+                 era[v] = self._read_sums(v, t0, t1, box)
+             elif 'time' in sub[v].dims:
+@@ -413,7 +424,8 @@ class ClimateDownscaler:
+ 
+     def _box_mb(self, box, nt):
+         cells = (box[0].stop - box[0].start) * (box[1].stop - box[1].start)
+-        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(SURF_VARS) + len(ACC_VARS) * (self.acc_sum - 1)
++        n_acc = len([v for v in self.surf_vars if v in ACC_VARS])
++        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(self.surf_vars) + n_acc * (self.acc_sum - 1)
+         return nt * cells * n_fields * 8 / 1e6
+ 
+     def process_block(self, p0, p1, t0, t1, era=None):
+@@ -429,7 +441,7 @@ class ClimateDownscaler:
+         W = core.weight_matrix(self.ilat[p0:p1] - box[0].start, self.ilon[p0:p1] - box[1].start,
+                                self.weights[p0:p1], box[0].stop - box[0].start, box[1].stop - box[1].start)
+         plev = {v: core.apply_weights(fields[v], W) for v in PLEV_VARS}
+-        surf = {v: core.apply_weights(fields[v], W) for v in SURF_VARS}
++        surf = {v: core.apply_weights(fields[v], W) for v in self.surf_vars}
+         solar = self._read_solar(p0, p1, t0, t1)
+         shade = self._shade(p0, p1, t0, t1, solar)
+         points = {k: v[p0:p1] for k, v in self.points.items()}
+diff --git a/TopoPyScale/topoclass.py b/TopoPyScale/topoclass.py
+index 18b3c77..fcafadc 100644
+--- a/TopoPyScale/topoclass.py
++++ b/TopoPyScale/topoclass.py
+@@ -705,7 +705,8 @@ class Topoclass(object):
+             accumulation_window=self._accumulation_window(),
+             solar_substeps=self.config.toposcale.solar_substeps or 6,
+             solar_method=self.config.dem.solar_position_method or 'nrel_numpy',
+-            solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT)
++            solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
++            direct_diffuse=self.config.toposcale.direct_diffuse or 'empirical')
+         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
+         return cda.downscale(n_core=n_core)
+ 
+diff --git a/TopoPyScale/toposcale_core.py b/TopoPyScale/toposcale_core.py
+index aff18da..d590c39 100644
+--- a/TopoPyScale/toposcale_core.py
++++ b/TopoPyScale/toposcale_core.py
+@@ -372,7 +372,7 @@ def horizon_at_sun(profiles, horizon_azimuth_deg, sun_azimuth):
+     return profiles[np.arange(s.shape[1])[None, :], idx]
+ 
+ 
+-def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
++def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., fdir=None):
+     """
+     Shortwave partition and terrain corrections.
+ 
+@@ -384,6 +384,9 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
+         slope, aspect, svf (array): (point,), angles in rad, aspect 0 = south
+         shade (bool array): sun behind the local horizon, (time, point)
+         acc_seconds (float): accumulation period of ssrd [s], the window of solar['SWtoa']
++        fdir (array): ERA5 direct solar radiation on a horizontal surface [J m-2 accumulated over acc_seconds],
++            (time, point). None: the direct/diffuse split of the grid comes from the clearness index (Ruiz-Arias et
++            al., 2010)
+ 
+     Returns:
+         dict: 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination', each (time, point)
+@@ -392,10 +395,15 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
+     with np.errstate(invalid='ignore', divide='ignore'):
+         kt = np.where(day, ssrd / acc_seconds / swtoa, 0.)
+         kt = np.clip(kt, 0, 1)
+-        kd = 0.952 - 1.041 * np.exp(-np.exp(2.3 - 4.702 * kt))
+         sw_grid = np.maximum(ssrd / acc_seconds, 0.)
+-        diffuse_grid = kd * sw_grid
+-        direct_grid = np.minimum(sw_grid - diffuse_grid, swtoa)
++        if fdir is None:
++            kd = 0.952 - 1.041 * np.exp(-np.exp(2.3 - 4.702 * kt))
++            diffuse_grid = kd * sw_grid
++            direct_grid = np.minimum(sw_grid - diffuse_grid, swtoa)
++        else:
++            # split of the ERA5 radiation scheme, the direct beam kept within [0, SW] and below the TOA irradiance
++            direct_grid = np.where(day, np.clip(fdir / acc_seconds, 0., np.minimum(sw_grid, swtoa)), 0.)
++            diffuse_grid = sw_grid - direct_grid
+         # Beer's law: extinction coefficient of the ERA5 column, applied with the pressure at the point
+         ka = np.where(day, G * mu0 / sp * np.log(swtoa / direct_grid), 0.)
+         cos_i = mu0 * np.cos(slope) + np.sin(solar['zenith']) * np.sin(slope) * np.cos(solar['azimuth'] - aspect)
+@@ -419,7 +427,7 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
+         plev (dict): horizontally interpolated pressure-level fields 'z' (m2 s-2), 't', 'q', 'u', 'v',
+             each (time, level, point)
+         surf (dict): horizontally interpolated surface fields 'z_surf' (m2 s-2), 'sp', 't2m', 'd2m', 'tp', 'ssrd',
+-            'strd', each (time, point)
++            'strd', and optionally 'fdir' (direct/diffuse split of ERA5), each (time, point)
+         level_hpa (array): pressure levels [hPa]
+         months (array): month of each time step
+         points (dict): 'elevation', 'slope', 'aspect', 'svf', each (point,), and optionally 'lat' [deg] for the
+@@ -461,5 +469,5 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
+     out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
+                                      points['slope'], lw_terrain_flag, acc_seconds)
+     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
+-                         points['svf'], shade, acc_seconds))
++                         points['svf'], shade, acc_seconds, surf.get('fdir')))
+     return out
+diff --git a/doc/docs/03_configurationFile.md b/doc/docs/03_configurationFile.md
+index e1ef2f0..568d47b 100644
+--- a/doc/docs/03_configurationFile.md
++++ b/doc/docs/03_configurationFile.md
+@@ -122,6 +122,7 @@ toposcale:
+   solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
+   solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
+   save_solar_geometry: False             # (optional) also save the solar geometry of the points to outputs/ds_solar.nc (the downscaling computes it block by block). Default False
++  direct_diffuse: empirical               # (optional) direct/diffuse split of the ERA5 shortwave: empirical (from the clearness index) or era5 (ERA5 direct radiation fdir, fetched with the surface fields). Default empirical
+   surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
+     method: none                          # none, redcapp or dreamit
+     coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
+@@ -231,6 +232,7 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
+ | time_block              | 8760          | no       | int             | number of time steps downscaled together (also the chunk size of the output store). Default: one year |
+ | solar_constant          | 1361          | no       | float           | total solar irradiance at 1 AU [W m-2], scaled by the Earth-Sun distance to compute the top-of-atmosphere irradiance. Default 1361 |
+ | solar_substeps          | 6             | no       | int             | number of sub-steps of the radiation accumulation window, used to average the top-of-atmosphere irradiance and to scale the direct beam by the part of the window the point is not shaded by terrain. 1: one shading test at the centre of the window. Default 6 |
++| direct_diffuse          | empirical     | no       | empirical, era5 | direct/diffuse split of the ERA5 shortwave before the terrain corrections. `empirical`: diffuse fraction from the clearness index (Ruiz-Arias et al., 2010). `era5`: the direct radiation on a horizontal surface of the ERA5 radiation scheme (`fdir`, total sky direct solar radiation at surface), which accounts for the clouds, aerosols and water vapour of the reanalysis. `get_era5()` then fetches `fdir` with the surface fields; a store without it is completed by fetching the surface stream again. See [Features](07_features.md#direct-and-diffuse-shortwave) |
+ | save_solar_geometry     | False         | no       | True, False     | `compute_solar_geometry()` saves the solar geometry of the points for the project period to `outputs/ds_solar.nc` (and `mp.ds_solar`), for plots and analysis. The downscaling and the physics checks do not need it: they compute the solar geometry of each block of points and time steps. The file holds points × time steps values and can be large. Default False |
+ | physics_checks          | True          | no       | True, False, 'warning', 'error' | run physics-consistency checks on the downscaled outputs and write `outputs/physics_checks.csv`. 'warning'/'error' raise when a check fails at that level. Default False. See [Physics Checks](09_physics_checks.md) |
+ | surface_effect          | {method: redcapp} | no   | dict            | surface-effect correction of air temperature and dew point: `method` none, redcapp or dreamit, plus `coefficients`, `context_dem`, `dewpoint`, `lw_consistent`, `allow_partial_window`, `diagnostics` (see the example above). Default off. See [Features](07_features.md#surface-effect-correction-of-air-temperature) |
+diff --git a/doc/docs/07_features.md b/doc/docs/07_features.md
+index 3a85ef5..29886d5 100644
+--- a/doc/docs/07_features.md
++++ b/doc/docs/07_features.md
+@@ -48,6 +48,10 @@ era.go_fetch()
+ 
+ This way it is possible to use routines for TPS project but not only.
+ 
++**Time steps of 3 h and 6 h.** ERA5 gives the accumulated fields (precipitation, radiation) as the accumulation over the hour ending at each time stamp. With `climate.era5.timestep: 3h` or `6h`, the pressure levels and the instantaneous surface fields are fetched at the time step, and the accumulated fields hourly: the store holds their sums over the time step ending at the stamp (store attribute `accumulation_hours`). The first window of each request starts on the previous day: from the CDS, its hours come with a small second request (the accumulated fields, for 2 or 5 hours); from GDEX, they are read with the day. The downscaling then gives precipitation totals and mean radiation over each time step, and computes the solar geometry over the same window. An hourly store downscaled at 3 h or 6 h is summed the same way. A 3 h store fetched by an earlier version holds only the hour ending at each stamp: it is used with a warning, and refused by `get_era5()` (delete it to fetch the sums).
++
++**Variables added to an existing store.** A store keeps fetching every variable it holds. When a variable is added to a stream (e.g. the direct solar radiation `fdir` for `toposcale.direct_diffuse: era5`), that stream is fetched again for the whole period and the other one is kept.
++
+ 
+ ## Convert ERA5 to Zarr
+ 
+@@ -121,6 +125,16 @@ For every point and time step, the solar geometry holds:
+ **Terrain shading within the window.** ERA5 shortwave is a mean over the accumulation window, so a point can be lit for part of it: the sun clears or drops behind a ridge during the hour. The downscaling tests the horizon at the same `toposcale.solar_substeps` sub-steps of the window and scales the direct beam by the sunlit fraction, each sub-step weighted by the beam it brings to the slope (cosine of the illumination angle). The sun positions of the sub-steps are geocentric (within 0.01° of the SPA); only terrain shading counts, not the sun below the astronomical horizon. With `solar_substeps: 1` the horizon is tested once, at the centre of the window, and the beam is kept or removed for the whole window. On the Davos points (January 2020), the 57 hours the sun crosses the horizon of DAV get an RMSE of 20.6 W m⁻² against the station instead of 30.3; the cost does not show in the downscaling time.
+ 
+ 
++## Direct and diffuse shortwave
++
++TopoSCALE splits the ERA5 shortwave of the grid into direct and diffuse before the terrain corrections: the diffuse part is scaled by the sky view factor, the direct part is extrapolated to the elevation of the point (Beer's law with the extinction of the ERA5 column), projected on the slope and removed in terrain shadow. `toposcale.direct_diffuse` chooses the split:
++
++- `empirical` (default): the diffuse fraction from the clearness index kt = SW / SWtoa, kd = 0.952 − 1.041 exp(−exp(2.3 − 4.702 kt)) (Ruiz-Arias et al., 2010). It depends on the hourly kt only: a thin cloud layer and a broken cloud field with the same kt get the same split.
++- `era5`: the direct radiation on a horizontal surface of the ERA5 radiation scheme (`fdir`, *total sky direct solar radiation at surface*), which accounts for the clouds, aerosols and water vapour of the reanalysis. The diffuse part is SW − fdir. `fdir` is fetched with the surface fields when the option is set (`get_era5()`; an existing store gets its surface stream fetched again). In the ECMWF radiation scheme, the direct flux includes part of the radiation scattered in the forward direction, so `fdir` is somewhat larger than what a pyrheliometer would measure (ECMWF, *Radiation quantities in the ECMWF model and MARS*).
++
++The output store records the option in its attribute `direct_diffuse`.
++
++
+ ## Slope, aspect and sky view factor
+ 
+ `mp.compute_dem_param()` computes the elevation, slope, aspect and sky view factor of every DEM cell and saves them to `outputs/ds_param.nc`. An existing `ds_param.nc` is loaded as is: delete it to recompute it (files computed with topocalc by earlier versions differ by about 0.003 in svf, see below).
+diff --git a/tests/test_accumulation.py b/tests/test_accumulation.py
+index 15c11a3..1382c9f 100644
+--- a/tests/test_accumulation.py
++++ b/tests/test_accumulation.py
+@@ -45,10 +45,11 @@ def write_store(case, path, step=1, attrs=None):
+     ds = xr.merge([plev, surf]).astype('float32')
+     if step > 1:
+         # window sums (the first window, before the period, rescaled), or the hour ending at the stamp
+-        acc = ds[tz.ACC_VARS]
++        names = [v for v in tz.ACC_VARS if v in ds]
++        acc = ds[names]
+         if attrs:
+             acc = acc.rolling(time=step, min_periods=1).mean() * step
+-        ds = ds.drop_vars(tz.ACC_VARS).merge(acc).isel(time=slice(0, None, step))
++        ds = ds.drop_vars(names).merge(acc).isel(time=slice(0, None, step))
+     ds.attrs = attrs or {}
+     ds.to_zarr(path, mode='w', zarr_format=3)
+     return path
+diff --git a/tests/test_era5_store.py b/tests/test_era5_store.py
+index d58d49e..7dbc118 100644
+--- a/tests/test_era5_store.py
++++ b/tests/test_era5_store.py
+@@ -20,7 +20,8 @@ from TopoPyScale import fetch_era5 as fe
+ REF = pd.Timestamp('2020-01-01')
+ BOX = dict(latN=46.6, latS=46.1, lonW=7.1, lonE=7.6)   # nodes 46.5..46.25 N, 7.25..7.5 E
+ LEVELS = [1000, 700, 850]
+-CODE = {'z': 1, 't': 2, 'u': 3, 'v': 4, 'q': 5, 't2m': 6, 'd2m': 7, 'sp': 8, 'ssrd': 9, 'strd': 10, 'tp': 11}
++CODE = {'z': 1, 't': 2, 'u': 3, 'v': 4, 'q': 5, 't2m': 6, 'd2m': 7, 'sp': 8, 'ssrd': 9, 'strd': 10, 'tp': 11,
++        'fdir': 12}
+ INSTANT, ACCUM = ['t2m', 'd2m', 'sp'], ['tp', 'ssrd', 'strd']
+ 
+ 
+@@ -83,7 +84,7 @@ class FakeCDS:
+             return target
+         # surface: a zip of an instantaneous and an accumulated file, whatever download_format says
+         buffers = {}
+-        for kind, names in [('instant', INSTANT), ('accum', ACCUM)]:
++        for kind, names in [('instant', INSTANT), ('accum', ACCUM + ['fdir'])]:
+             part = {v: fields[v] for v in names if v in fields}
+             if part:
+                 buffers[kind] = xr.Dataset(part, coords=coords).to_netcdf(engine='scipy')
+@@ -333,3 +334,36 @@ def test_3h_store_holds_window_sums_of_the_hourly_accumulations(cds, tmp_path):
+ def json_request(store):
+     import json
+     return json.loads(xr.open_zarr(store).attrs['era5_request'])
++
++
++def test_adding_fdir_fetches_the_surface_stream_again(cds, tmp_path):
++    cds()
++    fetch(tmp_path)
++    fake = cds()
++    store = fetch(tmp_path, surf_variables=es.SURF_VARIABLES + [es.FDIR])
++    assert sorted(k for k, _, _ in fake.calls) == ['surf_2020-01', 'surf_2020-02']
++    ds = xr.open_zarr(store)
++    times = es.time_axis('2020-01-30', '2020-02-02', '1h')
++    np.testing.assert_allclose(ds.fdir.sel(time=times).values,
++                               value('fdir', times, [0.], ds.latitude.values, ds.longitude.values)[:, 0], rtol=1e-6)
++    assert es.store_gaps(store, '2020-01-30', '2020-02-02') == []
++    assert es.FDIR in json_request(store)['surf_variables']
++    # requesting fewer variables than the store holds: it keeps all, and nothing is missing
++    fake = cds()
++    fetch(tmp_path, surf_variables=es.SURF_VARIABLES)
++    assert fake.calls == []
++    fetch(tmp_path, end='2020-02-03', surf_variables=es.SURF_VARIABLES)
++    assert all(es.FDIR in v for k, _, v in fake.calls if k.startswith('surf'))
++
++
++def test_fetcher_adds_fdir_for_the_era5_split(cds, tmp_path, monkeypatch):
++    from munch import DefaultMunch
++    seen = {}
++    monkeypatch.setattr(fe, 'fetch_era5_to_zarr', lambda *a, **k: seen.update(k))
++    config = DefaultMunch.fromDict({'project': {'start': '2020-01-30', 'end': '2020-02-02', 'climate': 'era5',
++                                                'extent': {'latN': 46.6, 'latS': 46.1, 'lonW': 7.1, 'lonE': 7.6}},
++                                    'climate': {'path': str(tmp_path), 'era5': {'timestep': '1h', 'plevels': LEVELS}},
++                                    'toposcale': {'direct_diffuse': 'era5'}})
++    with contextlib.redirect_stdout(io.StringIO()):
++        fe.FetchERA5(config).go_fetch('all')
++    assert seen['surf_variables'] == es.SURF_VARIABLES + [es.FDIR]
+diff --git a/tests/test_radiation_options.py b/tests/test_radiation_options.py
+new file mode 100644
+index 0000000..cb86f5a
+--- /dev/null
++++ b/tests/test_radiation_options.py
+@@ -0,0 +1,88 @@
++"""Options of the radiation: direct/diffuse split from ERA5 fdir."""
++import contextlib
++import io
++
++import numpy as np
++import pandas as pd
++import pytest
++import xarray as xr
++
++import synthetic_era5 as syn
++from TopoPyScale import topo_scale_zarr as tz
++from TopoPyScale import toposcale_core as core
++
++G = 9.81
++
++
++def quiet(fun, *args, **kwargs):
++    with contextlib.redirect_stdout(io.StringIO()):
++        return fun(*args, **kwargs)
++
++
++def solar_noon(n=1):
++    z = np.full((n, 1), np.deg2rad(40.))
++    return {'mu0': np.cos(z), 'SWtoa': 1000. * np.cos(z), 'zenith': z, 'azimuth': np.zeros((n, 1)),
++            'elevation': np.pi / 2 - z, 'sunset': np.zeros((n, 1), bool)}
++
++
++def test_fdir_gives_the_split_on_flat_open_ground():
++    sol = solar_noon()
++    ssrd, fdir = np.array([[500. * 3600]]), np.array([[350. * 3600]])
++    sp = np.array([[85000.]])
++    out = core.shortwave(ssrd, sp, sp, sol, np.zeros(1), np.zeros(1), np.ones(1), np.zeros((1, 1)), fdir=fdir)
++    np.testing.assert_allclose(out['SW_direct'], 350.)
++    np.testing.assert_allclose(out['SW_diffuse'], 150.)
++    # bounded by the global radiation
++    out = core.shortwave(ssrd, sp, sp, sol, np.zeros(1), np.zeros(1), np.ones(1), np.zeros((1, 1)),
++                         fdir=np.array([[700. * 3600]]))
++    np.testing.assert_allclose(out['SW_direct'], 500.)
++    np.testing.assert_allclose(out['SW_diffuse'], 0.)
++
++
++@pytest.fixture(scope='module')
++def case():
++    return syn.make_era5(start='2020-06-18', n_days=2, cloud=[1, .5])
++
++
++def store(case, path, fdir_fraction=None):
++    plev = case.plev.copy(deep=True)
++    plev['z'] = plev.z * G
++    surf = case.surf.rename({'z': 'z_surf'}).copy(deep=True)
++    surf['z_surf'] = surf.z_surf * G
++    if fdir_fraction is not None:
++        surf['fdir'] = surf.ssrd * fdir_fraction
++    xr.merge([plev, surf]).astype('float32').to_zarr(path, mode='w', zarr_format=3)
++    return path
++
++
++def run(case, path, rows, wd, name, **kw):
++    df = pd.DataFrame([vars(r) for r in rows])
++    cd = tz.ClimateDownscaler(path, wd / 'down', df, syn.horizon_da(rows), None, syn.EPSG, case.start, case.end,
++                              '1h', store_name=name, **kw)
++    return quiet(cd.downscale).load()
++
++
++def test_era5_split_uses_fdir(case, tmp_path):
++    rows = [syn.make_point(case, name='001', elevation=case.z_surf),
++            syn.make_point(case, name='002', dx=2000., elevation=2200., slope_deg=35., aspect_deg=0., svf=0.85)]
++    path = store(case, tmp_path / 'era5.zarr', fdir_fraction=0.6)
++    emp = run(case, path, rows, tmp_path, 'emp.zarr')
++    era = run(case, path, rows, tmp_path, 'era.zarr', direct_diffuse='era5')
++    assert era.attrs['direct_diffuse'] == 'era5' and emp.attrs['direct_diffuse'] == 'empirical'
++    # flat point at the ERA5 surface: direct = 60 % of the global radiation
++    day = era.SW.isel(point_name=0) > 50
++    frac = (era.SW_direct / era.SW).isel(point_name=0).where(day)
++    np.testing.assert_allclose(frac.dropna('time').values, 0.6, atol=0.02)
++    np.testing.assert_allclose(era.SW.isel(point_name=0).values, emp.SW.isel(point_name=0).values, rtol=0.02,
++                               atol=2.)
++    # the slope differs: the split changes what the terrain corrections act on
++    assert np.abs(era.SW.isel(point_name=1) - emp.SW.isel(point_name=1)).max() > 5.
++
++
++def test_era5_split_needs_fdir(case, tmp_path):
++    rows = [syn.make_point(case, name='001')]
++    path = store(case, tmp_path / 'nofdir.zarr')
++    with pytest.raises(ValueError, match='direct_diffuse: era5'):
++        run(case, path, rows, tmp_path, 'x.zarr', direct_diffuse='era5')
++    with pytest.raises(ValueError, match='not supported'):
++        run(case, path, rows, tmp_path, 'x.zarr', direct_diffuse='ecmwf')
+-- 
+2.43.0
+

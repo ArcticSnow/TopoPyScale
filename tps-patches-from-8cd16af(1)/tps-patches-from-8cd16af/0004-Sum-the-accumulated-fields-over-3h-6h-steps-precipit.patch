@@ -1,0 +1,959 @@
+From a372ea507671d8898724a55a1648eb8a9e51b863 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 27 Nov 2026 11:48:50 +0100
+Subject: [PATCH 04/10] Sum the accumulated fields over 3h/6h steps;
+ precipitation factors by hemisphere
+
+At 3h or 6h time steps the accumulated surface fields (tp, ssrd, strd...)
+were the ERA5 hour ending at each stamp: precipitation was that hour times
+the step and radiation the mean of the last hour. fetch_era5_to_zarr now
+fetches them hourly (CDS: all hours, plus the last hours of the previous
+day in a small second request; GDEX: the hours of the windows) and the
+store holds their sums over the step ending at the stamp (store attribute
+accumulation_hours, part of the request). The downscaler reads that
+attribute (1 h by default), sums an hourly store downscaled at 3h or 6h,
+warns for a store sampling the hours, and the accumulation window of the
+solar geometry follows. Split downloads are merged with an outer join.
+
+The monthly precipitation coefficients of MicroMet, derived in the
+Northern Hemisphere, are shifted by six months for points south of the
+equator.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012FMkEYDUJxvxmd3SbUsJfP
+---
+ TopoPyScale/config_reference.yml |   4 +-
+ TopoPyScale/era5_store.py        |  76 ++++++++++++++++++---
+ TopoPyScale/fetch_era5.py        |  62 ++++++++++++-----
+ TopoPyScale/topo_scale_zarr.py   |  80 ++++++++++++++++++++--
+ TopoPyScale/topoclass.py         |  20 ++++--
+ TopoPyScale/toposcale_core.py    |  72 +++++++++++++++-----
+ doc/docs/03_configurationFile.md |  10 +--
+ doc/docs/09_physics_checks.md    |   2 +-
+ tests/test_accumulation.py       | 111 +++++++++++++++++++++++++++++++
+ tests/test_era5_store.py         |  28 ++++++++
+ tests/test_gdex.py               |   9 ++-
+ 11 files changed, 409 insertions(+), 65 deletions(-)
+ create mode 100644 tests/test_accumulation.py
+
+diff --git a/TopoPyScale/config_reference.yml b/TopoPyScale/config_reference.yml
+index 6187465..a8a428c 100644
+--- a/TopoPyScale/config_reference.yml
++++ b/TopoPyScale/config_reference.yml
+@@ -29,7 +29,7 @@ project:
+ 
+ #.....................................................................................................
+ climate:
+-  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, Northern Hemisphere)
++  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, shifted by six months south of the equator)
+   precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
+ 
+   # Settings for the ERA5 atmospheric forcings
+@@ -37,7 +37,7 @@ climate:
+     path: inputs/climate/             # relative to the project directory, or absolute (e.g. a shared ERA5 archive)
+     product: reanalysis               # ensemble not available yet
+     timestep: 1h                      # 1h, 3h or 6h
+-    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. ERA5: 1h whatever the timestep
++    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. Default: what the climate store holds (the timestep for ERA5 fetched by TopoPyScale)
+ 
+     # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
+     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
+diff --git a/TopoPyScale/era5_store.py b/TopoPyScale/era5_store.py
+index 0232298..7014aec 100644
+--- a/TopoPyScale/era5_store.py
++++ b/TopoPyScale/era5_store.py
+@@ -9,6 +9,10 @@ whole period allocated. Chunks not yet written read as NaN.
+ - z_surf (latitude, longitude): surface geopotential, static
+ - filled_plev, filled_surf (time): 1 where the time step was written, after validation
+ 
++At 3 h or 6 h time steps, the accumulated surface fields (tp, ssrd, strd...) are fetched hourly and stored as the sum
++over the time step ending at the stamp (store attribute accumulation_hours), not as the hour ending at the stamp: the
++hours of the first window of a request on the previous day are fetched with it.
++
+ Workers only transfer files. Every netCDF file is read by the main thread, one at a time, as netCDF-C and HDF5 are
+ not thread safe. Each file is standardized (CDS names, ERA5/ERA5T expver, level order), checked (time steps,
+ variables, levels, grid, missing values), written to its time slice of the store, then deleted.
+@@ -68,7 +72,21 @@ REQUIRED = {'plev': ('z', 't', 'q', 'u', 'v'), 'surf': ('t2m', 'd2m', 'sp', 'tp'
+             'zsurf': ('z_surf',)}
+ DIMS = {'plev': ('time', 'level', 'latitude', 'longitude'), 'surf': ('time', 'latitude', 'longitude'),
+         'zsurf': ('latitude', 'longitude')}
+-REQUEST_KEYS = ('product', 'area', 'levels', 'timestep', 'plev_variables', 'surf_variables')
++REQUEST_KEYS = ('product', 'area', 'levels', 'timestep', 'plev_variables', 'surf_variables', 'accumulation_hours')
++# accumulated surface fields (short names): ERA5 gives at each hour the accumulation over the hour ending at it
++ACCUMULATED = {'tp', 'ssrd', 'strd', 'tisr', 'sf', 'fdir', 'cdir', 'ssr', 'str', 'e', 'ro', 'sshf', 'slhf', 'lsp',
++               'cp', 'smlt', 'es', 'pev', 'uvb', 'par'}
++
++
++def accumulated_names(variables):
++    """CDS variable names of accumulated fields."""
++    return [v for v in variables if SHORT_NAMES.get(v) in ACCUMULATED]
++
++
++def window_hours(stamps, acc_hours):
++    """Hours of the windows of acc_hours hours ending at each stamp, (stamp, hour)."""
++    offsets = np.arange(acc_hours - 1, -1, -1) * np.timedelta64(1, 'h')
++    return pd.DatetimeIndex(stamps).values[:, None] - offsets[None, :]
+ 
+ 
+ @dataclass(frozen=True)
+@@ -191,8 +209,8 @@ def open_raw(paths):
+             parts.append(_load(path))
+     if len(parts) == 1:
+         return parts[0]
+-    return xr.combine_by_coords(parts, data_vars='all', coords='minimal', compat='override', join='outer',
+-                                combine_attrs='drop_conflicts')
++    # parts of a request split by days or by variables, or the hours of the previous day of window sums
++    return xr.merge(parts, compat='no_conflicts', join='outer', combine_attrs='drop_conflicts')
+ 
+ 
+ def retry(fun, retries=3, wait=60., fatal=None, label=''):
+@@ -233,6 +251,7 @@ class Era5Store:
+         self.path = Path(path)
+         self.request = _jsonable(request)
+         self.step = self.request['timestep']
++        self.acc_hours = int(self.request.get('accumulation_hours') or 1)
+         self.times = pd.DatetimeIndex(times)
+         self.time_chunk, self.max_chunk_mb = int(time_chunk), max_chunk_mb
+         self.compressor = compressor or BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+@@ -244,6 +263,43 @@ class Era5Store:
+     def exists(self):
+         return (self.path / 'zarr.json').is_file()
+ 
++    def task_times(self, task):
++        """
++        Time steps the downloaded data of a task hold: its time stamps, or for surface fields stored as window sums
++        all the hours of its windows, from the previous day.
++        """
++        stamps = task.times(self.step)
++        if task.stream != 'surf' or self.acc_hours == 1:
++            return stamps
++        return pd.DatetimeIndex(np.unique(window_hours(stamps, self.acc_hours).ravel()))
++
++    def aggregate(self, task, ds):
++        """
++        Hourly surface data of a task to its time stamps: instantaneous fields at the stamps, accumulated fields summed
++        over the acc_hours hours ending at each stamp.
++        """
++        stamps = task.times(self.step)
++        index = pd.DatetimeIndex(ds.time.values)
++        acc = [v for v in ds.data_vars if v in ACCUMULATED]
++        inst = [v for v in ds.data_vars if v not in ACCUMULATED]
++        missing = stamps.difference(index)
++        if missing.size:
++            raise ValueError(f'{task.key}: {missing.size} time steps missing (from {missing[0]})')
++        out = ds[inst].sel(time=stamps) if inst else xr.Dataset(coords={'time': stamps})
++        hours = window_hours(stamps, self.acc_hours)
++        idx = index.get_indexer(hours.ravel())
++        if (idx < 0).any():
++            raise ValueError(f'{task.key}: {(idx < 0).sum()} hours of the accumulation windows missing '
++                             f'(from {pd.Timestamp(hours.ravel()[idx < 0][0])})')
++        for v in acc:
++            da_ = ds[v].transpose('time', ...).isel(time=idx)
++            vals = da_.values.reshape((stamps.size, self.acc_hours) + da_.shape[1:])
++            if not np.isfinite(vals).all():
++                raise ValueError(f'{task.key}: {v} has missing values in its accumulation windows')
++            out[v] = (da_.dims, vals.sum(axis=1))
++            out[v].attrs = {'accumulation_hours': self.acc_hours}
++        return out.assign_coords({c: ds[c] for c in ds.coords if c != 'time' and c in ds.dims})
++
+     # ---------------------------------------------------------------- reading
+     def _group(self, mode='r'):
+         return zarr.open_group(str(self.path), mode=mode, use_consolidated=False)
+@@ -357,7 +413,8 @@ class Era5Store:
+         flags = {f'filled_{s}': ('time', da.zeros(nt, dtype='uint8', chunks=self.time_chunk)) for s in STREAMS}
+         base = xr.Dataset(flags, coords={'time': self.times, 'level': levels, 'latitude': lat, 'longitude': lon},
+                           attrs={'era5_request': json.dumps(self.request),
+-                                 'description': 'ERA5 for TopoPyScale, see TopoPyScale.era5_store'})
++                                 'description': 'ERA5 for TopoPyScale, see TopoPyScale.era5_store',
++                                 'accumulation_hours': self.acc_hours})
+         base.time.encoding.update(units='hours since 1900-01-01', dtype='int64')
+         encoding = {v: {'chunks': (self.time_chunk,)} for v in flags}
+         self._to_zarr(base, mode='w', compute=False, encoding=encoding)
+@@ -406,6 +463,8 @@ class Era5Store:
+ 
+     def write(self, task, ds):
+         """Check ds (a standardized dataset of the task) and write it to its time slice, then flag the time steps."""
++        if task.stream == 'surf' and self.acc_hours > 1:
++            ds = self.aggregate(task, ds)
+         ds = self.check(task, ds)
+         if not self.exists:
+             self._create(ds)
+@@ -498,10 +557,11 @@ class LegacyFiles:
+             self._index[stream] = rows
+         return self._index[stream]
+ 
+-    def read(self, task, step, area):
++    def read(self, task, step, area, times=None):
+         """
+         Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the
+-        variables of self.names ({'plev': [...], 'surf': [...]}, short names).
++        variables of self.names ({'plev': [...], 'surf': [...]}, short names) at times (default: the time stamps of
++        the task).
+         """
+         stream = 'surf' if task.stream == 'zsurf' else task.stream
+         files = self.index(stream)
+@@ -519,7 +579,7 @@ class LegacyFiles:
+                 names = self.names
+                 if not names.get(stream):
+                     return None
+-                times = task.times(step)
++                times = task.times(step) if times is None else pd.DatetimeIndex(times)
+                 parts = []
+                 for f, t0, t1 in files:
+                     if t0 > times[-1] or t1 < times[0]:
+@@ -557,7 +617,7 @@ def import_legacy(store, tasks, legacy, area, plev_variables, surf_variables):
+         return tasks
+     left, n = [], 0
+     for task in tasks:
+-        ds = legacy.read(task, store.step, area)
++        ds = legacy.read(task, store.step, area, store.task_times(task))
+         if ds is not None:
+             try:
+                 store.write(task, ds)
+diff --git a/TopoPyScale/fetch_era5.py b/TopoPyScale/fetch_era5.py
+index 3053640..5e1bb8c 100644
+--- a/TopoPyScale/fetch_era5.py
++++ b/TopoPyScale/fetch_era5.py
+@@ -462,12 +462,15 @@ def _gdex_surf_an(root, short, stem, times, box):
+     return _gdex_load(path, lambda d: _gdex_box(d.sel(time=times), *box))
+ 
+ 
+-def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
++def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1):
+     """
+     Write the file of one day and stream ('plev' or 'surf') to target, with the variables and layout of the CDS
+-    files. The surface geopotential z_surf is added to surface files unless None.
++    files. The surface geopotential z_surf is added to surface files unless None. With acc_hours > 1, the accumulated
++    fields are read at every hour of the windows of acc_hours hours ending at the time steps (from the previous day),
++    to be summed by era5_store.
+     """
+     times = pd.date_range(day, periods=24, freq='1h')[::int(pd.Timedelta(step) / pd.Timedelta('1h'))]
++    acc_times = times if acc_hours == 1 else pd.DatetimeIndex(np.unique(es.window_hours(times, acc_hours).ravel()))
+     if kind == 'plev':
+         out = {}
+         for name, stem in GDEX_PLEV.items():
+@@ -477,10 +480,10 @@ def _gdex_day(root, kind, day, step, box, plevels, z_surf, target):
+         ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact').sortby('level')
+     else:
+         out = {name: _gdex_surf_an(root, short, stem, times, box) for name, (short, stem) in GDEX_SURF_AN.items()}
+-        out.update({name: _gdex_accumu(root, stem, times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
++        out.update({name: _gdex_accumu(root, stem, acc_times, box) for name, stem in GDEX_SURF_ACCUMU.items()})
+         if z_surf is not None:
+             out['z'] = z_surf.expand_dims(time=times)
+-        ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact')
++        ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact' if acc_hours == 1 else 'outer')
+     ds = ds.drop_vars([c for c in ds.coords if c not in ('time', 'level', 'latitude', 'longitude')])
+     ds.attrs = {'source': f'NCAR GDEX d633000 (ERA5), {root}'}
+     tmp = Path(str(target) + '.part')
+@@ -506,11 +509,17 @@ def _cds_client(verify=True):
+     return _cds_local.client
+ 
+ 
+-def cds_request(task, variables, area, step, plevels=None, product='reanalysis', download_format='unarchived'):
+-    """CDS API request of a task: its days (one month at most), all time steps, the box on the 0.25 deg grid."""
++def cds_request(task, variables, area, step, plevels=None, product='reanalysis', download_format='unarchived',
++                hours=None):
++    """
++    CDS API request of a task: its days (one month at most), all time steps (or the given hours, e.g. [0, 1, ...]),
++    the box on the 0.25 deg grid.
++    """
+     days = sorted(task.days)
+     if task.stream == 'zsurf':
+         days, hours = days[:1], ['00:00']
++    elif hours is not None:
++        hours = [f'{int(h):02d}:00' for h in hours]
+     else:
+         hours = [f'{h:02d}:00' for h in range(0, 24, es.STEP_HOURS[step])]
+     if len({(d.year, d.month) for d in days}) > 1:
+@@ -557,7 +566,7 @@ def _cds_download(dataset, request, stem, verify):
+ 
+ 
+ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_format, verify, retries,
+-               retry_wait, stem=None):
++               retry_wait, stem=None, hours=None):
+     """
+     Download a task to raw_dir (runs in a worker thread: no netCDF reading here). Files left by an interrupted run
+     are reused. A request over the CDS cost limit is split in two, by days, then by variables.
+@@ -566,7 +575,7 @@ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_
+     for ext in ('nc', 'zip'):
+         if Path(f'{stem}.{ext}').is_file():
+             return [Path(f'{stem}.{ext}')]
+-    request = cds_request(task, variables, area, step, plevels, product, download_format)
++    request = cds_request(task, variables, area, step, plevels, product, download_format, hours)
+     try:
+         return [es.retry(lambda: _cds_download(CDS_DATASETS[task.stream], request, stem, verify), retries,
+                          retry_wait, fatal=_cds_fatal, label=stem.name)]
+@@ -585,15 +594,27 @@ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_
+         logger.info(f'     {stem.name}: over the CDS cost limit, split in two requests')
+         return [f for i, (t, v) in enumerate(parts)
+                 for f in _cds_fetch(t, raw_dir, v, area, step, plevels, product, download_format, verify, retries,
+-                                    retry_wait, stem=f'{stem}_{i}')]
++                                    retry_wait, stem=f'{stem}_{i}', hours=hours)]
+ 
+ 
+-def _cds_fetch_task(task, plev_variables, surf_variables, **kwargs):
++def _cds_fetch_task(task, plev_variables, surf_variables, acc_hours=1, **kwargs):
++    """
++    Download a task. With acc_hours > 1, surface fields are fetched hourly, with the last acc_hours - 1 hours of the
++    previous day for the accumulated fields (a second request), to be summed over each time step by era5_store.
++    """
+     variables = {'plev': plev_variables, 'surf': surf_variables, 'zsurf': ['geopotential']}[task.stream]
+-    return _cds_fetch(task, variables=variables, **kwargs)
+-
+-
+-def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait):
++    if task.stream != 'surf' or acc_hours == 1:
++        return _cds_fetch(task, variables=variables, **kwargs)
++    files = _cds_fetch(task, variables=variables, hours=range(24), **kwargs)
++    acc = es.accumulated_names(variables)
++    if acc:
++        lead_day = pd.Timestamp(min(task.days)) - pd.Timedelta('1D')
++        lead = es.Task(f'{task.key}_lead', 'surf', (lead_day,))
++        files += _cds_fetch(lead, variables=acc, hours=range(25 - acc_hours, 24), **kwargs)
++    return files
++
++
++def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, acc_hours=1):
+     """Read a task from GDEX and write it to raw_dir (runs in a spawned process, HDF5 reads hold a global lock)."""
+     target = Path(raw_dir) / f'{task.key}.nc'
+     if target.is_file():
+@@ -603,7 +624,7 @@ def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait):
+ 
+     def get():
+         if task.stream != 'zsurf':
+-            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target))
++            return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target, acc_hours))
+         z = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
+                        lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
+         tmp = Path(f'{target}.part')
+@@ -632,7 +653,8 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+         start, end: first and last day
+         eraDir (Path): climate folder
+         latN, latS, lonE, lonW (float): box [deg], reduced to the nodes of the 0.25 deg grid inside it
+-        step (str): '1h', '3h' or '6h'
++        step (str): '1h', '3h' or '6h'. At 3h and 6h the accumulated surface fields are fetched hourly and stored as
++            their sums over the time step ending at the stamp
+         plevels (list): pressure levels [hPa]
+         streams (list): 'plev' and/or 'surf'
+         source (str): 'cds' or 'gdex'
+@@ -673,6 +695,10 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+                       if v not in ('geopotential', 'geopotential_at_surface')]
+     request = {'product': product, 'area': area, 'levels': sorted(float(p) for p in (plevels or [])),
+                'timestep': step, 'plev_variables': plev_variables, 'surf_variables': surf_variables}
++    acc_hours = es.STEP_HOURS[step]
++    if acc_hours > 1:
++        # accumulated fields stored as sums over the time step, from hourly data
++        request['accumulation_hours'] = acc_hours
+     store = es.Era5Store(eraDir / zarr_store, request, es.time_axis(start, end, step), time_chunk=time_chunk)
+ 
+     make_tasks = es.month_tasks if source == 'cds' else es.day_tasks
+@@ -698,7 +724,7 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+         fetch = functools.partial(_cds_fetch_task, plev_variables=plev_variables, surf_variables=surf_variables,
+                                   raw_dir=raw, area=area, step=step, plevels=plevels, product=product,
+                                   download_format=download_format, verify=verify, retries=retries,
+-                                  retry_wait=retry_wait)
++                                  retry_wait=retry_wait, acc_hours=acc_hours)
+         es.run(store, todo, fetch, n_workers=n, processes=False)
+     else:
+         root = gdex_root_path(gdex_root)
+@@ -707,7 +733,7 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+             logger.info(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
+                   f'whatever the size of the domain. On NCAR systems they are read locally')
+         fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
+-                                  retries=retries, retry_wait=retry_wait)
++                                  retries=retries, retry_wait=retry_wait, acc_hours=acc_hours)
+         es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
+     shutil.rmtree(raw, ignore_errors=True)
+     logger.info(f'===> {store.path.name} complete')
+diff --git a/TopoPyScale/topo_scale_zarr.py b/TopoPyScale/topo_scale_zarr.py
+index 99e8afc..8b1ec57 100644
+--- a/TopoPyScale/topo_scale_zarr.py
++++ b/TopoPyScale/topo_scale_zarr.py
+@@ -40,6 +40,32 @@ logger = logging.getLogger(__name__)
+ PLEV_VARS = ['z', 't', 'q', 'u', 'v']
+ SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
+ SOLAR_VARS = ['mu0', 'SWtoa', 'zenith', 'azimuth', 'elevation', 'sunset']
++ACC_VARS = ['tp', 'ssrd', 'strd']   # accumulated over the hours ending at the time stamp
++
++
++def accumulation(era_times, era_attrs, tstep_h):
++    """
++    How the accumulated fields of an ERA5 store cover the time steps of the downscaling.
++
++    A store holds at each time stamp the accumulation over the accumulation_hours hours ending at the stamp (store
++    attribute; 1 h for ERA5 files and for stores written before it was recorded). When the store is finer than the
++    time step and its accumulations cover its own steps (an hourly store downscaled at 3 h), the k values of each
++    window are summed.
++
++    Args:
++        era_times (DatetimeIndex): time axis of the store
++        era_attrs (dict): attributes of the store
++        tstep_h (int): time step of the downscaling [h]
++
++    Returns:
++        k (int): number of stored values summed per time step, acc_hours (int): hours accumulated per time step
++    """
++    t = pd.DatetimeIndex(era_times)
++    step = int(round(np.median(np.diff(t.values)) / np.timedelta64(1, 'h'))) if t.size > 1 else tstep_h
++    hours = int(era_attrs.get('accumulation_hours', 1))
++    if step < tstep_h and hours == step and tstep_h % step == 0:
++        return tstep_h // step, tstep_h
++    return 1, hours
+ 
+ varout_default = ['t', 'u', 'v', 'q', 'p', 'tp', 'precip_lapse_rate', 'wd', 'ws', 'w', 'vp', 'cse',
+                   'LW', 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination']
+@@ -110,8 +136,10 @@ class ClimateDownscaler:
+         shading_substeps (int): sub-steps of the radiation accumulation window at which terrain shading is tested;
+             the direct beam is scaled by the sunlit fraction of the window (1: one test at the centre, all or
+             nothing). Default: solar_substeps (or the solar_substeps of ds_solar)
+-        accumulation_window (str): window over which the radiation fluxes of the forcing are accumulated, ending at
+-            the time stamp (ERA5: '1h' whatever the time step). Used when ds_solar is None
++        accumulation_window (str): window over which the radiation fluxes are accumulated, ending at the time stamp.
++            Default: the hours the accumulated fields cover per time step (see accumulation(): the time step for
++            stores of window sums or hourly stores, 1 h for stores sampling the hourly ERA5 accumulations). Used when
++            ds_solar is None
+         solar_substeps (int): sub-steps of the window averaged for the top-of-atmosphere irradiance. Default 6
+         solar_method (str): pvlib solar position method, default 'nrel_numpy' (vectorized)
+         solar_constant (float): total solar irradiance at 1 AU [W m-2]
+@@ -138,7 +166,7 @@ class ClimateDownscaler:
+                  max_box_mb=2000,
+                  surface_effect=None,
+                  shading_substeps=None,
+-                 accumulation_window='1h',
++                 accumulation_window=None,
+                  solar_substeps=6,
+                  solar_method='nrel_numpy',
+                  solar_constant=sg.S0_DEFAULT):
+@@ -160,7 +188,30 @@ class ClimateDownscaler:
+             raise ValueError(f'tstep {tstep} not supported, use 1h, 3h or 6h')
+         self.tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep,
+                                   inclusive='left')
+-        self.era_time_index = self._time_index(pd.DatetimeIndex(self.ERA.time.values), 'ERA5 store')
++        era_times = pd.DatetimeIndex(self.ERA.time.values)
++        self.era_time_index = self._time_index(era_times, 'ERA5 store')
++        self.acc_sum, self.acc_hours = accumulation(era_times, self.ERA.attrs, self.tstep_h)
++        if self.acc_sum > 1:
++            # indices of the stored values of each window, -1 before the start of the store
++            offsets = pd.to_timedelta(np.arange(self.acc_sum - 1, -1, -1) * (self.tstep_h // self.acc_sum), unit='h')
++            self.acc_index = era_times.get_indexer((self.tvec.values[:, None] - offsets.values[None, :]).ravel()) \
++                .reshape(self.tvec.size, self.acc_sum)
++            if (self.acc_index < 0).any():
++                logger.warning(f'The first accumulation window starts before the ERA5 store: its precipitation and '
++                               f'radiation are scaled from the {int((self.acc_index[0] >= 0).sum())} of '
++                               f'{self.acc_sum} values available')
++            logger.info(f'---> Accumulated fields (tp, ssrd, strd): sums of {self.acc_sum} values of the store per '
++                        f'{self.tstep_h} h time step')
++        elif self.acc_hours < self.tstep_h:
++            logger.warning(f'The accumulated fields of the ERA5 store cover {self.acc_hours} h of each {self.tstep_h} h '
++                           f'time step: precipitation is the last {self.acc_hours} h scaled by '
++                           f'{self.tstep_h / self.acc_hours:g}, and radiation the mean of the last {self.acc_hours} h. '
++                           f'Fetch the store again (window sums) or downscale an hourly store')
++        if accumulation_window is None:
++            accumulation_window = f'{self.acc_hours}h'
++        elif pd.Timedelta(accumulation_window) != pd.Timedelta(f'{self.acc_hours}h'):
++            logger.warning(f'accumulation_window {accumulation_window} differs from the {self.acc_hours} h the '
++                           f'accumulated fields of the ERA5 store cover per time step')
+ 
+         self.df = df_centroids.reset_index(drop=True).copy()
+         self.df['point_name'] = self.df.point_name.astype(str)
+@@ -176,6 +227,7 @@ class ClimateDownscaler:
+         self.horizon_profiles = np.asarray(hp.transpose('point', 'azimuth').values, dtype=float)
+ 
+         self.lon, self.lat, _ = sg.point_coordinates(self.df, target_EPSG)
++        self.points['lat'] = self.lat   # season of the precipitation coefficients in each hemisphere
+         self.ds_solar = None
+         if ds_solar is None:
+             # solar geometry computed block by block: only its time terms are kept for the whole period
+@@ -263,6 +315,7 @@ class ClimateDownscaler:
+                     'package_version': ver.get('package_version'), 'git_commit': ver.get('git_commit'),
+                     'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                     'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
++                    'accumulation_hours': int(self.acc_hours),
+                     **{k: (int(v) if isinstance(v, (np.integer,)) else v) for k, v in self.solar_attrs.items()}}
+         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
+         # chunks of up to 10 points x time block, grouped in shards of point_block points: each block writes whole
+@@ -339,16 +392,29 @@ class ClimateDownscaler:
+                for v in PLEV_VARS}
+         nt = sub.sizes['time']
+         for v in SURF_VARS:
+-            if 'time' in sub[v].dims:
++            if v in ACC_VARS and self.acc_sum > 1:
++                era[v] = self._read_sums(v, t0, t1, box)
++            elif 'time' in sub[v].dims:
+                 era[v] = np.asarray(sub[v].transpose('time', 'latitude', 'longitude').values, dtype=float)
+             else:   # static field (z_surf of the stores written by era5_store)
+                 field = np.asarray(sub[v].transpose('latitude', 'longitude').values, dtype=float)
+                 era[v] = np.broadcast_to(field, (nt,) + field.shape)
+         return era, box
+ 
++    def _read_sums(self, v, t0, t1, box):
++        """Sums of the acc_sum stored values of each window of time steps t0:t1 (partial windows rescaled)."""
++        idx = self.acc_index[t0:t1]
++        valid = idx >= 0
++        lo, hi = int(idx[valid].min()), int(idx.max()) + 1
++        arr = np.asarray(self.ERA[v].isel(time=slice(lo, hi), latitude=box[0], longitude=box[1])
++                         .transpose('time', 'latitude', 'longitude').values, dtype=float)
++        vals = arr[np.where(valid, idx - lo, 0)] * valid[:, :, None, None]
++        return vals.sum(axis=1) * (self.acc_sum / valid.sum(axis=1))[:, None, None]
++
+     def _box_mb(self, box, nt):
+         cells = (box[0].stop - box[0].start) * (box[1].stop - box[1].start)
+-        return nt * cells * (len(PLEV_VARS) * self.level_hpa.size + len(SURF_VARS)) * 8 / 1e6
++        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(SURF_VARS) + len(ACC_VARS) * (self.acc_sum - 1)
++        return nt * cells * n_fields * 8 / 1e6
+ 
+     def process_block(self, p0, p1, t0, t1, era=None):
+         """
+@@ -374,7 +440,7 @@ class ClimateDownscaler:
+                            weight=None if self.surface.get('weight') is None else self.surface['weight'][p0:p1])
+         out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
+                                    self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
+-                                   self.precip_lapse_rate_max_factor, surface)
++                                   self.precip_lapse_rate_max_factor, surface, acc_hours=self.acc_hours)
+         group = zarr.open_group(str(self.store), mode='r+')
+         for v in self.varout:
+             group[v][p0:p1, t0:t1] = out[v].T.astype('float32')
+diff --git a/TopoPyScale/topoclass.py b/TopoPyScale/topoclass.py
+index b9c3730..18b3c77 100644
+--- a/TopoPyScale/topoclass.py
++++ b/TopoPyScale/topoclass.py
+@@ -519,9 +519,21 @@ class Topoclass(object):
+                 self.config.outputs.path / self.config.outputs.file.df_centroids)
+             logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
+ 
+-    def _accumulation_window(self):
+-        # radiation accumulation window of the climate forcing (ERA5: 1 h, whatever the sampling time step)
+-        return self.config.climate[self.config.project.climate].accumulation_window or '1h'
++    def _accumulation_window(self, default=None):
++        """
++        Radiation accumulation window of the climate forcing: climate.<source>.accumulation_window, else the hours the
++        accumulated fields of the climate store cover per time step (topo_scale_zarr.accumulation), else default.
++        """
++        window = self.config.climate[self.config.project.climate].accumulation_window
++        if window or default is None:
++            return window
++        try:
++            with xr.open_zarr(str(self._climate_store())) as era:
++                tstep_h = int(pd.Timedelta(self.config.climate[self.config.project.climate].timestep or '1h')
++                              / pd.Timedelta('1h'))
++                return f'{tz.accumulation(era.time.values, era.attrs, tstep_h)[1]}h'
++        except (OSError, ValueError, KeyError, FileNotFoundError):
++            return default
+ 
+     @staticmethod
+     def _warn_old_solar_file(ds_solar, fname):
+@@ -541,7 +553,7 @@ class Topoclass(object):
+                                  fname=fname,
+                                  project_ouput=self.config.outputs.path,
+                                  method_solar=self.config.dem.solar_position_method or 'nrel_numpy',
+-                                 accumulation_window=self._accumulation_window(),
++                                 accumulation_window=self._accumulation_window(default='1h'),
+                                  solar_constant=self.config.toposcale.solar_constant or sg.S0_DEFAULT,
+                                  n_substeps=self.config.toposcale.solar_substeps or 6)
+ 
+diff --git a/TopoPyScale/toposcale_core.py b/TopoPyScale/toposcale_core.py
+index 9c19950..aff18da 100644
+--- a/TopoPyScale/toposcale_core.py
++++ b/TopoPyScale/toposcale_core.py
+@@ -59,6 +59,26 @@ def horizontal_weights(row, lats, lons, Xs, Ys, method='idw'):
+     return weights / weights.sum()
+ 
+ 
++def seasonal_month(months, latitude=None):
++    """
++    Month of the northern-hemisphere season of each time step and point: the month itself north of the equator, the
++    month shifted by six south of it (January in the south is July in the north), for the monthly coefficients
++    derived in the northern hemisphere.
++
++    Args:
++        months (array): month of each time step (1-12), (time,) or (time, point)
++        latitude (array): latitude of the points [deg], (point,). None: months unchanged
++
++    Returns:
++        array: months (1-12), (time, point) if latitude is given
++    """
++    months = np.asarray(months)
++    if latitude is None:
++        return months
++    m = months[:, None] if months.ndim == 1 else months
++    return np.where(np.asarray(latitude, dtype=float)[None, :] < 0, (m + 5) % 12 + 1, m)
++
++
+ def precip_lapse_factor(elev_diff, months, max_factor=PRECIP_LAPSE_MAX_FACTOR):
+     """
+     Precipitation elevation adjustment factor (1 + c dz) / (1 - c dz) of Liston and Elder (2006).
+@@ -68,7 +88,7 @@ def precip_lapse_factor(elev_diff, months, max_factor=PRECIP_LAPSE_MAX_FACTOR):
+ 
+     Args:
+         elev_diff (array): elevation of the point minus elevation of the ERA5 surface [m]
+-        months (array): month of each time step (1-12)
++        months (array): month of each time step (1-12), in the northern-hemisphere season (seasonal_month)
+         max_factor (float): upper bound of the factor (> 1)
+ 
+     Returns:
+@@ -287,38 +307,48 @@ def wind_speed_direction(u, v):
+     return np.sqrt(u ** 2 + v ** 2), np.mod(np.arctan2(-u, -v), 2 * np.pi)
+ 
+ 
+-def precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=PRECIP_LAPSE_MAX_FACTOR):
++def precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=PRECIP_LAPSE_MAX_FACTOR,
++                  acc_hours=1, latitude=None):
+     """
+     Args:
+-        tp_m (array): interpolated ERA5 precipitation [m] over the hour ending at the time stamp, (time, point)
++        tp_m (array): interpolated ERA5 precipitation [m] accumulated over the acc_hours hours ending at the time stamp,
++            (time, point)
+         elev_diff (array): point elevation - ERA5 surface elevation [m], (time, point)
+         months (array): month of each time step, (time,)
+-        tstep_h (int): time step in hours
++        tstep_h (int): time step in hours. tp_m is scaled by tstep_h / acc_hours: 1 when the accumulation covers the
++            time step
++        acc_hours (int): hours accumulated in tp_m
++        latitude (array): latitude of the points [deg], (point,): the monthly coefficients follow the season of each
++            hemisphere. None: northern-hemisphere months
+     Returns:
+         tp [mm per time step], precip_lapse_rate [-], both (time, point)
+     """
+     if lapse_rate_flag:
+-        factor = precip_lapse_factor(elev_diff, np.broadcast_to(months[:, None], elev_diff.shape), max_factor)
++        m = np.broadcast_to(seasonal_month(months, latitude) if latitude is not None else months[:, None],
++                            elev_diff.shape)
++        factor = precip_lapse_factor(elev_diff, m, max_factor)
+     else:
+         factor = np.ones_like(tp_m)
+-    return factor * tp_m * tstep_h * 1e3, factor
++    return factor * tp_m * (tstep_h / acc_hours) * 1e3, factor
+ 
+ 
+ # ---------------------------------------------------------------------------------------------------------------------
+ #  radiation
+ # ---------------------------------------------------------------------------------------------------------------------
+-def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag):
++def longwave(t, vp, t2m, vp_surf, strd, svf, slope, terrain_flag, acc_seconds=3600.):
+     """
+     Downwelling longwave [W m-2]: clear-sky emissivity at the point plus the cloud emissivity of ERA5.
+ 
+     Args:
+         t, vp: air temperature [K] and vapour pressure [Pa] at the points, (time, point)
+-        t2m, vp_surf, strd: ERA5 surface temperature [K], vapour pressure [Pa], and strd [J m-2 over 1 h], (time, point)
++        t2m, vp_surf, strd: ERA5 surface temperature [K], vapour pressure [Pa], and strd [J m-2 accumulated over
++            acc_seconds], (time, point)
+         svf, slope: sky view factor [-] and slope [rad], (point,)
++        acc_seconds (float): accumulation period of strd [s]
+     """
+     cse = 0.23 + LW_X1 * (vp / t) ** (1 / LW_X2)
+     cse_grid = 0.23 + LW_X1 * (vp_surf / t2m) ** (1 / LW_X2)
+-    cle = (strd / 3600.) / (SIGMA * t2m ** 4) - cse_grid
++    cle = (strd / acc_seconds) / (SIGMA * t2m ** 4) - cse_grid
+     lw = svf * (cse + cle) * SIGMA * t ** 4
+     if terrain_flag:
+         lw = lw + 0.5 * (1 + np.cos(slope)) * (1 - svf) * 0.99 * SIGMA * T_TERRAIN ** 4
+@@ -342,27 +372,28 @@ def horizon_at_sun(profiles, horizon_azimuth_deg, sun_azimuth):
+     return profiles[np.arange(s.shape[1])[None, :], idx]
+ 
+ 
+-def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade):
++def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600.):
+     """
+     Shortwave partition and terrain corrections.
+ 
+     Args:
+-        ssrd (array): ERA5 ssrd [J m-2 over 1 h], (time, point)
++        ssrd (array): ERA5 ssrd [J m-2 accumulated over acc_seconds], (time, point)
+         sp (array): ERA5 surface pressure [Pa], (time, point)
+         p (array): pressure at the point [Pa], (time, point)
+         solar (dict): 'mu0', 'SWtoa', 'zenith', 'azimuth' (rad), 'sunset' (bool), each (time, point)
+         slope, aspect, svf (array): (point,), angles in rad, aspect 0 = south
+         shade (bool array): sun behind the local horizon, (time, point)
++        acc_seconds (float): accumulation period of ssrd [s], the window of solar['SWtoa']
+ 
+     Returns:
+         dict: 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination', each (time, point)
+     """
+     mu0, swtoa, day = solar['mu0'], solar['SWtoa'], ~solar['sunset']
+     with np.errstate(invalid='ignore', divide='ignore'):
+-        kt = np.where(day, ssrd / 3600. / swtoa, 0.)
++        kt = np.where(day, ssrd / acc_seconds / swtoa, 0.)
+         kt = np.clip(kt, 0, 1)
+         kd = 0.952 - 1.041 * np.exp(-np.exp(2.3 - 4.702 * kt))
+-        sw_grid = np.maximum(ssrd / 3600., 0.)
++        sw_grid = np.maximum(ssrd / acc_seconds, 0.)
+         diffuse_grid = kd * sw_grid
+         direct_grid = np.minimum(sw_grid - diffuse_grid, swtoa)
+         # Beer's law: extinction coefficient of the ERA5 column, applied with the pressure at the point
+@@ -379,7 +410,8 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade):
+ #  full chain for one block of time steps and points
+ # ---------------------------------------------------------------------------------------------------------------------
+ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h, lw_terrain_flag,
+-                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None):
++                    precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None,
++                    acc_hours=1):
+     """
+     Downscale one block of time steps for a set of points.
+ 
+@@ -390,13 +422,15 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
+             'strd', each (time, point)
+         level_hpa (array): pressure levels [hPa]
+         months (array): month of each time step
+-        points (dict): 'elevation', 'slope', 'aspect', 'svf', each (point,)
++        points (dict): 'elevation', 'slope', 'aspect', 'svf', each (point,), and optionally 'lat' [deg] for the
++            season of the precipitation coefficients
+         solar (dict): see shortwave(), each (time, point)
+         shade (bool array): (time, point)
+         tstep_h (int): time step of the data in hours
+         surface (dict): optional surface-effect correction (surface_effect.py): 'weight' (point,) or None for the
+             diagnostics only, 'beta' (time,) or scalar, 'dewpoint' (bool), 'lw_consistent' (bool, longwave from the
+             corrected temperature and humidity). None: no correction, outputs unchanged
++        acc_hours (int): hours accumulated in surf 'tp', 'ssrd' and 'strd' (ending at the time stamp)
+ 
+     Returns:
+         dict of (time, point) arrays: t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW,
+@@ -417,13 +451,15 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
+                 t_lw, q_lw = out['t'], out['q']
+     out['ws'], out['wd'] = wind_speed_direction(out['u'], out['v'])
+     out['tp'], out['precip_lapse_rate'] = precipitation(surf['tp'], elev[None, :] - surf['z_surf'] / G, months,
+-                                                        tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor)
++                                                        tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor,
++                                                        acc_hours, points.get('lat'))
+     out['w'] = mixing_ratio(out['q'])
+     out['vp'] = vapor_pressure(out['p'], out['w'])
+     vp_surf = vapor_pressure(surf['sp'], mixing_ratio(q_from_dewpoint(surf['d2m'], surf['sp'])))
+     vp_lw = out['vp'] if q_lw is out['q'] else vapor_pressure(out['p'], mixing_ratio(q_lw))
++    acc_seconds = 3600. * acc_hours
+     out['LW'], out['cse'] = longwave(t_lw, vp_lw, surf['t2m'], vp_surf, surf['strd'], points['svf'],
+-                                     points['slope'], lw_terrain_flag)
++                                     points['slope'], lw_terrain_flag, acc_seconds)
+     out.update(shortwave(surf['ssrd'], surf['sp'], out['p'], solar, points['slope'], points['aspect'],
+-                         points['svf'], shade))
++                         points['svf'], shade, acc_seconds))
+     return out
+diff --git a/doc/docs/03_configurationFile.md b/doc/docs/03_configurationFile.md
+index eecddc6..e1ef2f0 100644
+--- a/doc/docs/03_configurationFile.md
++++ b/doc/docs/03_configurationFile.md
+@@ -63,7 +63,7 @@ project:
+ 
+ #.....................................................................................................
+ climate:
+-  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, Northern Hemisphere)
++  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, shifted by six months south of the equator)
+   precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
+ 
+   # Settings for the ERA5 atmospheric forcings
+@@ -71,7 +71,7 @@ climate:
+     path: inputs/climate/             # relative to the project directory, or absolute (e.g. a shared ERA5 archive)
+     product: reanalysis               # ensemble not available yet
+     timestep: 1h                      # 1h, 3h or 6h
+-    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. ERA5: 1h whatever the timestep
++    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. Default: what the climate store holds (the timestep for ERA5 fetched by TopoPyScale)
+ 
+     # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
+     plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
+@@ -178,13 +178,13 @@ The former keys `parallelization.downscaling_method` and `parallelization.settin
+ 
+ | Field             | Example Value      | Required | Possible Values | Description |
+ |-------------------|--------------------|----------|-----------------|-------------|
+-| precip_lapse_rate | True               | no       | True, False     | apply the precipitation lapse-rate correction, monthly factors of MicroMet [@listonMicroMet2006] (Northern Hemisphere). Default False |
++| precip_lapse_rate | True               | no       | True, False     | apply the precipitation lapse-rate correction, monthly factors of MicroMet [@listonMicroMet2006]. The factors were derived in the Northern Hemisphere: south of the equator the month is shifted by six (January takes the July factor). Default False |
+ | precip_lapse_rate_max_factor | 5       | no       | float > 1       | bound of the precipitation elevation factor (1 + c dz)/(1 - c dz), which otherwise diverges for dz ~ 2.9 km in winter. Default 5 |
+ | **era5**          |                    |          |                 | as of now TopoPyScale only supports ERA5 data |
+ | path              | inputs/climate/    | yes      | string          | folder of the climate data, relative to the project directory or absolute. With an absolute path (e.g. a shared archive), no `tmp/` folder is created in it |
+ | product           | reanalysis         | yes      | reanalysis      | no other product available at the moment |
+-| timestep          | 1h                 | yes      | 1h, 3h, 6h      | time step of the download and of the downscaling. Lower case (pandas no longer accepts `1H`; it is converted). With 3h or 6h, radiation and precipitation are still the 1-h ERA5 accumulation ending at the time stamp: `tp` is that hour times the time step, sampled rather than summed |
+-| accumulation_window | 1h               | no       | 1h, 3h, 0h      | window over which radiation is accumulated, ending at the time stamp (ERA5: 1h whatever the timestep). The solar geometry is computed at its centre, see [Solar geometry](07_features.md#solar-geometry). Default 1h |
++| timestep          | 1h                 | yes      | 1h, 3h, 6h      | time step of the download and of the downscaling. Lower case (pandas no longer accepts `1H`; it is converted). With 3h or 6h, the accumulated fields (tp, ssrd, strd) are fetched hourly and stored as their sums over the time step ending at the stamp, so precipitation and radiation are totals and means over the step. An hourly store downscaled at 3h or 6h is summed the same way. A 3h or 6h store fetched by an earlier version holds only the hour ending at each stamp: it is used with a warning (precipitation scaled by the time step), and must be deleted to fetch the sums |
++| accumulation_window | 1h               | no       | 1h, 3h, 6h, 0h  | window over which radiation is accumulated, ending at the time stamp. The solar geometry is computed at its centre, see [Solar geometry](07_features.md#solar-geometry). Default: the hours the accumulated fields of the climate store cover per time step (store attribute `accumulation_hours`: the timestep for stores fetched by TopoPyScale, 1h for stores built from netCDF files) |
+ | plevels           | [700,800,900,1000] | yes      | array           | ERA5 pressure levels to use, in hPa. The lowest pressure level must lie above the highest elevation of the DEM |
+ | download_threads  | 8                  | no       | integer         | number of parallel CDS requests, one month of one stream each. At most 10, the number of requests of a user the CDS runs at a time (more only wait in its queue, and lower the priority of the user). With GDEX: number of processes reading days in parallel, default 4 |
+ | data_repository   | cds                | no       | cds, gdex       | where ERA5 is fetched from: `cds` (Copernicus Climate Data Store, default) or `gdex` (NCAR GDEX, best on NCAR systems). Both give the same store. See [Dataset Sources](04_datasetSources.md#from-ncar-gdex) |
+diff --git a/doc/docs/09_physics_checks.md b/doc/docs/09_physics_checks.md
+index d2102e5..dbd7fb3 100644
+--- a/doc/docs/09_physics_checks.md
++++ b/doc/docs/09_physics_checks.md
+@@ -128,7 +128,7 @@ Default bounds of the `range` check, in the units written by `TopoPyScale`. They
+ | `direct_in_terrain_shadow` | error | no direct beam when the sun is behind the local horizon over the whole accumulation window (at the previous, current and next time steps). Within the window, the direct beam is scaled by its sunlit fraction |
+ | `sw_timing` | warning | the daily centroid of SW (in local solar time, for points with slope < 10°) matches the one of the top-of-atmosphere irradiance within 15 min. `worst` is the median offset in minutes; positive means SW lags the sun |
+ 
+-ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`, whatever the time step of the downloaded data. The solar geometry is therefore computed at the centre of this window (`t − 30 min`). The length of the window is set by `climate.<source>.accumulation_window` (default `1h`). The top-of-atmosphere irradiance `SWtoa`, used for the clearness index, is the mean over the same window, including the Earth–Sun distance (see [Features](07_features.md)). Outputs downscaled by an older version of `TopoPyScale` with a solar file `ds_solar.nc` evaluated at the time stamps show a lag of about +30 min in `sw_timing`. The downscaling now computes the solar geometry itself, at the centre of the window.
++ERA5 `ssrd` at time `t` is the accumulation over `(t − 1 h, t]`. At 3 h or 6 h time steps, the store fetched by TopoPyScale holds the sums over `(t − 3 h, t]` or `(t − 6 h, t]` (store attribute `accumulation_hours`). The solar geometry is therefore computed at the centre of the window (`t − 30 min` for hourly data). The length of the window follows the store, or `climate.<source>.accumulation_window` when set. The top-of-atmosphere irradiance `SWtoa`, used for the clearness index, is the mean over the same window, including the Earth–Sun distance (see [Features](07_features.md)). Outputs downscaled by an older version of `TopoPyScale` with a solar file `ds_solar.nc` evaluated at the time stamps show a lag of about +30 min in `sw_timing`. The downscaling now computes the solar geometry itself, at the centre of the window.
+ 
+ ### Longwave radiation
+ 
+diff --git a/tests/test_accumulation.py b/tests/test_accumulation.py
+new file mode 100644
+index 0000000..15c11a3
+--- /dev/null
++++ b/tests/test_accumulation.py
+@@ -0,0 +1,111 @@
++"""
++Accumulated fields at 3 h time steps (hourly store summed, store of window sums, store sampling the hours) and the
++season of the precipitation coefficients in each hemisphere.
++"""
++import contextlib
++import io
++import logging
++
++import numpy as np
++import pandas as pd
++import pytest
++import xarray as xr
++
++import synthetic_era5 as syn
++from TopoPyScale import topo_scale_zarr as tz
++from TopoPyScale import toposcale_core as core
++
++G = 9.81
++
++
++def quiet(fun, *args, **kwargs):
++    with contextlib.redirect_stdout(io.StringIO()):
++        return fun(*args, **kwargs)
++
++
++@pytest.fixture(scope='module')
++def case():
++    rng = np.random.default_rng(3)
++    tp = np.where(rng.random(72) < 0.3, rng.gamma(1., 1.5, 72), 0.)
++    return syn.make_era5(start='2020-06-18', n_days=3, cloud=[1, .5, .9], tp_mm=tp)
++
++
++@pytest.fixture(scope='module')
++def rows(case):
++    return [syn.make_point(case, name='001', dx=800., elevation=1900.),
++            syn.make_point(case, name='002', dx=-3000., dy=2500., elevation=2400., slope_deg=30., aspect_deg=20.,
++                           svf=0.9)]
++
++
++def write_store(case, path, step=1, attrs=None):
++    plev = case.plev.copy(deep=True)
++    plev['z'] = plev.z * G
++    surf = case.surf.rename({'z': 'z_surf'}).copy(deep=True)
++    surf['z_surf'] = surf.z_surf * G
++    ds = xr.merge([plev, surf]).astype('float32')
++    if step > 1:
++        # window sums (the first window, before the period, rescaled), or the hour ending at the stamp
++        acc = ds[tz.ACC_VARS]
++        if attrs:
++            acc = acc.rolling(time=step, min_periods=1).mean() * step
++        ds = ds.drop_vars(tz.ACC_VARS).merge(acc).isel(time=slice(0, None, step))
++    ds.attrs = attrs or {}
++    ds.to_zarr(path, mode='w', zarr_format=3)
++    return path
++
++
++def downscale(store, rows, wd, tstep, start, end, name):
++    df = pd.DataFrame([vars(r) for r in rows])
++    cd = tz.ClimateDownscaler(store, wd / 'down', df, syn.horizon_da(rows), None, syn.EPSG, start, end, tstep,
++                              precip_lapse_rate_flag=True, store_name=name)
++    return quiet(cd.downscale).load()
++
++
++def test_hourly_store_is_summed_over_3h_steps(case, rows, tmp_path, caplog):
++    store = write_store(case, tmp_path / 'hourly.zarr')
++    h1 = downscale(store, rows, tmp_path, '1h', case.start, case.end, 'h1.zarr')
++    with caplog.at_level(logging.WARNING, logger='TopoPyScale'):
++        h3 = downscale(store, rows, tmp_path, '3h', case.start, case.end, 'h3.zarr')
++    assert 'first accumulation window starts before' in caplog.text
++    assert h3.attrs['accumulation_hours'] == 3 and h3.attrs['accumulation_window'] == '3h'
++    # precipitation: the sum of the hourly values of the window ending at each stamp (all but the first window)
++    tp1 = h1.tp.values[:, 1:70].reshape(2, 23, 3).sum(axis=2)   # hours 1-3, 4-6, ... 67-69
++    np.testing.assert_allclose(h3.tp.values[:, 1:], tp1, rtol=1e-5, atol=1e-6)
++    # shortwave: close to the mean of the hourly values over the window
++    sw1 = h1.SW.values[:, 1:70].reshape(2, 23, 3).mean(axis=2)
++    assert np.abs(h3.SW.values[:, 1:] - sw1).mean() < 0.05 * sw1.mean()
++    assert abs(h3.SW.values.mean() - h1.SW.values.mean()) < 0.03 * h1.SW.values.mean()
++
++
++def test_store_of_window_sums_equals_the_summed_hourly_store(case, rows, tmp_path):
++    hourly = write_store(case, tmp_path / 'hourly.zarr')
++    sums = write_store(case, tmp_path / 'sums.zarr', step=3, attrs={'accumulation_hours': 3})
++    start = '2020-06-18 03:00'    # first stamp whose window is in the hourly store
++    a = downscale(hourly, rows, tmp_path, '3h', case.start, case.end, 'a.zarr')
++    b = downscale(sums, rows, tmp_path, '3h', case.start, case.end, 'b.zarr')
++    for v in ['tp', 'SW', 'SW_direct', 'LW', 't']:
++        np.testing.assert_allclose(b[v].sel(time=slice(start, None)).values,
++                                   a[v].sel(time=slice(start, None)).values, rtol=1e-4, atol=1e-3, err_msg=v)
++
++
++def test_store_sampling_the_hours_is_scaled_with_a_warning(case, rows, tmp_path, caplog):
++    sampled = write_store(case, tmp_path / 'sampled.zarr', step=3)
++    hourly = write_store(case, tmp_path / 'hourly.zarr')
++    with caplog.at_level(logging.WARNING, logger='TopoPyScale'):
++        s = downscale(sampled, rows, tmp_path, '3h', case.start, case.end, 's.zarr')
++    assert 'cover 1 h of each 3 h time step' in caplog.text
++    assert s.attrs['accumulation_window'] == '1h'
++    h1 = downscale(hourly, rows, tmp_path, '1h', case.start, case.end, 'h1.zarr')
++    # the hour ending at each stamp, times 3
++    np.testing.assert_allclose(s.tp.values, 3 * h1.tp.values[:, ::3], rtol=1e-5, atol=1e-6)
++
++
++def test_precipitation_coefficients_follow_the_season_of_each_hemisphere():
++    months = np.arange(1, 13)
++    assert list(core.seasonal_month(months, [10.])[:, 0]) == list(months)
++    assert list(core.seasonal_month(months, [-10.])[:, 0]) == [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]
++    dz = np.full((12, 2), 1000.)
++    tp = np.ones((12, 2))
++    _, f = core.precipitation(tp, dz, months, 1, True, latitude=[45., -45.])
++    np.testing.assert_allclose(f[:, 1], np.roll(f[:, 0], -6))
++    assert f[0, 0] > f[0, 1]   # January: winter in the north, summer in the south
+diff --git a/tests/test_era5_store.py b/tests/test_era5_store.py
+index fc9ddd9..d58d49e 100644
+--- a/tests/test_era5_store.py
++++ b/tests/test_era5_store.py
+@@ -305,3 +305,31 @@ def test_unzip_and_remap_utilities(tmp_path):
+     fe.remap_CDSbeta(str(tmp_path / 'PLEV_*.nc'), 'plev')   # already remapped: unchanged
+     ds = xr.load_dataset(tmp_path / 'PLEV_20200101.nc')
+     assert list(ds.t.dims) == ['time', 'level', 'latitude', 'longitude'] and list(ds.level.values) == [500, 1000]
++
++
++def test_3h_store_holds_window_sums_of_the_hourly_accumulations(cds, tmp_path):
++    fake = cds()
++    store = fetch(tmp_path, start='2020-01-31', end='2020-02-01', step='3h')
++    ds = xr.open_zarr(store)
++    times = es.time_axis('2020-01-31', '2020-02-01', '3h')
++    lat, lon = ds.latitude.values, ds.longitude.values
++    assert (ds.time.values == times.values).all() and ds.attrs['accumulation_hours'] == 3
++    for v in INSTANT:
++        np.testing.assert_allclose(ds[v].values, value(v, times, [0.], lat, lon)[:, 0], rtol=1e-6, err_msg=v)
++    for v in ACCUM:
++        expected = sum(value(v, times - pd.Timedelta(f'{h}h'), [0.], lat, lon)[:, 0] for h in range(3))
++        np.testing.assert_allclose(ds[v].values, expected, rtol=1e-6, err_msg=v)
++    # surface requests: all hours, and the last two hours of the previous day for the accumulated fields
++    surf = [c for c in fake.calls if c[0].startswith('surf')]
++    assert sorted(c[1] for c in surf) == [1, 1, 1, 1]
++    assert sum(set(c[2]) == {'total_precipitation', 'surface_solar_radiation_downwards',
++                             'surface_thermal_radiation_downwards'} for c in surf) == 2
++    assert es.store_gaps(store, '2020-01-31', '2020-02-01') == []
++    # a 3 h store of window sums is not mixed with sampled data
++    with pytest.raises(ValueError, match='accumulation_hours'):
++        es.Era5Store(store, {**json_request(store), 'accumulation_hours': None}, times)
++
++
++def json_request(store):
++    import json
++    return json.loads(xr.open_zarr(store).attrs['era5_request'])
+diff --git a/tests/test_gdex.py b/tests/test_gdex.py
+index edb874c..80819fb 100644
+--- a/tests/test_gdex.py
++++ b/tests/test_gdex.py
+@@ -110,10 +110,15 @@ def check(ds, step_h=1):
+     for name, var in [('z', 'Z'), ('t', 'T'), ('u', 'U'), ('v', 'V'), ('q', 'Q')]:
+         np.testing.assert_allclose(ds[name].transpose('time', 'level', 'latitude', 'longitude').values,
+                                    value(var, times, [700, 850, 1000], lat, lon), rtol=1e-6, err_msg=name)
+-    for name, var in [('t2m', 'VAR_2T'), ('d2m', 'VAR_2D'), ('sp', 'SP'), ('ssrd', 'SSRD'), ('strd', 'STRD'),
+-                      ('tp', 'TP')]:
++    for name, var in [('t2m', 'VAR_2T'), ('d2m', 'VAR_2D'), ('sp', 'SP')]:
+         np.testing.assert_allclose(ds[name].transpose('time', 'latitude', 'longitude').values,
+                                    value(var, times, [0.], lat, lon)[:, 0], rtol=1e-6, err_msg=name)
++    # accumulated fields: sums of the hourly accumulations of each time step, from the previous day for the first
++    for name, var in [('ssrd', 'SSRD'), ('strd', 'STRD'), ('tp', 'TP')]:
++        expected = sum(value(var, times - pd.Timedelta(f'{h}h'), [0.], lat, lon)[:, 0] for h in range(step_h))
++        np.testing.assert_allclose(ds[name].transpose('time', 'latitude', 'longitude').values, expected, rtol=1e-6,
++                                   err_msg=name)
++    assert ds.attrs['accumulation_hours'] == step_h
+     assert ds.z_surf.dims == ('latitude', 'longitude')
+     np.testing.assert_allclose(ds.z_surf.values, 1000 * lat[:, None] + 0 * lon[None, :], rtol=1e-6)
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,2823 @@
+From dd518f028fda536c75abd13971d0fa127aa50664 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 27 Nov 2026 11:23:59 +0100
+Subject: [PATCH 02/10] Report through logging, check config.yml, run the tests
+ on GitHub
+
+Messages
+- every print() of the package goes through the logging module, one logger
+  per module under TopoPyScale; shown in the terminal as before by default
+- project.verbose: True (default), False (warnings and errors only) or a
+  level; project.log_file: outputs/logs/topopyscale_<date>.log by default,
+  with time stamps and the Python warnings of the run
+- TopoPyScale.log.setup() for use outside Topoclass
+- fetch_dem, topo_obs and fetch_era5 no longer switch off warnings for the
+  whole session (failed FSM2oshd runs, missing numba... were hidden)
+
+Configuration
+- config_reference.yml (the documented example, kept identical by a test)
+  lists the keys TopoPyScale reads; Topoclass reports keys of older versions
+  with what replaced them, and unknown keys with the closest documented key
+  (the examples set project.CPU_cores, which is not read)
+- a missing config file raises FileNotFoundError instead of failing later
+
+Cleanup
+- ds_param.nc: NaN were packed as ordinary int16 values (a masked cell read
+  back as ~2000 m); missing values now get a _FillValue
+- sys.exit() in library code replaced by exceptions; bare except replaced
+  by the exceptions expected; pdb imports removed
+- fetch_dem tile download used undefined names; sim_fsm landform resampling
+  (topo_map_forcing) shares the working resampler of topo_map_sim
+- mp.to_cryogrid(): the cluster map was never exported ('cluster:labels')
+- to_fsm2() raises NotImplementedError instead of failing on undefined names
+- fetch_ifs_forecast.py moved to scripts/: it downloads at import
+
+CI: the workflow installs Python 3.13 and runs flake8 (syntax errors and
+undefined names, now none) and the test suite on every push and pull
+request, instead of an example on commits tagged [trigger test] with 3.9.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012FMkEYDUJxvxmd3SbUsJfP
+---
+ .github/workflows/test_topopyscale.yml        |  62 +++---
+ TopoPyScale/__init__.py                       |   4 +
+ TopoPyScale/config_check.py                   |  99 +++++++++
+ TopoPyScale/config_reference.yml              | 113 +++++++++++
+ TopoPyScale/era5_store.py                     |  19 +-
+ TopoPyScale/fetch_dem.py                      |  61 +++---
+ TopoPyScale/fetch_era5.py                     |  53 ++---
+ TopoPyScale/fetch_era5_zarr.py                |  13 +-
+ TopoPyScale/log.py                            | 108 ++++++++++
+ TopoPyScale/meteo_util.py                     |   1 -
+ TopoPyScale/sim_fsm.py                        | 191 +++++++-----------
+ TopoPyScale/sim_fsm2oshd.py                   |  23 ++-
+ TopoPyScale/solar_geom.py                     |   7 +-
+ TopoPyScale/surface_effect.py                 |   7 +-
+ TopoPyScale/topo_compare.py                   |   9 +-
+ TopoPyScale/topo_export.py                    |  48 +++--
+ TopoPyScale/topo_obs.py                       |  37 ++--
+ TopoPyScale/topo_param.py                     |  35 ++--
+ TopoPyScale/topo_plot.py                      |   5 +-
+ TopoPyScale/topo_scale_zarr.py                |   7 +-
+ TopoPyScale/topo_sub.py                       |  13 +-
+ TopoPyScale/topo_utils.py                     |   2 +-
+ TopoPyScale/topoclass.py                      | 177 ++++++++--------
+ doc/docs/03_configurationFile.md              |  19 ++
+ doc/yaml_to_table.py                          |   2 +-
+ .../fetch_ifs_forecast.py                     |   2 +
+ tests/test_config_doc.py                      |  15 +-
+ tests/test_logging_config.py                  |  90 +++++++++
+ tests/test_robustness.py                      |  28 +++
+ 29 files changed, 851 insertions(+), 399 deletions(-)
+ create mode 100644 TopoPyScale/config_check.py
+ create mode 100644 TopoPyScale/config_reference.yml
+ create mode 100644 TopoPyScale/log.py
+ rename {TopoPyScale => scripts}/fetch_ifs_forecast.py (98%)
+ create mode 100644 tests/test_logging_config.py
+ create mode 100644 tests/test_robustness.py
+
+diff --git a/.github/workflows/test_topopyscale.yml b/.github/workflows/test_topopyscale.yml
+index 04d8ba8..e0ad382 100644
+--- a/.github/workflows/test_topopyscale.yml
++++ b/.github/workflows/test_topopyscale.yml
+@@ -1,43 +1,29 @@
+-name: Test TopoPyScale
++name: Tests
+ 
+-on: [push]
++# the test suite on every push and pull request: a check mark (or a cross) next to each commit and pull request
++on:
++  push:
++  pull_request:
+ 
+ jobs:
+-  build-linux:
+-    if: "contains(github.event.commits[0].message, '[trigger test]')"
++  tests:
+     runs-on: ubuntu-latest
+-    defaults:
+-      run:
+-        shell: bash -el {0}
+-    strategy:
+-      max-parallel: 5
+-
++    timeout-minutes: 30
+     steps:
+-    - uses: actions/checkout@v3
+-    - name: Set up Python 3.9
+-      uses: actions/setup-python@v3
+-      with:
+-        python-version: '3.9'
+-    - name: Add conda to system path
+-      run: |
+-        # $CONDA is an environment variable pointing to the root of the miniconda directory
+-        echo $CONDA/bin >> $GITHUB_PATH
+-    - name: Install dependencies
+-      run: |
+-        conda install mamba -n base -c conda-forge
+-        mamba env update --file environment.yml --name base
+-    - name: Install TopoPyscale main development branch
+-      run: |
+-        pip install -e .
+-    - name: Lint with flake8
+-      run: |
+-        conda install flake8
+-        # stop the build if there are Python syntax errors or undefined names
+-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+-    - name: Run TopoPyScale example
+-      run: |
+-        git clone https://github.com/ArcticSnow/TopoPyScale_examples.git
+-        cd TopoPyScale_examples/ex1_norway_finse/
+-        python pipeline_test.py
++      - uses: actions/checkout@v4
++
++      - uses: actions/setup-python@v5
++        with:
++          python-version: '3.13'
++          cache: pip
++
++      - name: Install TopoPyScale and the test tools
++        run: |
++          python -m pip install --upgrade pip
++          pip install -e . pytest flake8
++
++      - name: Lint (syntax errors and undefined names)
++        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
++
++      - name: Tests
++        run: python -m pytest tests -q
+diff --git a/TopoPyScale/__init__.py b/TopoPyScale/__init__.py
+index 0befb10..75fd225 100644
+--- a/TopoPyScale/__init__.py
++++ b/TopoPyScale/__init__.py
+@@ -8,3 +8,7 @@ Example usage: See the documentation
+ """
+ 
+ __version__ = "1.0.0"
++
++from TopoPyScale import log  # noqa: E402
++
++log.setup()
+diff --git a/TopoPyScale/config_check.py b/TopoPyScale/config_check.py
+new file mode 100644
+index 0000000..48ca3d1
+--- /dev/null
++++ b/TopoPyScale/config_check.py
+@@ -0,0 +1,99 @@
++"""
++Check a config.yml against the keys TopoPyScale reads, listed in config_reference.yml (the example of the
++documentation). Keys of older versions are reported with what replaced them, unknown keys with the closest
++documented key, as a misspelled key would otherwise be read as empty without notice.
++
++S. Filhol, J. Fiddes and contributors
++"""
++import difflib
++import logging
++from pathlib import Path
++
++import yaml
++
++logger = logging.getLogger(__name__)
++
++REFERENCE = Path(__file__).with_name('config_reference.yml')
++# values that are data (lists, dictionaries of data), not settings
++DATA_KEYS = {'project.extent', 'project.authors', 'sampling.toposub.clustering_features'}
++OLD_KEYS = {
++    'project.parallelization.downscaling_method': 'not read: downscaling runs CPU_cores threads over blocks of points',
++    'project.parallelization.setting.dask': 'not read: downscaling runs CPU_cores threads over blocks of points',
++    'project.split': 'removed: long periods are processed by blocks of time steps (toposcale.time_block)',
++    'outputs.file.downscaled_pt': 'removed: the points are written to outputs.file.zarr_store',
++    'outputs.file.landform': 'not read: the landform map is outputs/landform.tif',
++    'sampling.points.epsg': 'not read: x, y must be in the DEM projection',
++    'sampling.points.ID_col': 'renamed sampling.points.name_column',
++    'clean_up.delete_tmp_dirs': 'renamed clean_up.rm_tmp_dirs',
++    'climate.era5.rm_daily': 'not read: ERA5 is written to the zarr store, without daily files',
++    'climate.era5.cds_output_format': 'not read: netcdf is downloaded',
++    'toposcale.pt_sampling_method': 'not read: the horizontal interpolation is toposcale.interpolation_method',
++    'dem.dem_resol': 'not read: the resolution is read from the DEM file',
++    'project.CPU_cores': 'not read: the number of cores is project.parallelization.setting.multicore.CPU_cores',
++}
++
++
++def flatten(d, prefix=''):
++    """Dotted keys of a nested dictionary, stopping at DATA_KEYS."""
++    for k, v in (d or {}).items():
++        key = f'{prefix}{k}'
++        if isinstance(v, dict) and key not in DATA_KEYS:
++            yield from flatten(v, key + '.')
++        else:
++            yield key
++
++
++def reference_keys():
++    """Keys of config_reference.yml."""
++    with open(REFERENCE) as f:
++        return set(flatten(yaml.safe_load(f)))
++
++
++def check_config(config):
++    """
++    Messages about the keys of a configuration that TopoPyScale does not read.
++
++    Args:
++        config (dict): configuration as read from config.yml
++
++    Returns:
++        list: one message per key: renamed or removed key, or unknown key with the closest documented key
++    """
++    known = reference_keys()
++    source = (config.get('project') or {}).get('climate') or 'era5'
++    messages, reported = [], set()
++    climate = config.get('climate') or {}
++    if source not in climate:
++        messages.append(f'project.climate is {source}, but there is no climate.{source} section')
++    for key in flatten(config):
++        parts = key.split('.')
++        if parts[0] == 'climate' and len(parts) > 2 and isinstance(climate.get(parts[1]), dict):
++            if parts[1] != source:
++                continue   # settings of another climate source, not used by this run
++            key_ref = '.'.join(['climate', 'era5'] + parts[2:])
++        else:
++            key_ref = key
++        if key_ref in known:
++            continue
++        old = [k for k in OLD_KEYS if key_ref == k or key_ref.startswith(k + '.')]
++        if old:
++            if old[0] not in reported:
++                reported.add(old[0])
++                messages.append(f'{old[0]}: {OLD_KEYS[old[0]]}')
++            continue
++        close = difflib.get_close_matches(key_ref, known, n=1, cutoff=0.8)
++        if not close:   # misspelled and/or misplaced: compare the last part of the key
++            last = {k.split('.')[-1]: k for k in sorted(known)}
++            near = difflib.get_close_matches(parts[-1], list(last), n=1, cutoff=0.8)
++            close = [last[near[0]]] if near else []
++        hint = f' Did you mean {close[0]}?' if close else ''
++        messages.append(f'{key} is not a TopoPyScale setting and is not read.{hint}')
++    return messages
++
++
++def warn_config(config):
++    """Log check_config() messages as warnings. Returns the messages."""
++    messages = check_config(config)
++    for m in messages:
++        logger.warning(f'config: {m}')
++    return messages
+diff --git a/TopoPyScale/config_reference.yml b/TopoPyScale/config_reference.yml
+new file mode 100644
+index 0000000..e04659a
+--- /dev/null
++++ b/TopoPyScale/config_reference.yml
+@@ -0,0 +1,113 @@
++# Reference config.yml of TopoPyScale: every key the code reads, with its documentation.
++# Kept identical to the example of doc/docs/03_configurationFile.md (tests/test_config_doc.py).
++project:
++  name: Name of the project               # metadata
++  description: Describe the project       # metadata
++  authors:                                # written in the metadata of exported files
++    - Author 1 (can add contact and affiliation here)
++    - Author 2
++  date: Date at which the project is run  # metadata
++  directory: /path/to/project/            # (optional) default: current working directory
++  verbose: True                           # (optional) progress messages in the terminal: True, False (warnings and errors only) or a level such as debug. Default True
++  log_file: True                          # (optional) also write the messages to outputs/logs/topopyscale_<date>.log (True), to a given path, or not (False). Default True
++
++  # start and end date of the period of interest. The end day is included
++  start: 2018-01-01
++  end: 2018-01-31
++
++  # (optional) [latN, latS, lonW, lonE] in degrees. Box of the ERA5 download. Default: extent of the DEM
++  extent: [60.8, 60.4, 7.1, 7.7]
++
++
++  # indicate which climate data to use. Currently only era5 available (see climate section below)
++  climate: era5
++
++  parallelization:
++    setting:
++        multicore:
++            CPU_cores: 6                  # sky view factor, horizon, clustering and downscaling threads, FSM runs
++
++#.....................................................................................................
++climate:
++  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, Northern Hemisphere)
++  precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
++
++  # Settings for the ERA5 atmospheric forcings
++  era5:
++    path: inputs/climate/             # relative to the project directory, or absolute (e.g. a shared ERA5 archive)
++    product: reanalysis               # ensemble not available yet
++    timestep: 1h                      # 1h, 3h or 6h
++    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. ERA5: 1h whatever the timestep
++
++    # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
++    plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
++    download_threads: 8               # parallel CDS requests (one month each, at most 10), or GDEX processes
++    realtime: False                   # (optional) CDS only. Set project.end to the last full day available and clean outputs/downscaled/
++    data_repository: cds              # (optional) cds (Copernicus Climate Data Store, default) or gdex (NCAR GDEX, see Dataset Sources)
++    gdex_root:                        # (optional) gdex only: path or URL of GDEX d633000. Default /gdex/data/d633000 on NCAR systems, else OSDF over HTTPS
++    cds_download_format: unarchived   # (optional) unarchived or zip, both are read
++    output_format: netcdf             # (optional) file format of get_era5_snowmapper() only
++    zarr_store: ERA5.zarr             # (optional) name of the ERA5 zarr store in the climate folder. Default ERA5.zarr
++
++#.....................................................................................................
++dem:
++  path: inputs/dem/                       # (optional) folder of the DEM, relative to the project directory or absolute. Default inputs/dem/
++  file: myDEM.tif                         # name of the DEM file. Must be a raster
++  epsg: 32632                             # EPSG code of the DEM projection (projected, in metres)
++  horizon_increments: 10                  # azimuth step of the horizons computed at the points, in degrees
++  solar_position_method: nrel_numpy       # (optional) pvlib solar position method. Default nrel_numpy
++
++#.....................................................................................................
++sampling:
++
++  # toposub (DEM clustering), points (list of points) or grid (every DEM pixel)
++  method: toposub
++
++  # In case method == 'points'
++  points:
++    csv_file: pts_list.csv              # in inputs/dem/, or absolute path. Columns x,y in the DEM projection
++    name_column: pt_name                # (optional) column containing point_name. If not provided, point_name will be automatically assigned
++
++  # In case method == 'toposub'
++  toposub:
++    clustering_method: minibatchkmean   # clustering method available: kmean, minibatchkmean
++    n_clusters: 50                      # number of cluster to segment the DEM
++    random_seed: 2                      # random seed for the K-mean clustering
++    clustering_features: { 'x': 1, 'y': 1, 'elevation': 1, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # features used in the clustering with their relative importance (multiplier after scaling)
++    clustering_mask: inputs/dem/catchment_mask.tif      # (optional) .tif mask (0/1) on the DEM grid, relative to the project directory
++    clustering_groups: inputs/dem/groups.tif            # (optional) .tif of cluster groups (integers, e.g. land cover) on the DEM grid
++    clustering_group_weights: inputs/dem/gr_wgths.csv   # (optional) .csv with columns group,weight: fraction of the clusters per group. Default: proportional to group area
++
++#.....................................................................................................
++toposcale:
++  interpolation_method: idw               # horizontal interpolation of ERA5: idw or linear
++  LW_terrain_contribution: True           # (optional) terrain contribution to longwave. Default False
++  physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'warning' or 'error' (raise)
++  point_block: 100                        # (optional) number of points downscaled together. Default 100
++  time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
++  solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
++  solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
++  surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
++    method: none                          # none, redcapp or dreamit
++    coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
++    context_dem:                          # (optional) DEM covering the points plus the window (30 km wide for redcapp, 50 km radius for dreamit). Default: project DEM
++    dewpoint: True                        # (optional) correct the humidity too. Default True
++    lw_consistent: True                   # (optional) longwave from the corrected temperature and humidity. Default True
++    allow_partial_window: False           # (optional) accept windows leaving the context DEM. Default False
++    diagnostics: False                    # (optional) store t_pl, dT_surf and dTd_surf (also with method none, for the calibration). Default False
++
++#.....................................................................................................
++outputs:
++  directory: outputs                    # (optional) relative to the project directory, or absolute. Default outputs
++  variables: all                        # (optional) list of variables to downscale and store, e.g. ['t', 'tp', 'SW']. Default all
++  file:
++    clean_outputs: False                # (optional) remove the entire outputs/ directory when Topoclass is created
++    clean_FSM: False                    # (optional) remove the fsm_sims/ and ensemble/ directories when Topoclass is created
++    df_centroids: df_centroids.pck      # (pickle)  dataframe containing the points of interest with their topographic features
++    ds_param: ds_param.nc               # (netcdf)  topographic parameters (slope, aspect, etc.)
++    ds_solar: ds_solar.nc               # (netcdf)  solar geometry
++    da_horizon: da_horizon.nc           # (netcdf)  horizon angles of the points
++    zarr_store: down.zarr               # (optional) store of the downscaled timeseries in outputs/downscaled/. Default down.zarr
++
++clean_up:
++  rm_tmp_dirs: True                     # (optional) remove the tmp directories after downscaling
+diff --git a/TopoPyScale/era5_store.py b/TopoPyScale/era5_store.py
+index 459b6a4..0232298 100644
+--- a/TopoPyScale/era5_store.py
++++ b/TopoPyScale/era5_store.py
+@@ -38,6 +38,9 @@ try:
+     from zarr.codecs import BloscCodec
+ except ImportError:
+     from zarr.codecs._blosc import BloscCodec
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ GRID = 0.25
+ STREAMS = ('plev', 'surf')
+@@ -203,7 +206,7 @@ def retry(fun, retries=3, wait=60., fatal=None, label=''):
+             if attempt == retries or (fatal is not None and fatal(e)):
+                 raise
+             delay = wait * 2 ** attempt
+-            print(f'     {label}: {_first_line(e)}. Retrying in {delay:.0f} s')
++            logger.info(f'     {label}: {_first_line(e)}. Retrying in {delay:.0f} s')
+             time.sleep(delay)
+ 
+ 
+@@ -358,7 +361,7 @@ class Era5Store:
+         base.time.encoding.update(units='hours since 1900-01-01', dtype='int64')
+         encoding = {v: {'chunks': (self.time_chunk,)} for v in flags}
+         self._to_zarr(base, mode='w', compute=False, encoding=encoding)
+-        print(f'---> {self.path.name} created: {nt} time steps from {self.times[0]} to {self.times[-1]}, '
++        logger.info(f'---> {self.path.name} created: {nt} time steps from {self.times[0]} to {self.times[-1]}, '
+               f'{lat.size}x{lon.size} nodes, {levels.size} levels')
+ 
+     def _extend(self):
+@@ -379,7 +382,7 @@ class Era5Store:
+                 fill = 0 if ds[v].dtype.kind == 'u' else np.nan
+                 block[v] = (ds[v].dims, da.full(shape, fill, dtype=ds[v].dtype, chunks=shape))
+         self._to_zarr(xr.Dataset(block, coords={'time': new}), mode='a', append_dim='time', compute=False)
+-        print(f'---> {self.path.name} extended by {new.size} time steps, to {new[-1]}')
++        logger.info(f'---> {self.path.name} extended by {new.size} time steps, to {new[-1]}')
+ 
+     def _ensure_variables(self, ds):
+         """Add the variables of ds missing from the store, empty over the whole time axis."""
+@@ -536,7 +539,7 @@ class LegacyFiles:
+                 if not out.time.to_index().equals(times):
+                     return None
+         except (OSError, KeyError, ValueError, RuntimeError) as e:
+-            print(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
++            logger.info(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
+             return None
+         if not (_same(out.latitude.values, lat) and _same(out.longitude.values, lon)):
+             return None
+@@ -561,10 +564,10 @@ def import_legacy(store, tasks, legacy, area, plev_variables, surf_variables):
+                 n += 1
+                 continue
+             except ValueError as e:
+-                print(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
++                logger.info(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
+         left.append(task)
+     if n:
+-        print(f'---> {n} of {len(tasks)} downloads found in earlier netCDF files of {legacy.folder}')
++        logger.info(f'---> {n} of {len(tasks)} downloads found in earlier netCDF files of {legacy.folder}')
+     return left
+ 
+ 
+@@ -594,10 +597,10 @@ def run(store, tasks, fetch, n_workers=1, processes=False):
+             try:
+                 paths = future.result()
+                 store.write(task, open_raw(paths))
+-                print(f'     {task.key} written')
++                logger.info(f'     {task.key} written')
+             except Exception as e:
+                 failed.append((task, e))
+-                print(f'     {task.key} FAILED: {_first_line(e)}')
++                logger.error(f'     {task.key} FAILED: {_first_line(e)}')
+             finally:
+                 for p in paths:
+                     Path(p).unlink(missing_ok=True)
+diff --git a/TopoPyScale/fetch_dem.py b/TopoPyScale/fetch_dem.py
+index 85d0c16..0f64bfa 100644
+--- a/TopoPyScale/fetch_dem.py
++++ b/TopoPyScale/fetch_dem.py
+@@ -17,8 +17,10 @@ from xml.dom.minidom import parse, parseString
+ import pandas as pd
+ from TopoPyScale import topo_utils as tu
+ 
+-import warnings, os
+-warnings.filterwarnings('ignore')
++import os
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ class copernicus_dem():
+     """---> Class to download Publicly available Copernicus DEM products
+@@ -39,7 +41,7 @@ class copernicus_dem():
+                                         'COP-DEM_GLO-90-DTED/2023_1':'DEM.dt1'}
+         self.copernicus_public_url = 'https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs'
+ 
+-        print("""
++        logger.info("""
+ Class to download Publicly available Copernicus DEM products. 
+ 
+ Data are directly available via HTTPS requests at https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs
+@@ -61,10 +63,10 @@ Further online Resources:
+         products = products_xml.getElementsByTagName('datasetId')
+ 
+         self.product_list = []
+-        print('---> List of product available:')
++        logger.info('---> List of product available:')
+         for i, d in enumerate(products):
+             self.product_list.append(d.firstChild.data)
+-            print(f'\t [{i}]-> {d.firstChild.data}')
++            logger.info(f'\t [{i}]-> {d.firstChild.data}')
+         if self.product is None:
+             self._product_ind = int(input('Which product to download?'))
+             
+@@ -82,7 +84,7 @@ Further online Resources:
+         # Add code to check first if fname_file does not exist already
+         if not os.path.isfile(self.directory / fname_tile):
+ 
+-            print(f'---> Requesting list of tiles for {self.product}')
++            logger.info(f'---> Requesting list of tiles for {self.product}')
+ 
+             headers = {'accept': 'csv',}
+             url = f"{self.copernicus_public_url}/{self.product.replace('/', '__')}"
+@@ -91,7 +93,7 @@ Further online Resources:
+             with open(fname_tile, 'w') as file:
+                 file.write(r.content.decode("utf-8"))
+ 
+-            print(f'---> All tile URL written to {fname_tile}')
++            logger.info(f'---> All tile URL written to {fname_tile}')
+ 
+         # open csv file containing list of tar file urls
+         df = pd.read_csv(self.directory / fname_tile, header=None)
+@@ -128,7 +130,7 @@ Further online Resources:
+             if (not os.path.isfile(tar_file)) | (os.path.getsize(tar_file) < 100):
+                 downloaded_list.append(False)
+             else:
+-                print(f'-> File {tar_file} already exists')
++                logger.info(f'-> File {tar_file} already exists')
+                 downloaded_list.append(True)
+ 
+         self.sub['downloaded'] = downloaded_list
+@@ -149,22 +151,22 @@ Further online Resources:
+         self.sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
+ 
+         def _download_single_tile(url, tar_file):
+-            print(f'---> Downloading {url}')
++            logger.info(f'---> Downloading {url}')
+             ur.urlretrieve(url, tar_file)
+ 
+-        _check_file_downloaded()
+-        while self.sub.downloaded.sum()>0:
+-            tar_download = sub.tar_file.loc[~sub.downloaded].values
+-            url_download = sub.url.loc[~sub.downloaded].values
++        self._check_file_downloaded()
++        while (~self.sub.downloaded).sum() > 0:
++            tar_download = self.sub.tar_file.loc[~self.sub.downloaded].values
++            url_download = self.sub.url.loc[~self.sub.downloaded].values
+ 
+             # Parallelize download of tiles
+             fun_param = zip(url_download, tar_download)
+             tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
+-            _check_file_downloaded()
++            self._check_file_downloaded()
+ 
+-        print("---> All tiles downloaded")
+-        sub['downloaded'] = True
+-        self.df_downloaded = sub
++        logger.info("---> All tiles downloaded")
++        self.sub['downloaded'] = True
++        self.df_downloaded = self.sub
+         
+ 
+     def extract_all_tar(self, dem_extension='DEM.dt2'):
+@@ -189,8 +191,8 @@ Further online Resources:
+ 
+                 file = None
+             
+-        print('\n---> READ DATA LICENSING IN TAR FILE <---')
+-        print('--->        eula_F.pdf               <---\n')
++        logger.info('\n---> READ DATA LICENSING IN TAR FILE <---')
++        logger.info('--->        eula_F.pdf               <---\n')
+         
+         
+ def fetch_copernicus_dem(directory='.', 
+@@ -250,9 +252,9 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
+                                                                                          xmax,
+                                                                                          ymax,
+                                                                                       0.2)
+-        print('>===== command to download DEM  from SRTM1 ====<\n')
++        logger.info('>===== command to download DEM  from SRTM1 ====<\n')
+         # os.system('eio clean')
+-        print(cmd_1)
++        logger.info(cmd_1)
+         try:
+             os.system(cmd_1)
+         except RuntimeError:
+@@ -281,7 +283,7 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
+         #                                                                                        dem_dir + 'inputs/dem/dem_SRTM1.tif',
+         #                                                                                        dem_dir + 'inputs/dem/dem_SRTM1_proj.tif'
+         #                                                                                                        )
+-        print(cmd_2)
++        logger.info(cmd_2)
+         os.system(cmd_2)
+         # print(cmd_3)
+         # os.system(cmd_3)
+@@ -296,10 +298,10 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
+                                                                                          xmax,
+                                                                                          ymax,
+                                                                                          0.2)
+-        print('>===== command to download DEM  from SRTM3 ====<')
+-        print('eio clean')
++        logger.info('>===== command to download DEM  from SRTM3 ====<')
++        logger.info('eio clean')
+         os.system(cmd_1)
+-        print('eio clean')
++        logger.info('eio clean')
+         #target_epsg = input("---> provide target EPSG (default: 32632):") or '32632'
+ 
+         if dem_resol is not None:
+@@ -322,10 +324,9 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
+         # sys.exit('---> EXIT: run those commands and update dem_file in config.ini')
+ 
+     elif ans == '3':
+-        sys.exit('WARNING: fetch ArcticDEM functionality not available')
++        raise NotImplementedError('fetching ArcticDEM is not available')
+     elif ans == '4':
+-        print('WARNING: fetch ASTER DEM functionality not available')
+-        print('Please visit https://lpdaacsvc.cr.usgs.gov/appeears/task/area to manually download a DEM')
+-        sys.exit()
++        raise NotImplementedError('fetching ASTER DEM is not available: download a DEM from '
++                                  'https://lpdaacsvc.cr.usgs.gov/appeears/task/area')
+     else:
+-        sys.exit("ERROR: dem file '{}' not existing".format(dem_file))
++        raise FileNotFoundError(f"DEM file {dem_file} not found, and no download option chosen")
+diff --git a/TopoPyScale/fetch_era5.py b/TopoPyScale/fetch_era5.py
+index 48746ad..3053640 100644
+--- a/TopoPyScale/fetch_era5.py
++++ b/TopoPyScale/fetch_era5.py
+@@ -32,7 +32,9 @@ import glob
+ from munch import DefaultMunch
+ 
+ import warnings
+-warnings.filterwarnings("ignore", category=UserWarning)
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ var_surf_name_google = {'geopotential_at_surface':'z',
+@@ -66,10 +68,10 @@ class FetchERA5():
+ 
+         if type(config) is DefaultMunch:
+             self.config = config
+-            print("---> Config loaded")
++            logger.info("---> Config loaded")
+         elif type(config) is str:
+             self.config = self.load_config(config_file=config)
+-            print(f"---> Config from {config} loaded")
++            logger.info(f"---> Config from {config} loaded")
+         else:
+             raise ValueError('Cannot find config. Check path to config, or config is a Munch.DefaultMunch object.')
+ 
+@@ -88,15 +90,14 @@ class FetchERA5():
+             # downscaled outputs are rewritten
+             shutil.rmtree(self.config.outputs.path / "downscaled", ignore_errors=True)
+             os.makedirs(self.config.outputs.path / "downscaled", exist_ok=True)
+-            print('---> Downscaled directory cleaned')
++            logger.info('---> Downscaled directory cleaned')
+ 
+     @staticmethod
+     def load_config(config_file):
+-        try:
+-            with open(config_file, 'r') as f:
+-                return DefaultMunch.fromYAML(f)
+-        except IOError:
+-            print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
++        if not Path(config_file).is_file():
++            raise FileNotFoundError(f'Config file {config_file} not found (current directory: {os.getcwd()})')
++        with open(config_file, 'r') as f:
++            return DefaultMunch.fromYAML(f)
+ 
+ 
+     def go_fetch(self, surf_plev='all'):
+@@ -120,10 +121,10 @@ class FetchERA5():
+         if source == 'gdex' and clim.realtime:
+             raise ValueError('realtime needs ERA5T from the CDS: GDEX is updated months later')
+         if clim.cds_output_format not in [None, {}, 'netcdf']:
+-            print(f'     cds_output_format={clim.cds_output_format} ignored: netcdf is downloaded and written to '
++            logger.info(f'     cds_output_format={clim.cds_output_format} ignored: netcdf is downloaded and written to '
+                   f'the zarr store')
+         if clim.rm_daily:
+-            print('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
++            logger.info('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
+         extent = self.config.project.extent
+         return fetch_era5_to_zarr(self.config.project.start, self.config.project.end, self.config.climate.path,
+                                   latN=extent.get('latN') + 0.4, latS=extent.get('latS') - 0.4,
+@@ -200,7 +201,7 @@ def climate_netcdf_dir(climate_path, plev_name='PLEV_*.nc'):
+ 
+ def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
+     ncfile = str(ncfile)
+-    print(f"---> Appending {ncfile} to {zarrstore}")
++    logger.info(f"---> Appending {ncfile} to {zarrstore}")
+     dp = xr.open_dataset(ncfile, chunks='auto')
+     if surf:
+         dp = dp.rename({'z':'z_surf'})
+@@ -253,7 +254,7 @@ def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+ 
+     last_time = None
+     for i, period in enumerate(periods):
+-        print(f'---> Converting {plev_files[period].name} and {surf_files[period].name} to {pz.name}')
++        logger.info(f'---> Converting {plev_files[period].name} and {surf_files[period].name} to {pz.name}')
+         with xr.open_dataset(plev_files[period]) as dp, xr.open_dataset(surf_files[period]) as du:
+             dp = _standardize_era5(dp)
+             du = _standardize_era5(du).rename({'z': 'z_surf'})
+@@ -277,7 +278,7 @@ def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
+             ds.to_zarr(pz, mode='w', zarr_format=3, encoding=encoding)
+         else:
+             ds.to_zarr(pz, mode='a', append_dim='time')
+-    print(f'---> {pz} written ({len(periods)} periods)')
++    logger.info(f'---> {pz} written ({len(periods)} periods)')
+     return pz
+ 
+ 
+@@ -307,7 +308,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
+     Function to download data from Zarr repository on Google Cloud Storage (https://github.com/google-research/arco-era5/tree/main)
+ 
+     '''
+-    print('!!!!!!!!!WORK IN PROGRESS!!!!!!!!!')
++    logger.info('!!!!!!!!!WORK IN PROGRESS!!!!!!!!!')
+     ds = xr.open_zarr(
+         bucket,
+         chunks=None,
+@@ -581,7 +582,7 @@ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_
+             parts = [(task, variables[:k]), (task, variables[k:])]
+         else:
+             raise
+-        print(f'     {stem.name}: over the CDS cost limit, split in two requests')
++        logger.info(f'     {stem.name}: over the CDS cost limit, split in two requests')
+         return [f for i, (t, v) in enumerate(parts)
+                 for f in _cds_fetch(t, raw_dir, v, area, step, plevels, product, download_format, verify, retries,
+                                     retry_wait, stem=f'{stem}_{i}')]
+@@ -678,11 +679,11 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+     tasks = ([es.Task('zsurf', 'zsurf', (pd.Timestamp(start).normalize(),))] if 'surf' in streams else []) \
+         + make_tasks(start, end, streams)
+     todo = store.missing(tasks)
+-    print(f'---> ERA5 from {source.upper()} to {store.path}: {len(todo)} of {len(tasks)} downloads to do '
++    logger.info(f'---> ERA5 from {source.upper()} to {store.path}: {len(todo)} of {len(tasks)} downloads to do '
+           f'(box N{area[0]} W{area[1]} S{area[2]} E{area[3]})')
+     todo = es.import_legacy(store, todo, es.LegacyFiles(eraDir), area, plev_variables, surf_variables)
+     if not todo:
+-        print(f'===> {store.path.name} complete')
++        logger.info(f'===> {store.path.name} complete')
+         return store.path
+ 
+     raw = eraDir / 'raw'
+@@ -690,7 +691,7 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+     if source == 'cds':
+         n = int(n_workers or 8)
+         if n > CDS_MAX_PARALLEL:
+-            print(f'     download_threads={n}: the CDS runs {CDS_MAX_PARALLEL} requests of a user at a time and '
++            logger.info(f'     download_threads={n}: the CDS runs {CDS_MAX_PARALLEL} requests of a user at a time and '
+                   f'lowers the priority of users sending more. Using {CDS_MAX_PARALLEL}')
+             n = CDS_MAX_PARALLEL
+         _cds_client(verify)   # a missing or wrong ~/.cdsapirc fails here, before any thread starts
+@@ -703,13 +704,13 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
+         root = gdex_root_path(gdex_root)
+         if _is_remote(root) and any(t.stream == 'plev' for t in todo):
+             n_days = sum(t.stream == 'plev' for t in todo) / es.STEP_HOURS[step]
+-            print(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
++            logger.info(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
+                   f'whatever the size of the domain. On NCAR systems they are read locally')
+         fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
+                                   retries=retries, retry_wait=retry_wait)
+         es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
+     shutil.rmtree(raw, ignore_errors=True)
+-    print(f'===> {store.path.name} complete')
++    logger.info(f'===> {store.path.name} complete')
+     return store.path
+ 
+ 
+@@ -741,8 +742,8 @@ def return_last_fullday():
+     # else:
+     #     last_fullday_data = six_days_ago_utc
+     last_fullday_data_str = six_days_ago_utc.strftime("%Y-%m-%d")
+-    print("Current time (rounded down) in UTC:", current_time_utc_str)
+-    print("Last full day ERA5T data in UTC:", last_fullday_data_str)
++    logger.info(f"Current time (rounded down) in UTC: {current_time_utc_str}")
++    logger.info(f"Last full day ERA5T data in UTC: {last_fullday_data_str}")
+ 
+     return six_days_ago_utc
+ 
+@@ -769,7 +770,7 @@ def unzip_file(file_path):
+     if path != out:
+         path.unlink()
+     os.replace(tmp, out)
+-    print(f'---> {path.name} unzipped to {out.name}')
++    logger.info(f'---> {path.name} unzipped to {out.name}')
+     return str(out)
+ 
+ 
+@@ -841,7 +842,7 @@ def era5_request_surf_snowmapper( today, latN, latS, lonE, lonW, eraDir, output_
+          'download_format': 'unarchived'
+          },
+         target)
+-    print(target + " complete")
++    logger.info(target + " complete")
+ 
+ 
+ def era5_request_plev_snowmapper(today, latN, latS, lonE, lonW, eraDir, plevels, output_format= "netcdf"):
+@@ -895,4 +896,4 @@ def era5_request_plev_snowmapper(today, latN, latS, lonE, lonW, eraDir, plevels,
+             'download_format': 'unarchived'
+         },
+         target)
+-    print(target + " complete")
++    logger.info(target + " complete")
+diff --git a/TopoPyScale/fetch_era5_zarr.py b/TopoPyScale/fetch_era5_zarr.py
+index d598086..ba92223 100644
+--- a/TopoPyScale/fetch_era5_zarr.py
++++ b/TopoPyScale/fetch_era5_zarr.py
+@@ -28,12 +28,15 @@ Functions:
+ Usage:
+ - Run the script directly for default processing or import as a module and call `main()` with custom parameters.
+ """
++import logging
++
++logger = logging.getLogger(__name__)
+ def is_valid_netcdf(file_path):
+     """Check if a NetCDF file is valid."""
+     try:
+         xr.open_dataset(file_path).close()
+         return True
+-    except:
++    except (OSError, ValueError):
+         return False
+ 
+ 
+@@ -86,7 +89,7 @@ def process_month(ds, start, end, output_dir, surface_vars, pressure_vars):
+     pressure_file = os.path.join(output_dir, f"PLEV_{start.strftime('%Y%m')}.nc")
+ 
+     if is_valid_netcdf(surface_file) and is_valid_netcdf(pressure_file):
+-        print(f"Skipping {start.strftime('%Y-%m')} - Files already exist and are valid.")
++        logger.info(f"Skipping {start.strftime('%Y-%m')} - Files already exist and are valid.")
+         return
+ 
+     ds_month = ds.sel(time=slice(start, end))
+@@ -143,8 +146,8 @@ def main(start_date, end_date, output_dir, dataset_path):
+         remaining_months = total_months - completed_months
+         estimated_remaining_time = avg_time_per_month * remaining_months
+ 
+-        print(f"Processed {start.strftime('%Y-%m')} in {elapsed_time:.2f} seconds.")
+-        print(f"Completed {completed_months}/{total_months} months. Estimated time remaining: {estimated_remaining_time / 60:.2f} minutes.")
++        logger.info(f"Processed {start.strftime('%Y-%m')} in {elapsed_time:.2f} seconds.")
++        logger.info(f"Completed {completed_months}/{total_months} months. Estimated time remaining: {estimated_remaining_time / 60:.2f} minutes.")
+ 
+     total_time = time.time() - start_time
+     return f"Script completed in {total_time / 60:.2f} minutes."
+@@ -159,4 +162,4 @@ if __name__ == "__main__":
+         dataset_path="s3://spi-pamir-c7-sdsc/era5_data/central_asia.zarr/"
+     )
+ 
+-    print(result)
++    logger.info(result)
+diff --git a/TopoPyScale/log.py b/TopoPyScale/log.py
+new file mode 100644
+index 0000000..b005822
+--- /dev/null
++++ b/TopoPyScale/log.py
+@@ -0,0 +1,108 @@
++"""
++Messages of TopoPyScale, through the standard logging module (logger 'TopoPyScale', one child logger per module).
++
++By default messages are shown in the terminal (or the notebook) as they happen, as print() did, so that a run can be
++followed. Topoclass also writes them, with time stamps, to a log file in the outputs folder. Python warnings
++(warnings.warn) raised during a Topoclass run go to the same places.
++
++Usage:
++    import TopoPyScale
++    TopoPyScale.log.setup(verbose=False)                 # warnings and errors only
++    TopoPyScale.log.setup(verbose='debug', logfile='run.log')
++
++Config (Topoclass): project.verbose (True, False, or a level name) and project.log_file (True for
++outputs/logs/topopyscale_<date>.log, a path, or False).
++
++S. Filhol, J. Fiddes and contributors
++"""
++import logging
++import sys
++from pathlib import Path
++
++LOGGER = logging.getLogger('TopoPyScale')
++FILE_FORMAT = '%(asctime)s %(levelname)-7s %(name)s: %(message)s'
++
++
++class _Terminal(logging.StreamHandler):
++    """Handler writing to the current sys.stdout (also when it is redirected after the handler is created)."""
++
++    def __init__(self):
++        super().__init__(sys.stdout)
++
++    @property
++    def stream(self):
++        return sys.stdout
++
++    @stream.setter
++    def stream(self, value):
++        pass
++
++
++class _TerminalFormat(logging.Formatter):
++    """Messages as they are; warnings and errors prefixed by their level."""
++
++    def format(self, record):
++        message = super().format(record)
++        return message if record.levelno < logging.WARNING else f'{record.levelname}: {message}'
++
++
++def _level(verbose):
++    if isinstance(verbose, str):
++        level = logging.getLevelName(verbose.upper())
++        if not isinstance(level, int):
++            raise ValueError(f'verbose must be True, False or a logging level (debug, info, warning), not {verbose}')
++        return level
++    return logging.INFO if verbose else logging.WARNING
++
++
++def setup(verbose=True, logfile=None, capture_warnings=False):
++    """
++    Where the messages of TopoPyScale go. Called with the defaults when TopoPyScale is imported.
++
++    Args:
++        verbose (bool or str): True: progress messages in the terminal (level INFO); False: warnings and errors only;
++            or a level name ('debug', 'info', 'warning', 'error')
++        logfile (str or Path): also write the messages (from INFO, or DEBUG if verbose='debug') to this file,
++            appended, with time stamps. None: no file
++        capture_warnings (bool): route Python warnings (warnings.warn) to the same terminal and file
++
++    Returns:
++        Path: the log file, or None
++    """
++    level = _level(verbose)
++    for h in list(LOGGER.handlers):
++        LOGGER.removeHandler(h)
++        h.close()
++    terminal = _Terminal()
++    terminal.setLevel(level)
++    terminal.setFormatter(_TerminalFormat('%(message)s'))
++    handlers = [terminal]
++    if logfile:
++        logfile = Path(logfile)
++        logfile.parent.mkdir(parents=True, exist_ok=True)
++        f = logging.FileHandler(logfile)
++        f.setLevel(min(level, logging.INFO))
++        f.setFormatter(logging.Formatter(FILE_FORMAT))
++        handlers.append(f)
++    for h in handlers:
++        LOGGER.addHandler(h)
++    LOGGER.setLevel(min(h.level for h in handlers))
++    LOGGER.propagate = False
++
++    py_warnings = logging.getLogger('py.warnings')
++    for h in list(py_warnings.handlers):
++        if getattr(h, '_topopyscale', False):
++            py_warnings.removeHandler(h)
++    logging.captureWarnings(bool(capture_warnings))
++    py_warnings.propagate = True
++    if capture_warnings:
++        for h in handlers:
++            h._topopyscale = True
++            py_warnings.addHandler(h)
++        py_warnings.propagate = False
++    return logfile
++
++
++def get_logger(name):
++    """Logger of a module: TopoPyScale.<module>."""
++    return logging.getLogger(name if name.startswith('TopoPyScale') else f'TopoPyScale.{name}')
+diff --git a/TopoPyScale/meteo_util.py b/TopoPyScale/meteo_util.py
+index c96401c..03f398a 100644
+--- a/TopoPyScale/meteo_util.py
++++ b/TopoPyScale/meteo_util.py
+@@ -1,6 +1,5 @@
+ import numpy as np
+ from numpy.random import default_rng
+-import pdb
+ 
+ var_era_plevel = {
+     'temp': 't',
+diff --git a/TopoPyScale/sim_fsm.py b/TopoPyScale/sim_fsm.py
+index 174b5c6..ac1de81 100644
+--- a/TopoPyScale/sim_fsm.py
++++ b/TopoPyScale/sim_fsm.py
+@@ -23,6 +23,9 @@ from matplotlib.backends.backend_pdf import PdfPages
+ import datetime as dt
+ from TopoPyScale import topo_utils as tu
+ from TopoPyScale import topo_export as te
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ def infer_met_timestep(metfile, default=3600):
+     """
+@@ -43,7 +46,7 @@ def infer_met_timestep(metfile, default=3600):
+             raise ValueError
+         return float(tstep)
+     except Exception:
+-        print(f'WARNING: cannot infer the time step of {metfile}, assuming {default} s')
++        logger.warning(f'cannot infer the time step of {metfile}, assuming {default} s')
+         return float(default)
+ 
+ 
+@@ -122,7 +125,7 @@ def txt2ds(fname):
+     '''
+     df = read_pt_fsm(fname)
+     point_id = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
+-    print(f'---> Reading FSM data for point_id = {point_id}')
++    logger.info(f'---> Reading FSM data for point_id = {point_id}')
+ 
+     ds = xr.Dataset({
+         "albedo": (['time'], df.albedo.values),
+@@ -170,7 +173,7 @@ def to_netcdf(fname_fsm_sim, complevel=9):
+                 'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+     fout = f"{fname_fsm_sim[:-4]}.nc"
+     te.to_netcdf(ds, fout, complevel=complevel)
+-    print(f"File {fout} saved")
++    logger.info(f"File {fout} saved")
+ 
+ 
+ def to_netcdf_parallel(fsm_sims='./fsm_sims/sim_FSM*.txt',
+@@ -189,22 +192,22 @@ def to_netcdf_parallel(fsm_sims='./fsm_sims/sim_FSM*.txt',
+     Returns:
+         NULL (FSM simulation file written to disk)
+     '''
+-    print('---> Run FSM simulation in parallel')
++    logger.info('---> Run FSM simulation in parallel')
+     # 1. create all nlsit_files
+     if isinstance(fsm_sims, str):
+         flist = glob.glob(fsm_sims)
+     elif isinstance(fsm_sims, list):
+         flist = fsm_sims
+     else:
+-        print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
++        logger.error('fsm_input must either be a list of file path or a string of file pattern')
+         return
+ 
+     fun_param = zip(flist, [complevel]*len(flist))
+     tu.multicore_pooling(to_netcdf, fun_param, n_core)
+-    print('---> All FSM simulations stored as netcdf')
++    logger.info('---> All FSM simulations stored as netcdf')
+ 
+     if delete_txt_files:
+-        print('---> Removing FSM simulation .txt file')
++        logger.info('---> Removing FSM simulation .txt file')
+         for file in flist:
+             os.remove(file)
+ 
+@@ -266,7 +269,7 @@ def _run_fsm(fsm_exec, nlstfile):
+         NULL (FSM simulation file written to disk)
+     '''
+     os.system(fsm_exec + ' < ' + nlstfile)
+-    print('Simulation done: ' + nlstfile)
++    logger.info('Simulation done: ' + nlstfile)
+ 
+ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
+                      fsm_nconfig=31,
+@@ -292,36 +295,36 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
+     Returns:
+         NULL (FSM simulation file written to disk)
+     '''
+-    print('---> Run FSM simulation in parallel')
++    logger.info('---> Run FSM simulation in parallel')
+     # 1. create all nlsit_files
+     if isinstance(fsm_input, str):
+         met_flist = sorted(glob.glob(fsm_input))
+     elif isinstance(fsm_input, list):
+         met_flist = fsm_input
+     else:
+-        print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
++        logger.error('fsm_input must either be a list of file path or a string of file pattern')
+         return
+     if not met_flist:
+-        print(f'ERROR: no FSM forcing file found for {fsm_input}')
++        logger.error(f'no FSM forcing file found for {fsm_input}')
+         return
+     if fsm_dt is None:
+         fsm_dt = infer_met_timestep(met_flist[0])
+-    print(f'---> FSM time step {fsm_dt:.0f} s, outputs averaged over {fsm_nave} time steps')
++    logger.info(f'---> FSM time step {fsm_dt:.0f} s, outputs averaged over {fsm_nave} time steps')
+ 
+     fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist), [fsm_dt]*len(met_flist))
+     tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
+-    print('nlst files ready')
++    logger.info('nlst files ready')
+ 
+     # 2. execute FSM, n_core executables at a time. Threads are enough (each one waits for its FSM process) and,
+     # unlike a process pool, do not re-import the main script nor fork a process holding locks (e.g. in Jupyter)
+     nlst_flist = sorted(glob.glob('fsm_sims/nlst_*.txt'))
+     fun_param = zip([fsm_exec]*len(nlst_flist), nlst_flist)
+     tu.multithread_pooling(_run_fsm, fun_param, n_core)
+-    print('---> FSM simulations finished.')
++    logger.info('---> FSM simulations finished.')
+ 
+     # 3. remove nlist files
+     if delete_nlst_files:
+-        print('---> Removing FSM simulation config file')
++        logger.info('---> Removing FSM simulation config file')
+         for file in nlst_flist:
+             os.remove(file)
+ 
+@@ -341,9 +344,9 @@ def fsm_sim(nlstfile, fsm_exec, delete_nlst_files=True):
+ 
+     os.system(fsm_exec + ' < ' + nlstfile)
+     if delete_nlst_files:
+-        print('---> Removing FSM simulation config file')
++        logger.info('---> Removing FSM simulation config file')
+         os.remove(nlstfile)
+-    print('Simulation done: ' + nlstfile)
++    logger.info('Simulation done: ' + nlstfile)
+ 
+ 
+ 
+@@ -375,7 +378,7 @@ def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
+     a = glob.glob(fsm_path+"/sim_*")
+ 
+     if len(a) == 0:
+-        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")
++        raise FileNotFoundError(f'{fsm_path} does not exist or holds no sim_* file')
+ 
+     def natural_sort(l):
+         def convert(text): return int(text) if text.isdigit() else text.lower()
+@@ -392,7 +395,7 @@ def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
+     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
+         ncol = int(fsm_columns.get(var))
+     else:
+-        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
++        logger.info("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
+ 
+     file_list = natural_sort(a)
+ 
+@@ -426,7 +429,7 @@ def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
+     df.insert(0, 'Datetime', mydates)
+     df = df.set_index("Datetime")
+ 
+-    print(f'Variable {var} extracted')
++    logger.info(f'Variable {var} extracted')
+     return df
+     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
+ 
+@@ -471,7 +474,7 @@ def agg_by_var_fsm_ensemble( var='snd', W=1):
+     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
+         ncol = int(fsm_columns.get(var))
+     else:
+-        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
++        logger.info("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
+ 
+ 
+     def natural_sort(l):
+@@ -517,7 +520,7 @@ def agg_by_var_fsm_ensemble( var='snd', W=1):
+     df.insert(0, 'Datetime', mydates)
+     df = df.set_index("Datetime")
+ 
+-    print(f'Variable {var} extracted')
++    logger.info(f'Variable {var} extracted')
+     return df
+     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
+ 
+@@ -638,6 +641,23 @@ def topo_map_headless(df_mean,  mydtype, outname="outputmap.tif"):
+         dst.write(array.astype(profile["dtype"] ))
+ 
+ 
++def _landform_file(new_res=None, input_file="outputs/landform.tif", output_file="outputs/landform_newres.tif"):
++    """Landform raster at its resolution, or resampled (nearest) to new_res and written to output_file."""
++    if new_res is None:
++        return input_file
++    with rasterio.open(input_file) as src:
++        new_width = int(src.width * src.res[0] / new_res)
++        new_height = int(src.height * src.res[1] / new_res)
++        data = src.read(out_shape=(src.count, new_height, new_width), resampling=Resampling.nearest)
++        profile = src.profile.copy()
++        profile.update({'height': new_height, 'width': new_width,
++                        'transform': src.transform * src.transform.scale(src.width / new_width,
++                                                                         src.height / new_height)})
++    with rasterio.open(output_file, 'w', **profile) as dst:
++        dst.write(data)
++    return output_file
++
++
+ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
+     """
+     Function to map forcing to toposub clusters generating gridded forcings
+@@ -669,41 +689,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
+     for i in range(0, nclust):
+         lookup2D[:, i] = ds_var[i, :]
+     
+-    inputFile = "outputs/landform.tif"
+-    outputFile = "outputs/landform_newres.tif"
+-    if new_res is not None:
+-        xres = new_res
+-        yres = new_res
+-
+-        with rasterio.open(inputFile) as dataset:
+-            # resample data to target shape
+-            data = dataset.read(
+-                out_shape=(
+-                    dataset.count,
+-                    yres,
+-                    xres,
+-                    int(dataset.width * upscale_factor)
+-                ),
+-                resampling=Resampling.nearest
+-            )
+-
+-            # scale image transform
+-            transform = dataset.transform * dataset.transform.scale(
+-                (dataset.width / data.shape[-1]),
+-                (dataset.height / data.shape[-2])
+-            )
+-            with rasterio.open(outputFile, 'w', 
+-                                driver=GTiff, 
+-                                height=data.shape[-2],
+-                                width=data.shape[-1],
+-                                count=1,
+-                                dtype=data.dtype,
+-                                crs=dataset.crs,
+-                                transform=transform) as rt:
+-                rt.write(data,1)
+-
+-    else:
+-        landformfile = "outputs/landform.tif"
++    landformfile = _landform_file(new_res)
+ 
+ 
+     with rasterio.open(landformfile) as src:
+@@ -733,7 +719,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
+     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
+     try:
+         grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , n_decimals)# transpose to Time x Y x X
+-    except: # the case where we gen annual grids (no time dimension)
++    except ValueError:  # the case where we gen annual grids (no time dimension)
+         grid_stack = np.round(array2.squeeze(), n_decimals)  # transpose to Time x Y x X
+     return grid_stack, lats, lons
+ 
+@@ -782,48 +768,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
+     for i in range(0, nclust):
+         lookup2D[:, i] = ds_var[i]
+ 
+-    inputFile = "outputs/landform.tif"
+-    outputFile = "outputs/landform_newres.tif"
+-
+-    # check if new_res is declared - if so resample landform and therefore output
+-    if new_res is not None:
+-        # Use rasterio instead of GDAL for resampling
+-        with rasterio.open(inputFile) as src:
+-            # Calculate the scaling factor
+-            scale_factor_x = src.res[0] / new_res
+-            scale_factor_y = src.res[1] / new_res
+-            
+-            # Calculate new dimensions
+-            new_width = int(src.width * scale_factor_x)
+-            new_height = int(src.height * scale_factor_y)
+-            
+-            # Read and resample the data
+-            data = src.read(
+-                out_shape=(src.count, new_height, new_width),
+-                resampling=Resampling.nearest
+-            )
+-            
+-            # Calculate new transform
+-            new_transform = src.transform * src.transform.scale(
+-                (src.width / new_width),
+-                (src.height / new_height)
+-            )
+-            
+-            # Update profile for output
+-            profile = src.profile.copy()
+-            profile.update({
+-                'height': new_height,
+-                'width': new_width,
+-                'transform': new_transform
+-            })
+-        
+-        # Write resampled file
+-        with rasterio.open(outputFile, 'w', **profile) as dst:
+-            dst.write(data)
+-        
+-        landformfile = "outputs/landform_newres.tif"
+-    else:
+-        landformfile = "outputs/landform.tif"
++    landformfile = _landform_file(new_res)
+ 
+     with rasterio.open(landformfile) as src:
+ 
+@@ -852,7 +797,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
+     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
+     try:
+         grid_stack = np.round(array2.squeeze().transpose(2, 0, 1), n_decimals)  # transpose to Time x Y x X
+-    except:  # the case where we gen annual grids (no time dimension)
++    except ValueError:  # the case where we gen annual grids (no time dimension)
+         grid_stack = np.round(array2.squeeze(), n_decimals)  # transpose to Time x Y x X
+     return grid_stack, lats, lons
+ 
+@@ -891,7 +836,7 @@ def topo_map_sim_memsafe(ds_var, n_decimals=2, dtype='float32', new_res=None):
+ 
+     # Memory-efficient loop over clusters
+     for clust_id in range(N):
+-        print(clust_id)
++        logger.info(clust_id)
+         mask = (array == clust_id)  # 2D boolean
+         if not np.any(mask):
+             continue  # skip if cluster not in landform
+@@ -937,7 +882,7 @@ def write_ncdf(wdir, grid_stack, var, units,epsg,res,  mytime, lats, lons, mydty
+ 
+              },
+          )
+-    except:
++    except ValueError:  # annual grids, without the time dimension
+         ds = xr.Dataset(
+             {var: (("northing", "easting"), grid_stack)},
+             coords={
+@@ -1149,7 +1094,7 @@ def concat_fsm(mydir):
+ 
+     # find all the differnt files we have (1 per cluster)
+     file_paths = glob.glob(mydir +"fsm_clim/sim_2000/fsm_sims/*")
+-    nclust = len(files)
++    nclust = len(file_paths)
+ 
+ 
+     def get_file_names(file_paths):
+@@ -1208,17 +1153,17 @@ def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
+         else:
+             raise ValueError("No suitable data variable found in NetCDF file")
+     
+-    print(f"Extracting variable: {variable}")
+-    print(f"Available times: {ds.Time.values[0]} to {ds.Time.values[-1]}")
++    logger.info(f"Extracting variable: {variable}")
++    logger.info(f"Available times: {ds.Time.values[0]} to {ds.Time.values[-1]}")
+     
+     # Select the specific date
+     try:
+         data_slice = ds[variable].sel(Time=target_date, method='nearest')
+         actual_date = ds.Time.sel(Time=target_date, method='nearest').values
+-        print(f"Selected date: {actual_date}")
++        logger.info(f"Selected date: {actual_date}")
+     except KeyError:
+-        print(f"Date {target_date} not found. Available dates:")
+-        print(ds.Time.values)
++        logger.info(f"Date {target_date} not found. Available dates:")
++        logger.info(ds.Time.values)
+         return
+     
+     # Get spatial coordinates
+@@ -1258,7 +1203,7 @@ def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
+     elif hasattr(ds, 'crs'):
+         crs = ds.crs
+     else:
+-        print("Warning: No CRS information found, assuming EPSG:4326")
++        logger.warning("No CRS information found, assuming EPSG:4326")
+         crs = "EPSG:4326"
+     
+     # Determine data type
+@@ -1292,8 +1237,8 @@ def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
+             dst.update_tags(long_name=ds[variable].long_name)
+         dst.update_tags(date=str(actual_date), source_file=netcdf_file)
+     
+-    print(f"GeoTIFF written to: {output_tiff}")
+-    print(f"Data range: {data.min():.2f} to {data.max():.2f}")
++    logger.info(f"GeoTIFF written to: {output_tiff}")
++    logger.info(f"Data range: {data.min():.2f} to {data.max():.2f}")
+     
+     ds.close()
+ 
+@@ -1327,8 +1272,8 @@ def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=No
+         else:
+             raise ValueError("No suitable data variable found in NetCDF file")
+     
+-    print(f"Extracting variable: {variable}")
+-    print(f"Target location: lon={target_lon}, lat={target_lat}")
++    logger.info(f"Extracting variable: {variable}")
++    logger.info(f"Target location: lon={target_lon}, lat={target_lat}")
+     
+     # Get spatial coordinates
+     if 'northing' in ds.coords and 'easting' in ds.coords:
+@@ -1351,16 +1296,16 @@ def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=No
+         actual_lon = ds[lon_coord].sel({lon_coord: target_lon}, method='nearest').values
+         actual_lat = ds[lat_coord].sel({lat_coord: target_lat}, method='nearest').values
+         
+-        print(f"Actual location: lon={actual_lon:.6f}, lat={actual_lat:.6f}")
++        logger.info(f"Actual location: lon={actual_lon:.6f}, lat={actual_lat:.6f}")
+         
+         # Calculate distance from target
+         distance = np.sqrt((actual_lon - target_lon)**2 + (actual_lat - target_lat)**2)
+-        print(f"Distance from target: {distance:.6f} degrees")
++        logger.info(f"Distance from target: {distance:.6f} degrees")
+         
+     except KeyError as e:
+-        print(f"Error selecting coordinates: {e}")
+-        print(f"Available {lon_coord} range: {ds[lon_coord].min().values:.6f} to {ds[lon_coord].max().values:.6f}")
+-        print(f"Available {lat_coord} range: {ds[lat_coord].min().values:.6f} to {ds[lat_coord].max().values:.6f}")
++        logger.error(f"Error selecting coordinates: {e}")
++        logger.info(f"Available {lon_coord} range: {ds[lon_coord].min().values:.6f} to {ds[lon_coord].max().values:.6f}")
++        logger.info(f"Available {lat_coord} range: {ds[lat_coord].min().values:.6f} to {ds[lat_coord].max().values:.6f}")
+         ds.close()
+         return None
+     
+@@ -1392,14 +1337,14 @@ def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=No
+     if hasattr(ds[variable], 'long_name'):
+         df.attrs['long_name'] = ds[variable].long_name
+     
+-    print(f"Extracted {len(df)} time steps")
+-    print(f"Date range: {df.index[0]} to {df.index[-1]}")
+-    print(f"Data range: {df[variable].min():.2f} to {df[variable].max():.2f}")
++    logger.info(f"Extracted {len(df)} time steps")
++    logger.info(f"Date range: {df.index[0]} to {df.index[-1]}")
++    logger.info(f"Data range: {df[variable].min():.2f} to {df[variable].max():.2f}")
+     
+     # Save to CSV if requested
+     if output_csv:
+         df.to_csv(output_csv)
+-        print(f"Time series saved to: {output_csv}")
++        logger.info(f"Time series saved to: {output_csv}")
+     
+     ds.close()
+     return df
+diff --git a/TopoPyScale/sim_fsm2oshd.py b/TopoPyScale/sim_fsm2oshd.py
+index bc37122..34d4ff3 100644
+--- a/TopoPyScale/sim_fsm2oshd.py
++++ b/TopoPyScale/sim_fsm2oshd.py
+@@ -24,6 +24,9 @@ import xarray as xr
+ 
+ from TopoPyScale import topo_export as te
+ from TopoPyScale import topo_utils as tu
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ N_BITS = 15  # packing precision of FSM netcdf outputs (int16): resolution = range / 32767
+ FSM_OUTPUT_COLUMNS = ['year', 'month', 'day', 'hour', 'sd', 'scf', 'swe', 'tsurf',
+@@ -91,7 +94,7 @@ def _run_fsm2oshd(fsm_exec, nam_file, keep_txt=False):
+     if proc.returncode != 0 or not os.path.isfile(fout):
+         msg = (proc.stderr or proc.stdout or '').strip()[-500:]
+         return str(nam_file), f'exit code {proc.returncode}, output {fout} {"found" if os.path.isfile(fout) else "missing"}: {msg}'
+-    print('Simulation done: ' + str(nam_file))
++    logger.info('Simulation done: ' + str(nam_file))
+     to_netcdf(fout)
+     if not keep_txt:
+         os.remove(fout)
+@@ -124,7 +127,7 @@ def fsm2oshd_sim_parallel(simulation_path='./fsm_sim',
+     if shutil.which(exe) is None and not os.path.isfile(exe):
+         raise FileNotFoundError(f'FSM executable {exe} not found')
+ 
+-    print('---> Run FSM simulation in parallel')
++    logger.info('---> Run FSM simulation in parallel')
+     p = Path(simulation_path)
+     patterns = [fsm_forest_nam] + ([fsm_open_nam] if fsm_open_nam is not None else [])
+     failed, nlst_all = [], []
+@@ -137,14 +140,14 @@ def fsm2oshd_sim_parallel(simulation_path='./fsm_sim',
+         results = tu.multicore_pooling(_run_fsm2oshd, zip([fsm_exec] * len(nlst), nlst, [keep_txt] * len(nlst)),
+                                        n_cores)
+         failed += [(nam, err) for nam, err in (results or []) if err is not None]
+-        print(f'---> FSM2oshd simulations {pattern} finished.')
++        logger.info(f'---> FSM2oshd simulations {pattern} finished.')
+ 
+     if failed:
+         warnings.warn(f'{len(failed)} FSM2oshd simulations failed:\n' +
+                       '\n'.join(f'  {nam}: {err}' for nam, err in failed))
+ 
+     if delete_nlst_files:
+-        print('---> Removing FSM simulation config files')
++        logger.info('---> Removing FSM simulation config files')
+         for file in nlst_all:
+             if file not in [nam for nam, _ in failed]:
+                 os.remove(file)
+@@ -162,7 +165,7 @@ def txt2ds(fname):
+     '''
+     df = read_pt_fsm2oshd(fname)
+     point_ind = _point_index(fname)
+-    print(f'---> Reading FSM data for point_ind = {point_ind}')
++    logger.info(f'---> Reading FSM data for point_ind = {point_ind}')
+     ds = xr.Dataset({var: (['time'], df[var].values) for var in OUTPUT_ATTRS},
+                     coords={
+                         "point_ind": point_ind,
+@@ -180,7 +183,7 @@ def _rename_output(fname, fout='fsm_outputs', n_digits=3, remove_file=False, com
+     te.to_netcdf(ds, fname_out, complevel=complevel, n_bits=N_BITS)
+     if remove_file and os.path.abspath(fname) != os.path.abspath(fname_out):
+         os.remove(fname)
+-    print(f'--> File {fname_out} saved')
++    logger.info(f'--> File {fname_out} saved')
+     return fname_out
+ 
+ 
+@@ -203,7 +206,7 @@ def output_to_ds(fname_pattern, complevel=9, remove_file=False, fout='fsm_output
+     n = len(flist)
+     out = tu.multicore_pooling(_rename_output, zip(flist, [fout] * n, [n_digits] * n, [remove_file] * n,
+                                                    [complevel] * n), n_cores)
+-    print('---> All fsm outputs stored as netcdf')
++    logger.info('---> All fsm outputs stored as netcdf')
+     return out
+ 
+ 
+@@ -232,7 +235,7 @@ def to_netcdf(fname_fsm_sim, complevel=9):
+                 'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+     fout = f"{str(fname_fsm_sim)[:-4]}.nc"
+     te.to_netcdf(ds, fout, complevel=complevel, n_bits=N_BITS)
+-    print(f"File {fout} saved")
++    logger.info(f"File {fout} saved")
+     return fout
+ 
+ 
+@@ -274,7 +277,7 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckl',
+     if remove_forest_open_file:
+         os.remove(fname_open)
+         os.remove(fname_forest)
+-    print(f'--> File {fname_out} saved')
++    logger.info(f'--> File {fname_out} saved')
+     return fname_out
+ 
+ 
+@@ -308,7 +311,7 @@ def aggregate_all_open_forest(fname_df_forest='fsm_sim/df_forest.pckl',
+                                    [n_digits] * n,
+                                    [forest_threshold] * n),
+                                n_cores)
+-    print('---> All forest and open outputs combined')
++    logger.info('---> All forest and open outputs combined')
+     return out
+ 
+ 
+diff --git a/TopoPyScale/solar_geom.py b/TopoPyScale/solar_geom.py
+index ac9f4d2..9a42cd0 100644
+--- a/TopoPyScale/solar_geom.py
++++ b/TopoPyScale/solar_geom.py
+@@ -14,6 +14,9 @@ import pandas as pd
+ import pvlib
+ import xarray as xr
+ from pyproj import Transformer
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ S0_DEFAULT = 1361.  # nominal total solar irradiance at 1 AU [W m-2] (IAU 2015 Resolution B3)
+ 
+@@ -177,7 +180,7 @@ def get_solar_geom(df_position,
+     Returns:
+         dataset: zenith, azimuth, elevation [rad], mu0, SWtoa [W m-2], sunset (point_name, time)
+     """
+-    print('\n---> Computing solar geometry')
++    logger.info('\n---> Computing solar geometry')
+     df = df_position.copy()
+     if {'longitude', 'latitude'} <= set(df.columns):
+         lon, lat = df.longitude.values, df.latitude.values
+@@ -254,5 +257,5 @@ def get_solar_geom(df_position,
+     encoding = {v: {'zlib': True, 'complevel': 4, 'dtype': 'float32'}
+                 for v in ['zenith', 'azimuth', 'elevation', 'mu0', 'SWtoa']}
+     ds.to_netcdf(fout, engine='h5netcdf', encoding=encoding)
+-    print(f'---> File {fout} saved')
++    logger.info(f'---> File {fout} saved')
+     return ds
+diff --git a/TopoPyScale/surface_effect.py b/TopoPyScale/surface_effect.py
+index 1a20f83..0842364 100644
+--- a/TopoPyScale/surface_effect.py
++++ b/TopoPyScale/surface_effect.py
+@@ -32,6 +32,9 @@ import pandas as pd
+ import xarray as xr
+ import yaml
+ from scipy import ndimage
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ METHODS = ('none', 'redcapp', 'dreamit')
+ DEFAULTS = {
+@@ -266,11 +269,11 @@ def setup(df, cfg, dem_file, epsg):
+                f'(coverage down to {idx.window_coverage.min():.0%}). Provide toposcale.surface_effect.context_dem')
+         if not cfg.get('allow_partial_window'):
+             raise ValueError(msg + ' or set allow_partial_window: true')
+-        print('WARNING: ' + msg)
++        logger.warning(msg)
+     for c in INDEX_COLUMNS:
+         df[c] = idx[c].values
+     df['w_surf'] = weight(method, df, coef)
+-    print(f'---> Surface effect {method} ({coef["source"]}): w from {df.w_surf.min():.2f} to {df.w_surf.max():.2f}')
++    logger.info(f'---> Surface effect {method} ({coef["source"]}): w from {df.w_surf.min():.2f} to {df.w_surf.max():.2f}')
+     return {'weight': df['w_surf'].values.astype(float),
+             'beta_coef': {k: coef[k] for k in ['beta_amp', 't_star', 'beta_bias']} if method == 'dreamit' else None,
+             'dewpoint': cfg.get('dewpoint', True) is not False,
+diff --git a/TopoPyScale/topo_compare.py b/TopoPyScale/topo_compare.py
+index a3c2706..d7df205 100644
+--- a/TopoPyScale/topo_compare.py
++++ b/TopoPyScale/topo_compare.py
+@@ -4,6 +4,9 @@ from scipy import stats
+ import matplotlib.pyplot as plt
+ import numpy as np
+ import pandas as pd
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ def correct_trend(df,
+                   reference_col='obs',
+@@ -22,7 +25,7 @@ def correct_trend(df,
+         dataframe (optional): corrected values
+ 
+     """
+-    print('---> Estimating linear detrending of target data')
++    logger.info('---> Estimating linear detrending of target data')
+     reg = stats.linregress(df[target_col].values, df[reference_col].values)
+ 
+     # Compute metrics
+@@ -37,8 +40,8 @@ def correct_trend(df,
+                                                                                      np.round(reg.pvalue,2),
+                                                                                      RMSE,
+                                                                                      bias)
+-    print('=> Results <=')
+-    print(tbox)
++    logger.info('=> Results <=')
++    logger.info(tbox)
+     metrics = {'reg': reg, 'RMSE': RMSE, 'bias': bias, 'tbox': tbox}
+ 
+     if apply_correction:
+diff --git a/TopoPyScale/topo_export.py b/TopoPyScale/topo_export.py
+index 6a401f0..6d73c42 100644
+--- a/TopoPyScale/topo_export.py
++++ b/TopoPyScale/topo_export.py
+@@ -8,7 +8,6 @@ TODO;
+ """
+ import csv
+ import datetime as dt
+-import pdb
+ import sys, os
+ 
+ import numpy as np
+@@ -21,6 +20,9 @@ from TopoPyScale import topo_utils as tu
+ from TopoPyScale import topo_param as tp
+ 
+ from pathlib import Path
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ def _tstep_seconds(ds):
+@@ -109,7 +111,7 @@ def export_points(ds, variables, write, fnames, info=None, extra=None, options=N
+     written = 0
+     for k in done:
+         written += k
+-        print(f'---> {written}/{n} {label} written')
++        logger.info(f'---> {written}/{n} {label} written')
+     return fnames
+ 
+ 
+@@ -156,14 +158,16 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9, n_bits=10):
+             encod_dict.update({var: {
+                 'dtype': ds[var].dtype}})
+         else:
++            # packed values span +-2**(n_bits-1): -32768 is free to mark missing values
+             encod_dict.update({var: {"zlib": True,
+                                      "complevel": complevel,
+                                      'dtype': 'int16',
+                                      'scale_factor': scale_factor,
+-                                     'add_offset': add_offset}})
++                                     'add_offset': add_offset,
++                                     '_FillValue': np.int16(-32768)}})
+     ds[variables].to_netcdf(fname, encoding=encod_dict, engine='h5netcdf')
+ 
+-    print(f'---> File {fname} saved')
++    logger.info(f'---> File {fname} saved')
+ 
+ 
+ # MuSA forcing variables (TopoPyScale names) in the units MuSA expects, so that MuSA's
+@@ -379,7 +383,7 @@ def to_musa(ds,
+     meta = {'layout': layout, 'dims': dims, 'shape': idx.shape, 'n_cells': int((idx >= 0).sum()),
+             'n_files': len(fnames), 'date_ini': times[0].strftime('%Y-%m-%d %H:%M'),
+             'date_end': times[-1].strftime('%Y-%m-%d %H:%M'), 'dt': int(tstep)}
+-    print(f'---> MuSA forcing saved in {path}: {len(fnames)} daily files, grid {idx.shape} {dims}, '
++    logger.info(f'---> MuSA forcing saved in {path}: {len(fnames)} daily files, grid {idx.shape} {dims}, '
+           f'{meta["n_cells"]} cells to simulate, {meta["date_ini"]} to {meta["date_end"]}, dt = {meta["dt"]} s')
+     return meta
+ 
+@@ -467,8 +471,7 @@ def to_cryogrid(ds,
+     ver_dict = tu.get_versionning()
+     if label_map:
+         if da_label is None:
+-            print('ERROR: no cluster label (da_label) provided')
+-            sys.exit()
++            raise ValueError('label_map=True needs the cluster labels (da_label)')
+         else:
+             da_label.to_netcdf(str(Path(path) / 'cluster_labels_map.nc'))
+ 
+@@ -515,10 +518,11 @@ def to_fsm2(ds_down,
+         epsg_ds_param (int): epsg code of ds_parma: example: 2056
+ 
+     """
++    raise NotImplementedError('to_fsm2() is not finished: use to_fsm2oshd() for FSM2 forcing files')
+ 
+-    print(" \n##### WARNING ######\n")
+-    print(" Method is not fully implemented")
+-    print(" \n#####         ######\n")
++    logger.info(" \n##### WARNING ######\n")
++    logger.info(" Method is not fully implemented")
++    logger.info(" \n#####         ######\n")
+ 
+ 
+     def write_fsm2_compilation_nc(file_compil_nc='compil_nc.sh',
+@@ -598,9 +602,9 @@ cd ..
+                                 scaler={ 'hcan':100, 'lai':100, 'svf_for':1}):
+         # Function to write namelist file (.nam) for each point where to run FSM.
+ 
+-        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'
++        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
+         file_met = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
+-        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.nc'
++        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.nc'  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
+ 
+         # populate namelist parameters
+         max_sd = namelist_param.get('max_sd')
+@@ -679,7 +683,7 @@ cd ..
+   zT = {z_tair}                 ! Temperature and humidity measurement height
+   zU = {z_wind}                 ! Wind speed measurement height
+   lat = {latitude}
+-  noon = {solar_noon}                     ! Time of solar noon (for SWPART=1)
++  noon = {solar_noon}                     ! Time of solar noon (for SWPART=1)  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
+ /
+ &veg
+   ab0 = 0.2
+@@ -692,7 +696,7 @@ cd ..
+   Tprf = {soil_temp_init}
+ /
+ &outputs
+-  runid = {path_to_store}
++  runid = {path_to_store}  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
+   dump_file = {file_output}
+ /
+   """
+@@ -700,7 +704,7 @@ cd ..
+             with open(file_namelist, "w") as nlst_file:
+                 nlst_file.write(nlst)
+         else:
+-            print(f'ERROR: met_file: {file_met} not found')
++            logger.error(f'met_file: {file_met} not found')
+             return
+ 
+ 
+@@ -751,7 +755,7 @@ cd ..
+         df['p'] = np.round(ds_pt.p.values,2)
+ 
+         df.to_csv(foutput, index=False, header=False, sep=' ')
+-        print(f'---> Met file {foutput} saved')
++        logger.info(f'---> Met file {foutput} saved')
+ 
+ 
+     # 0. Add print statements about the need of data currently computed extrenally to TopoPyScale.
+@@ -837,7 +841,7 @@ cd ..
+     # rename variable columns to match namelist functino varnames
+     new_name = {'LAI5':'lai', 'svf_for':'vfhp', 'CH5':'hcan'}
+     df_forest = df_forest.rename(columns=new_name)
+-    print(df_forest)
++    logger.info(df_forest)
+  
+     # ----- Loop through all points-------
+     # NOTE: eventually this for loop could be parallelized to several cores -----
+@@ -873,7 +877,7 @@ cd ..
+ 
+         if cluster_method:
+             row_open = df_forest.iloc[pt_ind]
+-            write_fsm2oshd_namelist(row_open,
++            write_fsm2oshd_namelist(row_open,  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
+                                     pt_ind=pt_ind,
+                                     n_digits=n_digits,
+                                     fname_format=p/fname_format,
+@@ -1096,7 +1100,7 @@ def to_fsm2oshd(mp,
+             with open(file_namelist, "w") as nlst_file:
+                 nlst_file.write(nlst)
+         else:
+-            print(f'ERROR: met_file: {file_met} not found')
++            logger.error(f'met_file: {file_met} not found')
+             return
+ 
+ 
+@@ -1165,12 +1169,12 @@ def to_fsm2oshd(mp,
+     fnames = [str(p / fname_format) + '_met_' + str(i).zfill(n_digits) + '.txt' for i in range(n_pts)]
+     tvt, extra = [None] * n_pts, None
+     if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
+-        print('Warning: tvt is constant')
++        logger.warning('tvt is constant')
+         tvt = [ds_tvt] * n_pts
+     elif type(ds_tvt) in [str]:
+         if ds_tvt != 'svf_for':
+             raise ValueError(f"ds_tvt must be a number, 'svf_for' or a dataset with for_tau, not {ds_tvt}")
+-        print('Warning: tvt is constant')
++        logger.warning('tvt is constant')
+         tvt = [df_forest.vfhp.iloc[i] for i in range(n_pts)]
+     else:
+         extra = ds_tvt
+@@ -1663,7 +1667,7 @@ def to_surfex(ds,
+                                'SCA_SWdown': {'dtype': 'float64'},
+                                'ZREF': {'dtype': 'float64'},
+                                'UREF': {'dtype': 'float64'}})
+-        print('---> File {} saved'.format(foutput))
++        logger.info('---> File {} saved'.format(foutput))
+         # clear memory
+         fo = None
+ 
+diff --git a/TopoPyScale/topo_obs.py b/TopoPyScale/topo_obs.py
+index 95533cf..f9bf233 100644
+--- a/TopoPyScale/topo_obs.py
++++ b/TopoPyScale/topo_obs.py
+@@ -7,8 +7,9 @@ import requests, os, glob
+ import pandas as pd
+ import numpy as np
+ import xarray as xr
+-import warnings
+-warnings.filterwarnings("ignore")
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ 
+@@ -37,8 +38,8 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
+     
+     df_out = pd.DataFrame()
+     for source in sources:
+-        print('.............................................')
+-        print('---> Retreiving data for {}'.format(source))
++        logger.info('.............................................')
++        logger.info('---> Retreiving data for {}'.format(source))
+         for var in voi:
+             parameters = {
+                 'sources': source,
+@@ -52,7 +53,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
+             # Check if the request worked, print out any errors
+             if r.status_code == 200:
+                 data = json['data']
+-                print('-> got VOI: {}'.format(var))
++                logger.info('-> got VOI: {}'.format(var))
+                 df = pd.DataFrame()
+                 for i in range(len(data)):
+                     row = pd.DataFrame(data[i]['observations']) # [:1] # raw data = [:1]; corrected = [1:]
+@@ -66,8 +67,8 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
+                 df_out = df_out.append(df)
+             else:
+                 raise ValueError('..... Error with variable {}! Returned status code {}'.format(var, r.status_code))
+-                print('..... Reason: %s' % json['error']['reason'])
+-                print('---> {} for {} skipped'.format(var, source))
++                logger.info('..... Reason: %s' % json['error']['reason'])
++                logger.info('---> {} for {} skipped'.format(var, source))
+     
+     return df_out
+ 
+@@ -120,11 +121,9 @@ def fetch_WMO_insitu_observations(years,
+     import zipfile
+ 
+     try:
+-        if not os.path.isdir(target_path):
+-            os.makedirs(target_path)
+-    except:
+-        raise ValueError(f'ERROR: path "{target_path}" does not exist')
+-        return False
++        os.makedirs(target_path, exist_ok=True)
++    except OSError as e:
++        raise ValueError(f'cannot create the folder {target_path}: {e}') from e
+ 
+     if product == 'sub_daily':
+         var_avail = ['air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
+@@ -177,17 +176,17 @@ def fetch_WMO_insitu_observations(years,
+             'format': 'zip',
+         },
+         target_path + os.sep + 'download.zip')
+-    print('---> download complete')
++    logger.info('---> download complete')
+ 
+     try:
+         with zipfile.ZipFile(target_path + os.sep + 'download.zip') as z:
+             z.extractall(path=target_path)
+-            print('---> Observation extracted')
++            logger.info('---> Observation extracted')
+             os.remove(target_path + os.sep + 'download.zip')
+-            print(f'\t Stored in file {target_path + os.sep + "download.zip2"}')
++            logger.info(f'\t Stored in file {target_path + os.sep + "download.zip2"}')
+             return
+-    except:
+-        raise ValueError(f'ERROR: Invalid target path\n\t target path used: {target_path}')
++    except OSError as e:
++        raise ValueError(f'Invalid target path {target_path}: {e}') from e
+ 
+ 
+ def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/surf*subset_csv*.csv', path='./inputs/observations'):
+@@ -241,7 +240,7 @@ def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/
+         stn_f = stn.replace(' ', '_')
+         foutput = f'{stn_f}_{dd.time.min().strftime("%Y%m%d")}_{dd.time.max().strftime("%Y%m%d")}.nc'
+         ds.to_netcdf(path + os.sep + foutput)
+-        print(f'---> Observation data for station {stn} parsed into file \n\t {foutput}')
++        logger.info(f'---> Observation data for station {stn} parsed into file \n\t {foutput}')
+         dd = None
+         de = None
+         ds = None
+@@ -271,6 +270,6 @@ if __name__ == "__main__":
+ 
+ 	dates = ['2018-01-01', '2019-01-01', '2020-01-01', '2021-01-01', '2021-08-31']
+ 	for i, start in enumerate(dates[:-1]):
+-	    print('---> Downloading year {} {}'.format(start, dates[i+1]))
++	    logger.info('---> Downloading year {} {}'.format(start, dates[i+1]))
+ 	    df = get_metno_obs(sources, voi, start, dates[i+1], os.getenv('FROST_API_CLIENTID'))
+ 	    df.to_pickle('inputs/climate/metno_obs{}_{}.pckl'.format(start, dates[i+1]))
+\ No newline at end of file
+diff --git a/TopoPyScale/topo_param.py b/TopoPyScale/topo_param.py
+index 414afd2..10218cf 100644
+--- a/TopoPyScale/topo_param.py
++++ b/TopoPyScale/topo_param.py
+@@ -25,6 +25,9 @@ try:
+     import numba as nb
+ except ImportError:  # pragma: no cover - numba is a dependency, the numpy engine is the fallback
+     nb = None
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ ENGINES = ('numba', 'numpy')
+ 
+@@ -54,7 +57,7 @@ def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
+         array: Xs 1D arrays of the point coordinates expressed in the target projection
+         array: Ys 1D arrays of the point coordinates expressed in the target projection
+     """
+-    print('Convert coordinates from EPSG:{} to EPSG:{}'.format(epsg_src, epsg_tgt))
++    logger.info('Convert coordinates from EPSG:{} to EPSG:{}'.format(epsg_src, epsg_tgt))
+     trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:{}".format(epsg_tgt), always_xy=True)
+     Xs, Ys = trans.transform(xs, ys)
+     return Xs, Ys
+@@ -95,7 +98,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
+     Returns: 
+         dataframe: df_pts updated with new columns ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']
+     """
+-    print('\n---> Extracting DEM parameters for the given list of point coordinates')
++    logger.info('\n---> Extracting DEM parameters for the given list of point coordinates')
+     # delete columns in case they already exist
+     df_pts = df_pts.drop(['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'], errors='ignore')
+     # create columns, filled with 0
+@@ -210,19 +213,19 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
+     pdir = project_directory
+     file_ds = pdir / output_folder / fname
+     if file_ds.is_file():
+-        print(f'\n---> Dataset {fname} found.')
++        logger.info(f'\n---> Dataset {fname} found.')
+         try:
+             ds = xr.open_dataset(file_ds)
+             # Test if we can actually read the elevation data
+             _ = ds.elevation.values
+         except (RuntimeError, OSError) as e:
+             if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
+-                print(f'\n---> Dataset {fname} corrupted (HDF/compression error). Trying h5netcdf backend...')
++                logger.info(f'\n---> Dataset {fname} corrupted (HDF/compression error). Trying h5netcdf backend...')
+                 try:
+                     ds = xr.open_dataset(file_ds, engine='h5netcdf')
+                     _ = ds.elevation.values
+                 except Exception:
+-                    print(f'\n---> h5netcdf backend failed. Regenerating dataset from DEM...')
++                    logger.info(f'\n---> h5netcdf backend failed. Regenerating dataset from DEM...')
+                     if Path(dem_file).is_file():
+                         ds = open_dem(dem_file)
+                     else:
+@@ -232,14 +235,14 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
+ 
+     else:
+         if Path(dem_file).is_file():
+-            print(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
++            logger.info(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
+             ds = open_dem(dem_file)
+ 
+         else:
+             raise ValueError(f'ERROR: No DEM or dataset available')
+ 
+     var_in = list(ds.variables.keys())
+-    print('\n---> Extracting DEM parameters (slope, aspect, svf)')
++    logger.info('\n---> Extracting DEM parameters (slope, aspect, svf)')
+     dx = ds.x.diff('x').median().values
+     dy = ds.y.diff('y').median().values
+     
+@@ -248,14 +251,14 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
+         dem_arr = ds.elevation.values
+     except (RuntimeError, OSError) as e:
+         if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
+-            print(f'---> Error reading elevation data: {str(e)}')
+-            print('---> Attempting to load elevation data with different method...')
++            logger.error(f'---> Error reading elevation data: {str(e)}')
++            logger.info('---> Attempting to load elevation data with different method...')
+             try:
+                 # Try loading the data chunk by chunk or using compute()
+                 dem_arr = ds.elevation.load().values
+             except Exception:
+                 # If all else fails, regenerate from DEM file
+-                print('---> All methods failed. Regenerating from original DEM...')
++                logger.info('---> All methods failed. Regenerating from original DEM...')
+                 if Path(dem_file).is_file():
+                     ds_new = open_dem(dem_file)
+                     dem_arr = ds_new.elevation.values
+@@ -270,11 +273,11 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
+     if file_ds.is_file() and not missing:
+         # not rewritten: nothing was computed. Loaded in memory and closed, as the clustering writes to this file
+         ds.close()
+-        print(f'---> {fname} holds all DEM parameters: loaded')
++        logger.info(f'---> {fname} holds all DEM parameters: loaded')
+         return xr.load_dataset(file_ds)
+ 
+     if ('slope' not in var_in) or ('aspect' not in var_in):
+-        print('Computing slope and aspect ...')
++        logger.info('Computing slope and aspect ...')
+         slope, aspect = gradient_d8(dem_arr, dx, dy)
+         ds['slope'] = (["y", "x"], slope)
+         ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
+@@ -284,7 +287,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
+             ds['aspect_sin'] = (["y", "x"], np.sin(np.deg2rad(aspect)))
+ 
+     if 'svf' not in var_in:
+-        print('Computing svf ...')
++        logger.info('Computing svf ...')
+         svf = sky_view_factor(np.double(dem_arr), dx, dy, n_processes=n_processes)
+         ds['svf'] = (["y", "x"], svf)
+ 
+@@ -328,7 +331,7 @@ def compute_horizon(dem_file, azimuth_inc=30, n_processes=1, fname='da_horizon_g
+     Returns:
+         dataarray: horizon angles [rad], (azimuth, y, x)
+     """
+-    print('\n---> Computing horizons of every cell with {} degree increments'.format(azimuth_inc))
++    logger.info('\n---> Computing horizons of every cell with {} degree increments'.format(azimuth_inc))
+     ds = open_dem(dem_file)
+     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
+     z = ds.elevation.values.astype(np.float64)
+@@ -750,7 +753,7 @@ def horizon_rays(elevation, x, y, px, py, azimuths, max_rays=2_000_000, n_thread
+     near = np.isnan(z0)
+     z0[near] = z[np.rint(r[near]).astype(np.intp), np.rint(c[near]).astype(np.intp)]
+     if np.isnan(z0).any():
+-        print(f'-> WARNING: {np.isnan(z0).sum()} points on no-data cells of the DEM get a horizon of 0')
++        logger.warning(f'{np.isnan(z0).sum()} points on no-data cells of the DEM get a horizon of 0')
+ 
+     zmax = np.nanmax(z)
+     zf = np.where(np.isnan(z), np.nanmin(z) - 1e4, z)    # no data never forms a horizon
+@@ -818,7 +821,7 @@ def compute_horizon_points(dem_file, df_points, azimuth_inc=10, fname='da_horizo
+         dataarray: horizon angles [rad], (azimuth, point_name), with the point coordinates x, y
+     """
+     df_points = df_points.reset_index(drop=True)
+-    print(f'\n---> Computing horizons of {len(df_points)} points with {azimuth_inc} degree increments')
++    logger.info(f'\n---> Computing horizons of {len(df_points)} points with {azimuth_inc} degree increments')
+     ds = open_dem(dem_file)
+     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
+     hor = horizon_rays(ds.elevation.values, ds.x.values, ds.y.values, df_points.x.values, df_points.y.values,
+diff --git a/TopoPyScale/topo_plot.py b/TopoPyScale/topo_plot.py
+index 1579b1a..703bb8c 100644
+--- a/TopoPyScale/topo_plot.py
++++ b/TopoPyScale/topo_plot.py
+@@ -7,6 +7,9 @@ S. Filhol, December 2021
+ import matplotlib.pyplot as plt
+ from matplotlib.colors import LightSource
+ import xarray as xr
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ def map_terrain(ds_param,
+                 var='elevation',
+@@ -84,7 +87,7 @@ def map_variable(ds_down,
+         ds = ds_down
+ 
+     if var=='t':
+-        print('Suggestion: use divergent colormap plt.cm.RdBl_r centered around 0C')
++        logger.info('Suggestion: use divergent colormap plt.cm.RdBl_r centered around 0C')
+ 
+     alpha=1
+     if hillshade:
+diff --git a/TopoPyScale/topo_scale_zarr.py b/TopoPyScale/topo_scale_zarr.py
+index f989bc3..3407449 100644
+--- a/TopoPyScale/topo_scale_zarr.py
++++ b/TopoPyScale/topo_scale_zarr.py
+@@ -33,6 +33,9 @@ from TopoPyScale import topo_utils as tu
+ from TopoPyScale import surface_effect as se
+ from TopoPyScale import solar_geom as sg
+ from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ PLEV_VARS = ['z', 't', 'q', 'u', 'v']
+ SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
+@@ -358,7 +361,7 @@ class ClimateDownscaler:
+         """
+         start = time.time()
+         self.setup_output_store()
+-        print(f'---> Downscaling {len(self.df)} points x {self.tvec.size} time steps '
++        logger.info(f'---> Downscaling {len(self.df)} points x {self.tvec.size} time steps '
+               f'({len(self.point_blocks)} point blocks x {len(self.time_blocks)} time blocks)')
+         full_box = self._box(0, len(self.df))
+         with zarr.config.set({'array.write_empty_chunks': True}), \
+@@ -368,5 +371,5 @@ class ClimateDownscaler:
+                     else None
+                 list(pool.map(lambda pb: self.process_block(pb[0], pb[1], t0, t1, era), self.point_blocks))
+         elapsed = time.time() - start
+-        print(f'---> Downscaling finished in {elapsed:.1f} s ({elapsed / len(self.df):.3f} s per point)')
++        logger.info(f'---> Downscaling finished in {elapsed:.1f} s ({elapsed / len(self.df):.3f} s per point)')
+         return tu.open_downscaled_store(self.store)
+diff --git a/TopoPyScale/topo_sub.py b/TopoPyScale/topo_sub.py
+index 4f8e2b8..69e1301 100644
+--- a/TopoPyScale/topo_sub.py
++++ b/TopoPyScale/topo_sub.py
+@@ -21,6 +21,9 @@ from typing import Union, Optional
+ from pathlib import Path
+ from concurrent.futures import ProcessPoolExecutor
+ from TopoPyScale import topo_utils as tu
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ def ds_to_indexed_dataframe(ds, dim_order=None):
+@@ -53,7 +56,7 @@ def scale_df(df_param,
+         dataframe: scaled data
+     """
+     feature_list = features.keys()
+-    print('---> Scaling data prior to clustering')
++    logger.info('---> Scaling data prior to clustering')
+     df_scaled = pd.DataFrame(scaler.fit_transform(df_param[feature_list].values),
+                              columns=df_param[feature_list].columns,
+                              index=df_param[feature_list].index)
+@@ -111,10 +114,10 @@ def kmeans_clustering(df_param,
+     feature_list = features.keys()
+     X = df_param[feature_list].to_numpy()
+     col_names = df_param[feature_list].columns
+-    print('---> Clustering with K-means in {} clusters'.format(n_clusters))
++    logger.info('---> Clustering with K-means in {} clusters'.format(n_clusters))
+     start_time = time.time()
+     kmeans = cluster.KMeans(n_clusters=n_clusters, random_state=seed, **kwargs).fit(X)
+-    print('---> Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
++    logger.info('---> Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
+     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
+     cluster_labels = kmeans.labels_
+     return df_centers, kmeans, cluster_labels
+@@ -144,11 +147,11 @@ def minibatch_kmeans_clustering(df_param,
+     feature_list = features.keys()
+     X = df_param[feature_list].to_numpy()
+     col_names = df_param.columns
+-    print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
++    logger.info('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
+     start_time = time.time()
+     miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256 * n_cores, random_state=seed,
+                                           **kwargs).fit(X)
+-    print('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
++    logger.info('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
+     df_centers = pd.DataFrame(miniBkmeans.cluster_centers_, columns=col_names)
+     df_param['cluster_labels'] = miniBkmeans.labels_
+     return df_centers, miniBkmeans, df_param['cluster_labels']
+diff --git a/TopoPyScale/topo_utils.py b/TopoPyScale/topo_utils.py
+index f4529fd..01b2b6f 100644
+--- a/TopoPyScale/topo_utils.py
++++ b/TopoPyScale/topo_utils.py
+@@ -170,7 +170,7 @@ def get_versionning():
+     try:
+         repo = git.Repo(path=tps.__file__, search_parent_directories=True)
+         hash = repo.head.object.hexsha
+-    except:
++    except Exception:   # no git, not a repository...
+         hash = 'Not available'
+     try:
+         version = metadata.version('TopoPyScale')
+diff --git a/TopoPyScale/topoclass.py b/TopoPyScale/topoclass.py
+index 406dd1a..b576070 100644
+--- a/TopoPyScale/topoclass.py
++++ b/TopoPyScale/topoclass.py
+@@ -12,7 +12,6 @@ project/
+ 
+ """
+ import os
+-import pdb
+ import shutil
+ import sys
+ 
+@@ -27,6 +26,10 @@ from pathlib import Path
+ from TopoPyScale import fetch_dem as fd
+ from TopoPyScale import fetch_era5 as fe
+ from TopoPyScale import era5_store as es
++from TopoPyScale import log as tps_log
++from TopoPyScale import config_check
++import yaml
++from datetime import datetime
+ from TopoPyScale import solar_geom as sg
+ from TopoPyScale import topo_export as te
+ from TopoPyScale import topo_obs as tpo
+@@ -38,6 +41,9 @@ from TopoPyScale import surface_effect as se
+ from TopoPyScale import toposcale_core as core
+ from TopoPyScale import topo_utils as tu
+ from TopoPyScale import topo_checks as tc
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ class Topoclass(object):
+     """
+@@ -46,22 +52,13 @@ class Topoclass(object):
+ 
+     def __init__(self, config_file):
+ 
+-        try:
+-            with open(config_file, 'r') as f:
+-                self.config = DefaultMunch.fromYAML(f)
+-
+-            if self.config.project.directory in [None, {}]:
+-                self.config.project.directory = Path(os.getcwd())
+-            
+-            elif not isinstance(self.config.project.directory, Path):
+-                self.config.project.directory = Path(self.config.project.directory)
+-
+-            else:
+-                self.config.project.directory = Path(self.config.project.directory)
+-
+-        except IOError:
+-            print(
+-                f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
++        if not Path(config_file).is_file():
++            raise FileNotFoundError(f'Config file {config_file} not found (current directory: {os.getcwd()})')
++        with open(config_file, 'r') as f:
++            raw = yaml.safe_load(f)
++        self.config = DefaultMunch.fromDict(raw)
++        self._config_messages = config_check.check_config(raw)
++        self.config.project.directory = Path(self.config.project.directory or os.getcwd())
+ 
+         if self.config.outputs.directory in [None, {}]:
+             self.config.outputs.directory = 'outputs'
+@@ -72,26 +69,17 @@ class Topoclass(object):
+ 
+         if self.config.outputs.file.clean_outputs:
+             # remove outputs directory because if results already exist this causes concat of netcdf files
+-            try:
+-                shutil.rmtree(self.config.outputs.path)
+-                print('---> Output directory cleaned')
+-            except:
+-                self.config.outputs.path.mkdir(parents=True, exist_ok=True)
++            shutil.rmtree(self.config.outputs.path, ignore_errors=True)
++            logger.info('---> Output directory cleaned')
+ 
+         # remove output fsm directory
+         if self.config.outputs.file.clean_FSM:
+-            try:
+-                shutil.rmtree(str(self.config.project.directory / 'fsm_sims'))
+-                print('---> FSM directory cleaned')
+-            except:
+-                print("---> no FSM directory to clean")
+-
+-            # remove output fsm directory
+-            try:
+-                shutil.rmtree(str(self.config.project.directory / 'ensemble'))
+-                print("---> Ensemble directory cleaned")
+-            except:
+-                print("---> no ensemble directory to clean")
++            for folder in ['fsm_sims', 'ensemble']:
++                path = self.config.project.directory / folder
++                if path.exists():
++                    shutil.rmtree(path)
++                    logger.info(f'---> {folder} directory cleaned')
++
+ 
+         # climate path
+         if os.path.isabs(self.config.climate[self.config.project.climate].path):
+@@ -114,6 +102,9 @@ class Topoclass(object):
+         self.config.outputs.path.mkdir(parents=True, exist_ok=True)
+         self.config.outputs.tmp_path.mkdir(parents=True, exist_ok=True)
+         self.config.outputs.downscaled.mkdir(parents=True, exist_ok=True)
++        self.log_file = self._setup_logging()
++        for m in self._config_messages:   # once the log is set up
++            logger.warning(f'config: {m}')
+ 
+         if not self.config.dem.path:
+             self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
+@@ -128,12 +119,12 @@ class Topoclass(object):
+             if self.config.project.extent:
+                 self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))
+             else:
+-                print('ERROR: no extent provided. Must follow this format: [latN, latS, lonW, lonE]')
+-                sys.exit()
++                raise ValueError(f'DEM {self.config.dem.filepath} not found, and no project.extent to download '
++                                 f'one: give extent as [latN, latS, lonW, lonE]')
+ 
+             fd.fetch_dem(str(self.config.dem.path), self.config.project.extent, self.config.dem.epsg, self.config.dem.file)
+         else:
+-            print('\n---> DEM file found')
++            logger.info('\n---> DEM file found')
+ 
+         if self.config.project.extent:
+             extent_NSWE = self.config.project.extent
+@@ -142,15 +133,15 @@ class Topoclass(object):
+             # little routine extracting lat/lon extent from DEM
+             self.config.project.extent = tp.get_extent_latlon(self.config.dem.filepath, self.config.dem.epsg)
+ 
+-        print(self.config.project.extent)
+-        print('Project lat/lon extent:\n')
+-        print('\t------------------------------')
+-        print('\t|        North:{}          |\n\t|West:{}          East:{}|\n\t|        South:{}          |'.format(
++        logger.info(self.config.project.extent)
++        logger.info('Project lat/lon extent:\n')
++        logger.info('\t------------------------------')
++        logger.info('\t|        North:{}          |\n\t|West:{}          East:{}|\n\t|        South:{}          |'.format(
+             np.round(self.config.project.extent.get('latN'), 1),
+             np.round(self.config.project.extent.get('lonW'), 1),
+             np.round(self.config.project.extent.get('lonE'), 1),
+             np.round(self.config.project.extent.get('latS'), 1)))
+-        print('\t------------------------------')
++        logger.info('\t------------------------------')
+ 
+         self.toposub = self.Toposub()
+         self.plot = Plotting()
+@@ -162,7 +153,7 @@ class Topoclass(object):
+ 
+         if self.config.project.climate.lower() == 'era5':
+             self.era5_obj = fe.FetchERA5(config=self.config)
+-            print("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
++            logger.info("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
+ 
+         if self.config.project.climate.lower() == 'ifs_forecast':
+             self.get_ifs_forecast()
+@@ -177,37 +168,37 @@ class Topoclass(object):
+         if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
+             self.toposub.df_centroids = pd.read_pickle(
+                 self.config.outputs.path / self.config.outputs.file.df_centroids)
+-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
++            logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
+         else:
+-            print(f'-> WARNING: Centroid file {self.config.outputs.file.df_centroids} not found')
++            logger.warning(f'Centroid file {self.config.outputs.file.df_centroids} not found')
+ 
+         if (self.config.outputs.path / self.config.outputs.file.ds_param).is_file():
+             self.toposub.ds_param = xr.open_dataset(
+                 self.config.outputs.path / self.config.outputs.file.ds_param)
+-            print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
++            logger.info(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
+         else:
+-            print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
++            logger.warning(f'DEM parameter file {self.config.outputs.file.ds_param} not found')
+ 
+         if (self.config.outputs.path / self.config.outputs.file.ds_solar).is_file():
+             self.ds_solar = xr.open_dataset(
+                 self.config.outputs.path / self.config.outputs.file.ds_solar)
+-            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
++            logger.info(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+         else:
+-            print(f'-> WARNING: Solar file {self.config.outputs.file.ds_solar} not found')
++            logger.warning(f'Solar file {self.config.outputs.file.ds_solar} not found')
+ 
+         if (self.config.outputs.path / self.config.outputs.file.da_horizon).is_file():
+             self.da_horizon = xr.open_dataarray(
+                 self.config.outputs.path / self.config.outputs.file.da_horizon)
+-            print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
++            logger.info(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+         else:
+-            print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
++            logger.warning(f'Horizon file {self.config.outputs.file.da_horizon} not found')
+ 
+         store = self.config.outputs.downscaled / self._downscaled_store_name()
+         if store.exists():
+             self.downscaled_pts = tu.open_downscaled_store(store)
+-            print(f'---> Downscaled points {store.name} exists and loaded')
++            logger.info(f'---> Downscaled points {store.name} exists and loaded')
+         else:
+-            print(f'-> WARNING: Downscaled points {store.name} not found')
++            logger.warning(f'Downscaled points {store.name} not found')
+ 
+     class Toposub:
+         """
+@@ -248,10 +239,10 @@ class Topoclass(object):
+         Returns:
+ 
+         '''
+-        print('---> Testing number of clusters')
+-        print(f'Computing scores for {cluster_range} clusters')
++        logger.info('---> Testing number of clusters')
++        logger.info(f'Computing scores for {cluster_range} clusters')
+         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+-        print(f'Variables used in clustering: {list(df_param.columns.values)}')
++        logger.info(f'Variables used in clustering: {list(df_param.columns.values)}')
+ 
+         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
+         df_nclusters = ts.search_number_of_clusters(df_param,
+@@ -262,7 +253,7 @@ class Topoclass(object):
+                                                     plot=plot)
+ 
+         # print to console stats about
+-        print(df_nclusters)
++        logger.info(df_nclusters)
+ 
+         return df_nclusters
+ 
+@@ -321,7 +312,7 @@ class Topoclass(object):
+         valid_elev = ~df_param['elevation'].isna()
+         n_nodata = (~valid_elev).sum()
+         if n_nodata > 0:
+-            print(f'---> Auto-masking {n_nodata} nodata pixels from DEM')
++            logger.info(f'---> Auto-masking {n_nodata} nodata pixels from DEM')
+ 
+         # add mask and cluster feature
+         if mask_file in [None, {}]:
+@@ -345,7 +336,7 @@ class Topoclass(object):
+ 
+                 raise ValueError(
+                     f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
+-            print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
++            logger.info(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
+ 
+             # get mask (combine with nodata auto-mask)
+             mask = (ts.ds_to_indexed_dataframe(ds_mask, dim_order=['y', 'x'])['mask'] == 1) & valid_elev
+@@ -396,7 +387,7 @@ class Topoclass(object):
+             df_group['n_clusters'] = np.ceil(self.config.sampling.toposub.n_clusters * df_group.weights).astype(int)
+             groups = list(df_group.index)
+ 
+-            print(f'---> Split clustering into {len(groups)} groups.')
++            logger.info(f'---> Split clustering into {len(groups)} groups.')
+ 
+         # ----------cluster per group----------
+         self.toposub.df_centroids = pd.DataFrame()
+@@ -404,7 +395,7 @@ class Topoclass(object):
+ 
+         for group in groups:
+             if split_clustering:
+-                print(f'cluster group: {group}')
++                logger.info(f'cluster group: {group}')
+                 n_clusters = int(df_group.loc[group].n_clusters)
+             else:
+                 n_clusters = self.config.sampling.toposub.n_clusters
+@@ -445,13 +436,13 @@ class Topoclass(object):
+                 # update total clusters
+                 i_clusters += n_clusters
+             else:
+-                print(f"---> Group {group} is not fully within masked area")
++                logger.info(f"---> Group {group} is not fully within masked area")
+ 
+         if not split_clustering:
+             # drop cluster_group
+             df_param = df_param.drop(columns=['cluster_group'])
+         else:
+-            print(f'-----> Created in total {i_clusters} clusters in {len(groups)} groups.')
++            logger.info(f'-----> Created in total {i_clusters} clusters in {len(groups)} groups.')
+ 
+         # logic to add variables not used as clustering predictors into df_centroids
+         feature_list = self.config.sampling.toposub.clustering_features.keys()
+@@ -503,7 +494,7 @@ class Topoclass(object):
+         if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
+             self.toposub.df_centroids = pd.read_pickle(
+                 self.config.outputs.path / self.config.outputs.file.df_centroids)
+-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
++            logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
+         else:
+             if self.config.sampling.method.lower() in ['points', 'point']:
+                 self.extract_pts_param()
+@@ -528,7 +519,7 @@ class Topoclass(object):
+             # Store dataframe to pickle
+             self.toposub.df_centroids.to_pickle(
+                 self.config.outputs.path / self.config.outputs.file.df_centroids)
+-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
++            logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
+ 
+     def _accumulation_window(self):
+         # radiation accumulation window of the climate forcing (ERA5: 1 h, whatever the sampling time step)
+@@ -537,10 +528,10 @@ class Topoclass(object):
+     @staticmethod
+     def _warn_old_solar_file(ds_solar, fname):
+         if 'solar_geometry_time_offset' not in ds_solar.attrs:
+-            print(f'-> WARNING: {fname} was computed at the time stamps, not at the centre of the radiation '
++            logger.warning(f'{fname} was computed at the time stamps, not at the centre of the radiation '
+                   'accumulation window (SW then lags the sun by ~30 min). Delete it to recompute it.')
+         elif 'solar_constant' not in ds_solar.attrs:
+-            print(f'-> WARNING: {fname} was computed by an older version (SWtoa at the window centre, without the '
++            logger.warning(f'{fname} was computed by an older version (SWtoa at the window centre, without the '
+                   'Earth-Sun distance, angles quantized to 10 bits). Delete it to recompute it.')
+ 
+     def _solar_geometry(self, start, end, fname):
+@@ -560,7 +551,7 @@ class Topoclass(object):
+         fname = self.config.outputs.path / self.config.outputs.file.ds_solar
+         if fname.is_file():
+             self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
+-            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
++            logger.info(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+             self._warn_old_solar_file(self.ds_solar, fname.name)
+         else:
+             self.ds_solar = self._solar_geometry(self.config.project.start, self.config.project.end,
+@@ -582,9 +573,9 @@ class Topoclass(object):
+             da = xr.open_dataarray(fname, engine='h5netcdf').load()
+             da.close()
+             if tu.horizon_matches_points(da, df):
+-                print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
++                logger.info(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+             else:
+-                print(f'---> Horizon file {self.config.outputs.file.da_horizon} holds other points: recomputing')
++                logger.info(f'---> Horizon file {self.config.outputs.file.da_horizon} holds other points: recomputing')
+                 da = None
+         if da is None:
+             da = tp.compute_horizon_points(self.config.dem.filepath, df, self.config.dem.horizon_increments,
+@@ -598,7 +589,7 @@ class Topoclass(object):
+             df['hori_azi_' + str(az)] = hp.sel(azimuth=az).values
+         # update df_centroid file with horizons angle
+         df.to_pickle(self.config.outputs.path / self.config.outputs.file.df_centroids)
+-        print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
++        logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
+ 
+     def downscale_climate(self):
+         """
+@@ -651,9 +642,9 @@ class Topoclass(object):
+             end = pd.to_datetime(self.config.project.end) + pd.Timedelta('1D') - pd.Timedelta('1h')
+             rebuild = times.min() > start or times.max() < end
+             if rebuild:
+-                print(f'---> {name} covers {times.min()} to {times.max()}, not the project period: rebuilding it')
++                logger.info(f'---> {name} covers {times.min()} to {times.max()}, not the project period: rebuilding it')
+         if rebuild:
+-            print(f'---> Converting the netcdf files of {nc_dir} to {name}')
++            logger.info(f'---> Converting the netcdf files of {nc_dir} to {name}')
+             fe.netcdf_to_zarr(path_to_netcdfs=nc_dir, zarrout=store)
+         return store
+ 
+@@ -711,8 +702,8 @@ class Topoclass(object):
+                                    snow_partition_method=snow_partition_method,
+                                    points=points)
+         report.to_csv(self.config.outputs.path / fname, index=False)
+-        print(tc.summarize(report, min_status='warning'))
+-        print(f'---> Physics-consistency report saved to {fname}')
++        logger.info(tc.summarize(report, min_status='warning'))
++        logger.info(f'---> Physics-consistency report saved to {fname}')
+         if strict:
+             tc.raise_on_failure(report, level='error' if strict is True else strict)
+         return report
+@@ -772,7 +763,7 @@ class Topoclass(object):
+ 
+     def get_ifs_forecast(self):
+         # run openData script here
+-        print("doing forecast stuff here")
++        logger.info("doing forecast stuff here")
+ 
+     def get_WMO_observations(self):
+         """
+@@ -798,6 +789,28 @@ class Topoclass(object):
+         tpo.parse_WMO_insitu_observations()
+ 
+ 
++    def _setup_logging(self):
++        """
++        Messages to the terminal (project.verbose: True by default, False for warnings and errors only, or a level
++        name such as 'debug') and to a log file (project.log_file: True by default for
++        outputs/logs/topopyscale_<date>.log, a path, or False). Python warnings go to both.
++        """
++        verbose = self.config.project.verbose
++        verbose = True if verbose is None else verbose
++        log_file = self.config.project.log_file
++        if log_file is None or log_file is True:
++            log_file = self.config.outputs.path / 'logs' / f'topopyscale_{datetime.now():%Y%m%d_%H%M%S}.log'
++        elif log_file:
++            log_file = Path(log_file)
++            if not log_file.is_absolute():
++                log_file = self.config.project.directory / log_file
++        else:
++            log_file = None
++        log_file = tps_log.setup(verbose=verbose, logfile=log_file, capture_warnings=True)
++        if log_file:
++            logger.info(f'---> Log written to {log_file}')
++        return log_file
++
+     def _export_jobs(self):
+         """Processes writing export files: project.parallelization CPU_cores, 1 if not set."""
+         try:
+@@ -814,7 +827,7 @@ class Topoclass(object):
+ 
+         """
+         path = self.config.outputs.path
+-        if 'cluster:labels' in self.toposub.ds_param.keys():
++        if 'cluster_labels' in self.toposub.ds_param.keys():
+             label_map = True
+             da_label = self.toposub.ds_param.cluster_labels
+         else:
+@@ -908,7 +921,7 @@ class Topoclass(object):
+         out_path = Path(self.config.outputs.path, file_out)
+ 
+         te.to_netcdf(self.downscaled_pts[variables], out_path, variables)
+-        print('---> File {} saved'.format(file_out))
++        logger.info('---> File {} saved'.format(file_out))
+ 
+     def to_snowpack(self, fname_format='smet_pt_*.smet'):
+         """
+@@ -1008,7 +1021,7 @@ class Plotting:
+                             cmap=plt.cm.viridis,
+                             hillshade=True,
+                             **kwargs):
+-        print('to be implemented')
++        logger.info('to be implemented')
+ 
+     def map_clusters(self, **kwargs):
+         tp.map_clusters(self.ds_down,
+@@ -1016,10 +1029,10 @@ class Plotting:
+                         **kwargs)
+ 
+     def timeseries(self):
+-        print('To be implemented')
++        logger.info('To be implemented')
+ 
+     def solar_geom(self):
+-        print('To be implemented')
++        logger.info('To be implemented')
+ 
+     def horizon(self):
+-        print('To be implemented')
++        logger.info('To be implemented')
+diff --git a/doc/docs/03_configurationFile.md b/doc/docs/03_configurationFile.md
+index 7588a89..b09c260 100644
+--- a/doc/docs/03_configurationFile.md
++++ b/doc/docs/03_configurationFile.md
+@@ -42,6 +42,8 @@ project:
+     - Author 2
+   date: Date at which the project is run  # metadata
+   directory: /path/to/project/            # (optional) default: current working directory
++  verbose: True                           # (optional) progress messages in the terminal: True, False (warnings and errors only) or a level such as debug. Default True
++  log_file: True                          # (optional) also write the messages to outputs/logs/topopyscale_<date>.log (True), to a given path, or not (False). Default True
+ 
+   # start and end date of the period of interest. The end day is included
+   start: 2018-01-01
+@@ -158,6 +160,8 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
+ | authors     | [S. Filhol]           | no       | list of strings | written as creator in the metadata of the files exported by `to_cryogrid()`, `to_crocus()`, `to_surfex()` and `to_musa()` |
+ | date        | Nov 2021              | no       | string          | metadata: creation date of the downscaling. Not used by the code |
+ | directory   | ./path_to_my_project/ | no       | string          | path where the downscaling project is located. Default: Python current working directory |
++| verbose     | True                  | no       | True, False, debug, info, warning | progress messages in the terminal (or notebook) as the run goes. False: warnings and errors only; debug: more detail. Default True. See [Messages and log file](#messages-and-log-file) |
++| log_file    | True                  | no       | True, False, path | write the messages, with time stamps, to `outputs/logs/topopyscale_<date>.log` (True), to the given file (relative to the project directory), or not (False). Python warnings are included. Default True |
+ | start       | 2018-10-01            | yes      | %Y-%m-%d        | start date of the downscaling. ERA5 must cover it |
+ | end         | 2018-12-31            | yes      | %Y-%m-%d        | end date of the downscaling, included: time steps run up to the last one of that day. ERA5 must cover it |
+ | extent      | [60.8, 60.4, 7.1, 7.7] | no      | [latN, latS, lonW, lonE] | lat/lon box in degrees. The ERA5 download adds a 0.4° margin. If the DEM file does not exist, an interactive prompt offers to download one for this box. Default: extent of the DEM |
+@@ -270,6 +274,18 @@ Klevavatnet,SN53480,60.7192,7.2085,402259.379226592,6732844.21093029
+ 
+ This file is loaded in the `mp.toposub.df_centroids` dataframe. With `name_column: Name`, the points are named after the column `Name`.
+ 
++## Messages and log file
++
++TopoPyScale reports what it does through Python's `logging` module (logger `TopoPyScale`). By default the messages appear in the terminal or the notebook as the run goes, and `Topoclass` also writes them to `outputs/logs/topopyscale_<date>.log` with time stamps, together with Python warnings. `project.verbose: False` keeps only warnings and errors on screen; the log file still gets everything. Outside a `Topoclass` run, e.g. when calling `topo_export` functions directly:
++
++```python
++import TopoPyScale
++TopoPyScale.log.setup(verbose=False)                      # quiet
++TopoPyScale.log.setup(verbose='debug', logfile='run.log')  # more detail, also to a file
++```
++
++When `Topoclass` reads `config.yml`, it reports keys it does not read: keys of older versions (see below) with what replaced them, and unknown keys with the closest documented key, since a misspelled key would otherwise be read as empty.
++
+ ## Updating an older `config.yml`
+ 
+ Keys renamed or no longer read:
+@@ -287,6 +303,9 @@ Keys renamed or no longer read:
+ | `clean_up.delete_tmp_dirs` | `clean_up.rm_tmp_dirs` |
+ | `climate.era5.rm_daily` | not read: there are no daily files (a message is printed) |
+ | `climate.era5.cds_output_format` | not read: netcdf is downloaded (a message is printed for `grib`) |
++| `project.CPU_cores` | not read: `project.parallelization.setting.multicore.CPU_cores` |
++| `toposcale.pt_sampling_method` | not read: `toposcale.interpolation_method` |
++| `dem.dem_resol` | not read: the resolution is read from the DEM file |
+ 
+ ## Parallelization
+ 
+diff --git a/doc/yaml_to_table.py b/doc/yaml_to_table.py
+index 65f6370..9654af4 100644
+--- a/doc/yaml_to_table.py
++++ b/doc/yaml_to_table.py
+@@ -111,7 +111,7 @@ def printDic(inDictionary, inPTable, indent):
+            If needed call same function again (recursively) until we key : value dictionary
+            Add key , value , isItRequired , description to pretty table object (inPTable)
+     """
+-    global SPACE_CHAR  # No space character that will be replaced when we print this table to text/html
++    # SPACE_CHAR (module level): no-break space replaced when the table is printed to text/html
+ 
+     # Go ver dictionary
+     for item in inDictionary:
+diff --git a/TopoPyScale/fetch_ifs_forecast.py b/scripts/fetch_ifs_forecast.py
+similarity index 98%
+rename from TopoPyScale/fetch_ifs_forecast.py
+rename to scripts/fetch_ifs_forecast.py
+index 3998009..eba18f4 100644
+--- a/TopoPyScale/fetch_ifs_forecast.py
++++ b/scripts/fetch_ifs_forecast.py
+@@ -1,3 +1,5 @@
++# Standalone script (work in progress), moved out of the TopoPyScale package: it downloads the ECMWF open-data
++# forecast and converts it with cdo when run, so it must not be imported. Run: python fetch_ifs_forecast.py
+ # https://github.com/ecmwf/ecmwf-opendata
+ # https://www.ecmwf.int/en/forecasts/datasets/open-data
+ 
+diff --git a/tests/test_config_doc.py b/tests/test_config_doc.py
+index 9b58e04..72ac05c 100644
+--- a/tests/test_config_doc.py
++++ b/tests/test_config_doc.py
+@@ -17,9 +17,20 @@ DERIVED = {'climate.path', 'climate.tmp_path', 'dem.filepath', 'outputs.path', '
+ METHODS = {'lower', 'mkdir', 'get', 'exists', 'replace', 'glob', 'name', 'keys'}
+ 
+ 
++def doc_block():
++    return re.search(r'```yaml\n(.*?)```', DOC.read_text(), re.S).group(1)
++
++
++def test_reference_config_is_the_documented_example():
++    """config_reference.yml, used to check user configs, is the example of the documentation."""
++    reference = (ROOT / 'TopoPyScale' / 'config_reference.yml').read_text()
++    body = ''.join(line + '\n' for line in reference.splitlines() if not line.startswith('# Reference')
++                   and not line.startswith('# Kept identical'))
++    assert body == doc_block()
++
++
+ def doc_keys():
+-    block = re.search(r'```yaml\n(.*?)```', DOC.read_text(), re.S).group(1)
+-    config = yaml.safe_load(block)
++    config = yaml.safe_load(doc_block())
+ 
+     def flatten(d, prefix=''):
+         for k, v in d.items():
+diff --git a/tests/test_logging_config.py b/tests/test_logging_config.py
+new file mode 100644
+index 0000000..7bc38bb
+--- /dev/null
++++ b/tests/test_logging_config.py
+@@ -0,0 +1,90 @@
++"""Messages through logging (TopoPyScale.log) and the check of config.yml against the documented keys."""
++import contextlib
++import io
++import logging
++import warnings
++
++import pytest
++import yaml
++
++import TopoPyScale
++from TopoPyScale import config_check as cc
++from TopoPyScale import log
++
++
++@pytest.fixture(autouse=True)
++def restore_logging():
++    yield
++    log.setup()
++
++
++def messages(verbose):
++    out = io.StringIO()
++    log.setup(verbose=verbose)
++    lg = log.get_logger('topo_export')
++    with contextlib.redirect_stdout(out):
++        lg.debug('detail')
++        lg.info('---> progress')
++        lg.warning('something odd')
++    return out.getvalue()
++
++
++def test_verbose_levels():
++    assert messages(True) == '---> progress\nWARNING: something odd\n'
++    assert messages(False) == 'WARNING: something odd\n'
++    assert messages('debug').startswith('detail\n')
++    with pytest.raises(ValueError, match='verbose'):
++        log.setup(verbose='loud')
++
++
++def test_log_file_and_warnings(tmp_path):
++    f = log.setup(verbose=False, logfile=tmp_path / 'logs' / 'run.log', capture_warnings=True)
++    with contextlib.redirect_stdout(io.StringIO()):
++        log.get_logger('topoclass').info('---> step done')
++        warnings.warn('a warning of a dependency')
++    text = f.read_text()
++    assert 'INFO    TopoPyScale.topoclass: ---> step done' in text and 'a warning of a dependency' in text
++    assert text[:4].isdigit()   # time stamp
++
++
++def test_importing_topopyscale_keeps_warnings_visible():
++    import TopoPyScale.topoclass  # noqa: F401 (imports every module)
++    with warnings.catch_warnings(record=True) as w:
++        warnings.simplefilter('default')
++        warnings.warn('still visible', UserWarning)
++    assert [str(x.message) for x in w] == ['still visible']
++    assert not any(f[0] == 'ignore' and f[2] in (Warning, UserWarning) and f[1] is None
++                   for f in warnings.filters)
++
++
++def test_config_check():
++    cfg = {'project': {'climate': 'era5', 'CPU_core': 4, 'split': {'IO': True, 'time': {'nb': 2}}},
++           'climate': {'era5': {'timestep': '1h', 'plevel': [700]}, 'other_source': {'anything': 1}},
++           'toposcale': {'surface_effect': {'methd': 'dreamit'}}, 'clean_up': {'delete_tmp_dirs': True}}
++    msgs = cc.check_config(cfg)
++    assert msgs == [
++        'project.CPU_core is not a TopoPyScale setting and is not read. Did you mean '
++        'project.parallelization.setting.multicore.CPU_cores?',
++        'project.split: removed: long periods are processed by blocks of time steps (toposcale.time_block)',
++        'climate.era5.plevel is not a TopoPyScale setting and is not read. Did you mean climate.era5.plevels?',
++        'toposcale.surface_effect.methd is not a TopoPyScale setting and is not read. Did you mean '
++        'toposcale.surface_effect.method?',
++        'clean_up.delete_tmp_dirs: renamed clean_up.rm_tmp_dirs']
++    assert cc.check_config({'project': {'climate': 'era6'}, 'climate': {'era5': {}}}) == [
++        'project.climate is era6, but there is no climate.era6 section']
++    with open(cc.REFERENCE) as f:
++        assert cc.check_config(yaml.safe_load(f)) == []
++
++
++def test_missing_config_file(tmp_path):
++    from TopoPyScale.topoclass import Topoclass
++    with pytest.raises(FileNotFoundError, match='nothere.yml'):
++        Topoclass(tmp_path / 'nothere.yml')
++
++
++def test_package_logger_shows_progress_by_default():
++    out = io.StringIO()
++    with contextlib.redirect_stdout(out):
++        logging.getLogger('TopoPyScale.fetch_era5').info('---> downloading')
++    assert out.getvalue() == '---> downloading\n'
++    assert TopoPyScale.log.LOGGER.propagate is False
+diff --git a/tests/test_robustness.py b/tests/test_robustness.py
+new file mode 100644
+index 0000000..dc28b56
+--- /dev/null
++++ b/tests/test_robustness.py
+@@ -0,0 +1,28 @@
++"""Failures that must be visible: missing values kept through files, unfinished functions refusing to run."""
++import numpy as np
++import pytest
++import xarray as xr
++
++from TopoPyScale import topo_export as te
++
++
++def test_packed_netcdf_keeps_missing_values(tmp_path):
++    """ds_param is saved packed as int16: masked or no-data cells must come back as NaN, not as a value."""
++    elev = np.array([[1000., np.nan], [2000., 3000.]])
++    ds = xr.Dataset({'elevation': (('y', 'x'), elev), 'cluster_labels': (('y', 'x'), np.array([[0, 1], [1, 2]]))},
++                    coords={'x': [0., 30.], 'y': [30., 0.]})
++    te.to_netcdf(ds, fname=tmp_path / 'p.nc')
++    back = xr.load_dataset(tmp_path / 'p.nc')
++    assert np.isnan(back.elevation.values[0, 1])
++    np.testing.assert_allclose(back.elevation.values[~np.isnan(elev)], elev[~np.isnan(elev)], atol=2.)
++    np.testing.assert_array_equal(back.cluster_labels.values, ds.cluster_labels.values)
++
++
++def test_unfinished_and_invalid_calls_raise(tmp_path):
++    with pytest.raises(NotImplementedError, match='to_fsm2oshd'):
++        te.to_fsm2(None, None, None, None)
++    ds = xr.Dataset({'t': (('point_name', 'time'), np.zeros((1, 2)))},
++                    coords={'point_name': ['0'], 'time': np.array(['2020-01-01T00', '2020-01-01T01'],
++                                                                  dtype='datetime64[ns]')})
++    with pytest.raises(ValueError, match='da_label'):
++        te.to_cryogrid(ds, None, path=tmp_path, label_map=True)
+-- 
+2.43.0
+
