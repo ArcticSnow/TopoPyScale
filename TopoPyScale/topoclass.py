@@ -798,6 +798,13 @@ class Topoclass(object):
         tpo.parse_WMO_insitu_observations()
 
 
+    def _export_jobs(self):
+        """Processes writing export files: project.parallelization CPU_cores, 1 if not set."""
+        try:
+            return self.config.project.parallelization.setting.multicore.CPU_cores or 1
+        except AttributeError:
+            return 1
+
     def to_cryogrid(self, fname_format='Cryogrid_pt_*.nc', precip_partition='continuous'):
         """
         wrapper function to export toposcale output to cryosgrid format from TopoClass
@@ -821,13 +828,14 @@ class Topoclass(object):
                        snow_partition_method=precip_partition,
                        da_label=da_label,
                        climate_dataset_name=self.config.project.climate,
-                       project_author=self.config.project.authors)
+                       project_author=self.config.project.authors,
+                       n_jobs=self._export_jobs())
 
     def to_fsm(self, fname_format='FSM_pt_*.txt'):
         """
-        function to export toposcale output to FSM format
+        function to export toposcale output to FSM format, one file per point, written by CPU_cores processes
         """
-        te.to_fsm(self.downscaled_pts, self.config.outputs.path /  fname_format)
+        te.to_fsm(self.downscaled_pts, self.config.outputs.path / fname_format, n_jobs=self._export_jobs())
 
     def to_crocus(self, fname_format='CROCUS_pt_*.nc', scale_precip=1):
         """
@@ -842,7 +850,8 @@ class Topoclass(object):
                      fname_format=self.config.outputs.path / fname_format,
                      scale_precip=scale_precip,
                      climate_dataset_name=self.config.project.climate,
-                     project_author=self.config.project.authors)
+                     project_author=self.config.project.authors,
+                     n_jobs=self._export_jobs())
 
     def to_surfex(self, 
                   fname_format='FORCING*.nc',
@@ -879,7 +888,8 @@ class Topoclass(object):
                                       self.toposub.df_centroids,
                                       fname_format=self.config.outputs.path / fname_format,
                                       na_values=-9999,
-                                      headers=False)
+                                      headers=False,
+                                      n_jobs=self._export_jobs())
 
     def to_netcdf(self, file_out='output.nc', variables=None):
         """

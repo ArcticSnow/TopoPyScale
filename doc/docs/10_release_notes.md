@@ -13,6 +13,7 @@ TopoPyScale 1.0 checks the physics of its outputs, fixes the errors those checks
 - **Surface-effect correction** of temperature and humidity (REDCAPP, DReaMIT), off by default, and `surface_calib` to fit it for a new region (see [Features](07_features.md#surface-effect-correction-of-air-temperature)).
 - **ERA5 straight to zarr**: one CDS request per month instead of per day, at most 10 at a time, each file checked and written once to `ERA5.zarr` by the main thread, failed downloads retried, and reruns fetching only what is missing. No daily or yearly files, no CDO (see [Features](07_features.md#era5-download)).
 - **ERA5 from NCAR GDEX** as an alternative to the CDS (`climate.era5.data_repository: gdex`).
+- **Parallel exports**: the per-point exports (FSM, FSM2oshd, CryoGrid, CROCUS, SnowModel, SNOWPACK, GEOtop, T&C) read the store by blocks of points and write their files from `CPU_cores` processes: `to_fsm()` 2× faster in one process, and faster with each core (see [Outputs](05_outputs.md#writing-one-file-per-point-in-parallel)). `to_crocus()` and `to_micromet_single_station()` / `mp.to_snowmodel()` work again (they failed on undefined variables), and CROCUS files hold their point on a `Number_of_points` dimension.
 
 ### Upgrading from 0.3
 

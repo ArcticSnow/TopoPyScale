@@ -165,7 +165,7 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | ***parallelization*** |             |          |                 | |
 | **setting**   |                     |          |                 | |
 | *multicore*   |                     |          |                 | |
-| CPU_cores   | 4                     | yes      | integer         | number of cores for the sky view factor and horizon computation, minibatch k-means clustering, `to_musa()`, and the number of threads downscaling blocks of points |
+| CPU_cores   | 4                     | yes      | integer         | number of cores for the sky view factor and horizon computation, minibatch k-means clustering, `to_musa()`, the number of threads downscaling blocks of points, and the number of processes writing the per-point exports (`to_fsm()`, `to_cryogrid()`...) |
 
 The former keys `parallelization.downscaling_method` and `parallelization.setting.dask` are no longer read.
 
@@ -290,7 +290,7 @@ Keys renamed or no longer read:
 
 ## Parallelization
 
-TopoPyScale uses parallelization for a number of steps: threads sending the download requests to the CDS (`download_threads`, at most 10), or processes fetching days from GDEX, and `project.parallelization.setting.multicore.CPU_cores` cores for the sky view factor, the horizons and the clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `CPU_cores` of them.
+TopoPyScale uses parallelization for a number of steps: threads sending the download requests to the CDS (`download_threads`, at most 10), or processes fetching days from GDEX, and `project.parallelization.setting.multicore.CPU_cores` cores for the sky view factor, the horizons and the clustering. Solar geometry is vectorized over points. Downscaling processes blocks of points in parallel threads, `CPU_cores` of them, and the per-point exports write their files from `CPU_cores` processes (see [Outputs](05_outputs.md#writing-one-file-per-point-in-parallel)).
 
 Settings for parallelization should be adapted and considered according to your machine (laptop, server, HPC, ...).
 

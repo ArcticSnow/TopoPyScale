@@ -13,10 +13,70 @@ TODO;
 **Global Variables**
 ---------------
 - **MUSA_VARS**
+- **MICROMET_HEADER**
+- **GEOTOP_HEADER**
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L31"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L35"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `point_file_names`
+
+```python
+point_file_names(fname_format, n_points, n_digits)
+```
+
+File name of each point: the point index, zero-padded to n_digits, in place of '*' in fname_format. 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L68"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `export_points`
+
+```python
+export_points(
+    ds,
+    variables,
+    write,
+    fnames,
+    info=None,
+    extra=None,
+    options=None,
+    n_jobs=1,
+    label='files'
+)
+```
+
+Write one file per point with write(fname, ds_pt, info, extra_pt, **options). 
+
+The points are processed by blocks of consecutive points aligned on the chunks of the zarr store: each block is read once, instead of one read per point and variable, then the file of each of its points is written. With n_jobs > 1 the blocks are shared between n_jobs processes (joblib loky workers, which need no main guard), each reading its blocks itself, as formatting the files holds the Python lock. 
+
+
+
+**Args:**
+ 
+ - <b>`ds`</b> (dataset):  downscaled points (point_name, time), lazy (zarr store) or in memory 
+ - <b>`variables`</b> (list):  variables read by write 
+ - <b>`write`</b> (callable):  module-level function writing the file of one point from ds_pt (one point, in memory) 
+ - <b>`fnames`</b> (list):  file of each point, in the order of ds.point_name 
+ - <b>`info`</b> (list):  object given to write for each point (e.g. a row of df_pts). Default None 
+ - <b>`extra`</b> (dataset):  dataset with a point_name dimension, selected like ds and given to write for each point 
+ - <b>`options`</b> (dict):  keyword arguments of write 
+ - <b>`n_jobs`</b> (int):  number of processes. 1: in this process 
+ - <b>`label`</b> (str):  what is written, for the progress messages 
+
+
+
+**Returns:**
+ 
+ - <b>`list`</b>:  the files written 
+
+
+---
+
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L116"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `compute_scaling_and_offset`
 
@@ -36,7 +96,7 @@ Compute offset and scale factor for int conversion
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L53"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L138"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_netcdf`
 
@@ -58,7 +118,7 @@ Generic function to save a datatset to one single compressed netcdf file. Float 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L119"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L204"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_musa`
 
@@ -133,7 +193,7 @@ MuSA config.py settings for these files:  nc_forcing_path = "<path>/forcing/"  n
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L302"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L442"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_cryogrid`
 
@@ -147,7 +207,8 @@ to_cryogrid(
     da_label=None,
     snow_partition_method='continuous',
     climate_dataset_name='ERA5',
-    project_author='S. Filhol'
+    project_author='S. Filhol',
+    n_jobs=1
 )
 ```
 
@@ -163,11 +224,12 @@ Function to export TopoPyScale downscaled dataset in a netcdf format compatible 
  - <b>`path`</b> (str):  path where to export files 
  - <b>`label_map`</b> (bool):  export cluster_label map 
  - <b>`da_label`</b> (dataarray): (optional) dataarray containing label value for each pixel of the DEM 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L392"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L485"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm2`
 
@@ -210,7 +272,7 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L798"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L946"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm2oshd`
 
@@ -223,7 +285,8 @@ to_fsm2oshd(
     namelist_options=None,
     snow_partition_method='continuous',
     temperature_correction=0,
-    forest_param_scaler={'vfhp': 100, 'fveg': 100, 'fves': 100, 'hcan': 100, 'lai5': 100}
+    forest_param_scaler={'vfhp': 100, 'fveg': 100, 'fves': 100, 'hcan': 100, 'lai5': 100},
+    n_jobs=None
 )
 ```
 
@@ -245,11 +308,12 @@ Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM
  - <b>`snow_partition_method`</b> (str):  method for snow partitioning. Default: 'continuous' 
  - <b>`cluster_method`</b> (bool):  boolean to be True is using cluster appraoch 
  - <b>`epsg_ds_param`</b> (int):  epsg code of ds_param: example: 2056 
+ - <b>`n_jobs`</b> (int):  number of processes writing the met files (see export_points). Default: the CPU_cores of  the project configuration 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1120"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1232"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_fsm`
 
@@ -258,7 +322,8 @@ to_fsm(
     ds,
     fname_format='FSM_pt_*.tx',
     snow_partition_method='continuous',
-    n_digits=None
+    n_digits=None,
+    n_jobs=1
 )
 ```
 
@@ -269,9 +334,10 @@ Function to export data for FSM.
 **Args:**
  
  - <b>`ds`</b> (dataset):  downscaled_pts, 
- - <b>`df_pts`</b> (dataframe):  toposub.df_centroids, 
  - <b>`fname_format`</b> (str pattern):  output format of filename 
  - <b>`snow_partition_method`</b> (str):  snow/rain partitioning method: default 'jennings2018_trivariate' 
+ - <b>`n_digits`</b> (int):  digits of the point index in the file names. Default: those of the number of points 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 format is a text file with the following columns year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) 
 
@@ -288,12 +354,12 @@ See README.md file from FSM source code for further details
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1168"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1281"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_TC`
 
 ```python
-to_TC(ds, fname_format='pt_*.tx')
+to_TC(ds, fname_format='pt_*.tx', n_jobs=1)
 ```
 
 Function to export data for the T&C model. https://hyd.ifu.ethz.ch/research-data-models/t-c.html 
@@ -303,15 +369,15 @@ Function to export data for the T&C model. https://hyd.ifu.ethz.ch/research-data
 **Args:**
  
  - <b>`ds`</b> (dataset):  downscaled_pts, 
- - <b>`df_pts`</b> (dataframe):  toposub.df_centroids, 
  - <b>`fname_format`</b> (str pattern):  output format of filename 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 format is a text file with the following columns datetime    TA  P       PRESS RH  SWIN    LWIN    WS   WDIR (datetime) (°C) (mm/h)  (Pa)  (%) (W/m2)  (W/m2)  (m/s) (°) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1211"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1329"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_micromet_single_station`
 
@@ -321,7 +387,8 @@ to_micromet_single_station(
     df_pts,
     fname_format='Snowmodel_pt_*.csv',
     na_values=-9999,
-    headers=False
+    headers=False,
+    n_jobs=1
 )
 ```
 
@@ -336,6 +403,7 @@ Function to export TopoScale output in the format for Listn's Snowmodel (using M
  - <b>`fname_format`</b> (str):  filename format. point_name is inserted where * is 
  - <b>`na_values`</b> (int):  na_value default 
  - <b>`headers`</b> (bool):  add headers to file 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 
 
@@ -348,7 +416,7 @@ year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1267"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1487"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_crocus`
 
@@ -360,7 +428,8 @@ to_crocus(
     scale_precip=1,
     climate_dataset_name='ERA5',
     project_author='S. Filhol',
-    snow_partition_method='continuous'
+    snow_partition_method='continuous',
+    n_jobs=1
 )
 ```
 
@@ -377,11 +446,12 @@ Functiont to export toposcale output to CROCUS netcdf format. Generates one file
  - <b>`climate_dataset_name`</b> (str):  name of original climate dataset. Default 'ERA5', 
  - <b>`project_author`</b> (str):  name of project author(s) 
  - <b>`snow_partition_method`</b> (str):  snow/rain partitioning method: default 'jennings2018_trivariate' 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1410"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1521"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_surfex`
 
@@ -423,12 +493,12 @@ Function to export toposcale output to Surfex forcing netcdf format. Generates o
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1572"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1696"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_snowpack`
 
 ```python
-to_snowpack(ds, fname_format='smet_pt_*.tx')
+to_snowpack(ds, fname_format='smet_pt_*.tx', n_jobs=1)
 ```
 
 Function to export data for snowpack model as smet. https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf 
@@ -438,8 +508,8 @@ Function to export data for snowpack model as smet. https://models.slf.ch/docser
 **Args:**
  
  - <b>`ds`</b> (dataset):  downscaled_pts, 
- - <b>`df_pts`</b> (dataframe):  toposub.df_centroids, 
  - <b>`fname_format`</b> (str pattern):  output format of filename 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 format is a text file with the following columns (coulumns can vary) 
 
@@ -448,12 +518,12 @@ SMET 1.1 ASCII [HEADER] station_id       = meteoc1 station_name     = WFJ2 latit
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1639"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/topo_export.py#L1761"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `to_geotop`
 
 ```python
-to_geotop(ds, fname_format='geotop_pt_*.txt')
+to_geotop(ds, fname_format='geotop_pt_*.txt', n_jobs=1)
 ```
 
 Function to export data for snowpack model as smet. https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf 
@@ -463,8 +533,8 @@ Function to export data for snowpack model as smet. https://models.slf.ch/docser
 **Args:**
  
  - <b>`ds`</b> (dataset):  downscaled_pts, 
- - <b>`df_pts`</b> (dataframe):  toposub.df_centroids, 
  - <b>`fname_format`</b> (str pattern):  output format of filename 
+ - <b>`n_jobs`</b> (int):  number of processes writing the files (see export_points) 
 
 
 

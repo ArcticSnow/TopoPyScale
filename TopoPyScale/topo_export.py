@@ -14,6 +14,7 @@ import sys, os
 import numpy as np
 import pandas as pd
 import xarray as xr
+from joblib import Parallel, delayed
 
 from TopoPyScale import meteo_util as mu
 from TopoPyScale import topo_utils as tu
@@ -26,6 +27,90 @@ def _tstep_seconds(ds):
     """Time step of a dataset in seconds (tp is in mm per time step)."""
     times = pd.DatetimeIndex(ds.time.values)
     return (times[1] - times[0]).total_seconds()
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# One file per point: blocks of points read once, files written by parallel processes
+# ---------------------------------------------------------------------------------------------------------------
+def point_file_names(fname_format, n_points, n_digits):
+    """File name of each point: the point index, zero-padded to n_digits, in place of '*' in fname_format."""
+    parts = str(fname_format).split('*')
+    return [parts[0] + str(i).zfill(n_digits) + parts[1] for i in range(n_points)]
+
+
+def _point_blocks(ds, variables, n_jobs, max_points=100):
+    """
+    Slices of consecutive points, aligned on the chunks of the store along point_name, of about max_points points
+    and at least 4 per process.
+    """
+    n = ds.sizes['point_name']
+    target = max(1, min(max_points, -(-n // (4 * n_jobs))))
+    da_ = ds[variables[0]]
+    sizes = da_.chunks[da_.dims.index('point_name')] if da_.chunks is not None else (1,) * n
+    blocks, start = [], 0
+    for end in np.cumsum(sizes):
+        if end - start >= target or end == n:
+            blocks.append(slice(start, int(end)))
+            start = int(end)
+    return blocks
+
+
+def _write_block(ds, variables, write, fnames, info, extra, options):
+    """Read a block of points once, then write the file of each point (runs in a worker process)."""
+    data = ds[variables].load()
+    extra = None if extra is None else extra.load()
+    for i, fname in enumerate(fnames):
+        write(fname, data.isel(point_name=i), info[i], None if extra is None else extra.isel(point_name=i),
+              **options)
+    return len(fnames)
+
+
+def export_points(ds, variables, write, fnames, info=None, extra=None, options=None, n_jobs=1, label='files'):
+    """
+    Write one file per point with write(fname, ds_pt, info, extra_pt, **options).
+
+    The points are processed by blocks of consecutive points aligned on the chunks of the zarr store: each block is
+    read once, instead of one read per point and variable, then the file of each of its points is written. With
+    n_jobs > 1 the blocks are shared between n_jobs processes (joblib loky workers, which need no main guard), each
+    reading its blocks itself, as formatting the files holds the Python lock.
+
+    Args:
+        ds (dataset): downscaled points (point_name, time), lazy (zarr store) or in memory
+        variables (list): variables read by write
+        write (callable): module-level function writing the file of one point from ds_pt (one point, in memory)
+        fnames (list): file of each point, in the order of ds.point_name
+        info (list): object given to write for each point (e.g. a row of df_pts). Default None
+        extra (dataset): dataset with a point_name dimension, selected like ds and given to write for each point
+        options (dict): keyword arguments of write
+        n_jobs (int): number of processes. 1: in this process
+        label (str): what is written, for the progress messages
+
+    Returns:
+        list: the files written
+    """
+    n = ds.sizes['point_name']
+    fnames = [str(f) for f in fnames]
+    if len(fnames) != n:
+        raise ValueError(f'{len(fnames)} file names for {n} points')
+    info = [None] * n if info is None else list(info)
+    n_jobs = max(1, int(n_jobs or 1))
+    blocks = _point_blocks(ds, variables, n_jobs)
+    names = ds.point_name.values
+
+    def args(b):
+        return (ds.isel(point_name=b), variables, write, fnames[b], info[b],
+                None if extra is None else extra.sel(point_name=names[b]), options or {})
+
+    if n_jobs == 1 or len(blocks) == 1:
+        done = (_write_block(*args(b)) for b in blocks)
+    else:
+        done = Parallel(n_jobs=min(n_jobs, len(blocks)), backend='loky', return_as='generator_unordered')(
+            delayed(_write_block)(*args(b)) for b in blocks)
+    written = 0
+    for k in done:
+        written += k
+        print(f'---> {written}/{n} {label} written')
+    return fnames
 
 
 def compute_scaling_and_offset(da, n=16):
@@ -299,6 +384,61 @@ def to_musa(ds,
     return meta
 
 
+def _write_cryogrid(fname, ds_pt, info, extra_pt, tstep, snow_partition_method, climate_dataset_name,
+                    project_author, ver_dict):
+    fo = xr.Dataset()
+    fo['time'] = ds_pt.time
+    fo['Tair'] = ('time', ds_pt.t.values - 273.15)
+    fo['q'] = ('time', ds_pt.q.values)
+    fo['wind'] = ('time', ds_pt.ws.values)
+    fo['Sin'] = ('time', ds_pt.SW.values)
+    fo['Lin'] = ('time', ds_pt.LW.values)
+    fo['p'] = ('time', ds_pt.p.values)
+    rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+    rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values,
+                                   method=snow_partition_method)
+    steps_per_day = 86400 / tstep
+    fo['rainfall'], fo['snowfall'] = ('time', rain * steps_per_day), ('time', snow * steps_per_day)  # mm per time step to mm/day
+
+    fo.Tair.attrs = {'units': '°C', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
+                     '_FillValue': -9999.0}
+    fo.q.attrs = {'units': 'kg/kg', 'standard_name': 'q', 'long_name': 'Near Surface Specific Humidity',
+                  '_FillValue': -9999.0}
+    fo.wind.attrs = {'units': 'm/s', 'standard_name': 'wind', 'long_name': 'Wind Speed', '_FillValue': -9999.0}
+    fo.rainfall.attrs = {'units': 'mm/d', 'standard_name': 'rainfall', 'long_name': 'Rainfall Rate',
+                         '_FillValue': -9999.0}
+    fo.snowfall.attrs = {'units': 'mm/d', 'standard_name': 'snowfall', 'long_name': 'Snowfall Rate',
+                         '_FillValue': -9999.0}
+    fo.Sin.attrs = {'units': 'W/m^2', 'standard_name': 'Sin',
+                    'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999.0}
+    fo.Lin.attrs = {'units': 'W/m^2', 'standard_name': 'Lin', 'long_name': 'Surface Incident Longtwave Radiation',
+                    '_FillValue': -9999.0}
+    fo.p.attrs = {'units': 'Pa', 'standard_name': 'p', 'long_name': 'Surface Pressure', '_FillValue': -9999.0}
+
+    fo.attrs = {'title': 'Forcing for Cryogrid Community model',
+                'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
+                'creator_name': 'Dataset created by {}'.format(project_author),
+                'package_version': ver_dict.get('package_version'),
+                'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                'git_commit': ver_dict.get('git_commit'),
+                'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+    encod_dict = {}
+    for var in list(fo.keys()):
+        scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
+        encod_dict.update({var: {"zlib": True,
+                                 "complevel": 9,
+                                 'dtype': 'int16',
+                                 'scale_factor': scale_factor,
+                                 'add_offset': add_offset}})
+    fo['latitude'] = info['latitude']
+    fo['longitude'] = info['longitude']
+    fo['elevation'] = info['elevation']
+    fo.latitude.attrs = {'units': 'deg', 'standard_name': 'latitude'}
+    fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude'}
+    fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation'}
+    fo.to_netcdf(fname, encoding=encod_dict)
+
+
 def to_cryogrid(ds,
                 df_pts,
                 fname_format='Cryogrid_pt_*.nc',
@@ -307,7 +447,8 @@ def to_cryogrid(ds,
                 da_label=None,
                 snow_partition_method='continuous',
                 climate_dataset_name='ERA5',
-                project_author='S. Filhol'):
+                project_author='S. Filhol',
+                n_jobs=1):
     """
     Function to export TopoPyScale downscaled dataset in a netcdf format compatible for Cryogrid-community model.
 
@@ -318,6 +459,7 @@ def to_cryogrid(ds,
         path (str): path where to export files
         label_map (bool): export cluster_label map
         da_label (dataarray):(optional) dataarray containing label value for each pixel of the DEM
+        n_jobs (int): number of processes writing the files (see export_points)
     
     """
     # Add logic to save maps of cluster labels in case of usage of topo_sub
@@ -328,65 +470,16 @@ def to_cryogrid(ds,
             print('ERROR: no cluster label (da_label) provided')
             sys.exit()
         else:
-            da_label.to_netcdf(str(path / 'cluster_labels_map.nc'))
+            da_label.to_netcdf(str(Path(path) / 'cluster_labels_map.nc'))
 
     n_digits = len(str(len(ds.point_name))) + 1
-
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(path / (fname_format.split('*')[0] + str(pt_ind).zfill(n_digits) + fname_format.split('*')[1]))
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        fo = xr.Dataset()
-        fo['time'] = ds_pt.time
-        fo['Tair'] = ('time', ds_pt.t.values - 273.15)
-        fo['q'] = ('time', ds_pt.q.values)
-        fo['wind'] = ('time', ds_pt.ws.values)
-        fo['Sin'] = ('time', ds_pt.SW.values)
-        fo['Lin'] = ('time', ds_pt.LW.values)
-        fo['p'] = ('time', ds_pt.p.values)
-        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values,
-                                       method=snow_partition_method)
-        steps_per_day = 86400 / _tstep_seconds(ds)
-        fo['rainfall'], fo['snowfall'] = ('time', rain * steps_per_day), ('time', snow * steps_per_day)  # mm per time step to mm/day
-
-        fo.Tair.attrs = {'units': '°C', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
-                         '_FillValue': -9999.0}
-        fo.q.attrs = {'units': 'kg/kg', 'standard_name': 'q', 'long_name': 'Near Surface Specific Humidity',
-                      '_FillValue': -9999.0}
-        fo.wind.attrs = {'units': 'm/s', 'standard_name': 'wind', 'long_name': 'Wind Speed', '_FillValue': -9999.0}
-        fo.rainfall.attrs = {'units': 'mm/d', 'standard_name': 'rainfall', 'long_name': 'Rainfall Rate',
-                             '_FillValue': -9999.0}
-        fo.snowfall.attrs = {'units': 'mm/d', 'standard_name': 'snowfall', 'long_name': 'Snowfall Rate',
-                             '_FillValue': -9999.0}
-        fo.Sin.attrs = {'units': 'W/m^2', 'standard_name': 'Sin',
-                        'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999.0}
-        fo.Lin.attrs = {'units': 'W/m^2', 'standard_name': 'Lin', 'long_name': 'Surface Incident Longtwave Radiation',
-                        '_FillValue': -9999.0}
-        fo.p.attrs = {'units': 'Pa', 'standard_name': 'p', 'long_name': 'Surface Pressure', '_FillValue': -9999.0}
-
-        fo.attrs = {'title': 'Forcing for Cryogrid Community model',
-                    'source': 'Data from {} downscaled with TopoPyScale'.format(climate_dataset_name),
-                    'creator_name': 'Dataset created by {}'.format(project_author),
-                    'package_version': ver_dict.get('package_version'),
-                    'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
-                    'git_commit': ver_dict.get('git_commit'),
-                    'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
-        encod_dict = {}
-        for var in list(fo.keys()):
-            scale_factor, add_offset = compute_scaling_and_offset(fo[var], n=10)
-            encod_dict.update({var: {"zlib": True,
-                                     "complevel": 9,
-                                     'dtype': 'int16',
-                                     'scale_factor': scale_factor,
-                                     'add_offset': add_offset}})
-        fo['latitude'] = df_pts.latitude.iloc[pt_ind]
-        fo['longitude'] = df_pts.longitude.iloc[pt_ind]
-        fo['elevation'] = df_pts.elevation.iloc[pt_ind]
-        fo.latitude.attrs = {'units': 'deg', 'standard_name': 'latitude'}
-        fo.longitude.attrs = {'units': 'deg', 'standard_name': 'longitude'}
-        fo.elevation.attrs = {'units': 'm', 'standard_name': 'elevation'}
-        fo.to_netcdf(foutput, encoding=encod_dict)
-        print('---> File {} saved'.format(foutput))
+    fnames = [str(Path(path) / f) for f in point_file_names(fname_format, ds.sizes['point_name'], n_digits)]
+    info = [{'latitude': df_pts.latitude.iloc[i], 'longitude': df_pts.longitude.iloc[i],
+             'elevation': df_pts.elevation.iloc[i]} for i in range(len(fnames))]
+    options = {'tstep': _tstep_seconds(ds), 'snow_partition_method': snow_partition_method,
+               'climate_dataset_name': climate_dataset_name, 'project_author': project_author, 'ver_dict': ver_dict}
+    return export_points(ds, ['t', 'q', 'ws', 'SW', 'LW', 'p', 'tp'], _write_cryogrid, fnames, info=info,
+                         options=options, n_jobs=n_jobs, label='CryoGrid files')
 
 
 def to_fsm2(ds_down,
@@ -795,6 +888,61 @@ cd ..
 
 
 
+def _write_fsm2oshd_met(fname, ds_pt, tvt, ds_tvt_pt, snow_partition_method, temperature_correction=0):
+    """
+    Function to write meteorological forcing for FSM
+
+    Format of the text file is:
+        2021 9 1 6 61 45.01 206.7 0 0 275.02 74.08 0.29 74829 0 0.5
+        2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
+
+    year month  day   hour  SWdir   SWdiff  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
+    (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
+
+    """
+    
+    # for storage optimization tvt is stored in percent.
+
+
+    df = pd.DataFrame()
+    df['year'] = pd.to_datetime(ds_pt.time.values).year
+    df['month']  = pd.to_datetime(ds_pt.time.values).month
+    df['day']  = pd.to_datetime(ds_pt.time.values).day
+    df['hr']  = pd.to_datetime(ds_pt.time.values).hour
+    df['SWdir'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
+    df['SWdif'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
+    df['LW'] = np.round(ds_pt.LW.values,2)
+
+    rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)   #convert pressure Bar to Pascal
+    rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values, method=snow_partition_method)
+    df['snowfall'] = np.round(snow, 5)
+    df['rainfall'] = np.round(rain, 5)
+    df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
+    df['RH'] = np.round(rh * 100,2)
+    df['speed'] = np.round(ds_pt.ws.values,2)
+    df['p'] = np.round(ds_pt.p.values,2)
+
+    arr = df.snowfall.rolling(24).sum()  # hardcoded sum over last 24h [mm]
+    arr.loc[np.isnan(arr)] = 0
+    df['sf24'] = np.round(arr,3)
+    #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
+    ds_tvt_pt = tvt if ds_tvt_pt is None else ds_tvt_pt
+    if type(ds_tvt_pt) in [int, np.int32, np.int64, float, np.float64, np.float16, np.float32]:
+        if ds_tvt_pt>1:
+            scale_tvt = 100
+        else:
+            scale_tvt = 1
+        df['tvt'] = ds_tvt_pt / scale_tvt
+    else:
+        if ds_tvt_pt.for_tau.max()>10:
+            scale_tvt = 100
+        else:
+            scale_tvt = 1
+        df['tvt'] = np.round(ds_tvt_pt.for_tau.values, 4)/scale_tvt
+
+    df.to_csv(fname, index=False, header=False, sep=' ')
+
+
 def to_fsm2oshd(mp,
                 ds_tvt,
                 simulation_path='fsm_sim',
@@ -802,7 +950,8 @@ def to_fsm2oshd(mp,
                 namelist_options=None,
                 snow_partition_method='continuous',
                 temperature_correction=0,
-                forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100}):
+                forest_param_scaler={'vfhp':100, 'fveg':100, 'fves':100, 'hcan':100, 'lai5':100},
+                n_jobs=None):
     """
     Function to generate forcing files for FSM2oshd (https://github.com/oshd-slf/FSM2oshd).
     FSM2oshd includes canopy structures processes
@@ -822,6 +971,8 @@ def to_fsm2oshd(mp,
         snow_partition_method (str): method for snow partitioning. Default: 'continuous'
         cluster_method (bool): boolean to be True is using cluster appraoch
         epsg_ds_param (int): epsg code of ds_param: example: 2056
+        n_jobs (int): number of processes writing the met files (see export_points). Default: the CPU_cores of
+            the project configuration
 
     """
     fsm_param = mp.toposub.ds_param
@@ -949,67 +1100,6 @@ def to_fsm2oshd(mp,
             return
 
 
-    def write_fsm2oshd_met(ds_pt,
-                           ds_tvt_pt,
-                           pt_name,
-                           pt_ind,
-                           n_digits,
-                           fname_format='fsm_sim/fsm_',
-                           temperature_correction=0):
-        """
-        Function to write meteorological forcing for FSM
-
-        Format of the text file is:
-            2021 9 1 6 61 45.01 206.7 0 0 275.02 74.08 0.29 74829 0 0.5
-            2021 9 1 7 207.9 85.9 210.3 0 0 275.84 66.92 0.39 74864 0 0.5
-
-        year month  day   hour  SWdir   SWdiff  LW  Sf  Rf     Ta  RH   Ua    Ps    Sf24 Tvt
-        (yyyy) (mm) (dd) (hh)  (W/m2) (W/m2) (W/m2) (kg/m2/s) (kg/m2/s) (K) (RH 0-100) (m/s) (Pa) (mm) (-)
-
-        """
-        
-        # for storage optimization tvt is stored in percent.
-
-
-        foutput = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
-        df = pd.DataFrame()
-        df['year'] = pd.to_datetime(ds_pt.time.values).year
-        df['month']  = pd.to_datetime(ds_pt.time.values).month
-        df['day']  = pd.to_datetime(ds_pt.time.values).day
-        df['hr']  = pd.to_datetime(ds_pt.time.values).hour
-        df['SWdir'] = np.round(ds_pt.SW_direct.values,2)              # change to direct SW
-        df['SWdif'] = np.round(ds_pt.SW_diffuse.values,2)                # change to diffuse SW
-        df['LW'] = np.round(ds_pt.LW.values,2)
-
-        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)   #convert pressure Bar to Pascal
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values, method=snow_partition_method)
-        df['snowfall'] = np.round(snow, 5)
-        df['rainfall'] = np.round(rain, 5)
-        df['Tair'] = np.round(ds_pt.t.values, 2) + temperature_correction
-        df['RH'] = np.round(rh * 100,2)
-        df['speed'] = np.round(ds_pt.ws.values,2)
-        df['p'] = np.round(ds_pt.p.values,2)
-
-        arr = df.snowfall.rolling(24).sum()  # hardcoded sum over last 24h [mm]
-        arr.loc[np.isnan(arr)] = 0
-        df['sf24'] = np.round(arr,3)
-        #ds_pt['t_iter'] = ds_pt.time.dt.month*10000 + ds_pt.time.dt.day*100 + ds_pt.time.dt.hour
-        if type(ds_tvt_pt) in [int, np.int32, np.int64, float, np.float64, np.float16, np.float32]:
-            print('Warning: tvt is constant')
-            if ds_tvt_pt>1:
-                scale_tvt = 100
-            else:
-                scale_tvt = 1
-            df['tvt'] = ds_tvt_pt / scale_tvt
-        else:
-            if ds_tvt_pt.for_tau.max()>10:
-                scale_tvt = 100
-            else:
-                scale_tvt = 1
-            df['tvt'] = np.round(ds_tvt_pt.for_tau.values, 4)/scale_tvt
-
-        df.to_csv(foutput, index=False, header=False, sep=' ')
-        print(f'---> Met file {foutput} saved')
 
 
     # 0. Add print statements about the need of data currently computed extrenally to TopoPyScale.
@@ -1067,31 +1157,36 @@ def to_fsm2oshd(mp,
     new_name = {'LAI5':'lai5', 'svf_for':'vfhp', 'CC5':'fveg', 'CC50':'fves', 'CH5':'hcan'}
     df_forest = df_forest.rename(columns=new_name)
  
-    # ----- Loop through all points-------
-    # NOTE: eventually this for loop could be parallelized to several cores -----
-    for pt_ind, pt_name in enumerate(mp.downscaled_pts.point_name.values):
+    p.mkdir(parents=True, exist_ok=True)
+    # ----- met files: blocks of points read once, written by n_jobs processes -----
+    # [ ] Add checking of NaNs in ds_tvt. If NaN present stop process and send ERROR message
+    ds = mp.downscaled_pts
+    n_pts = ds.sizes['point_name']
+    fnames = [str(p / fname_format) + '_met_' + str(i).zfill(n_digits) + '.txt' for i in range(n_pts)]
+    tvt, extra = [None] * n_pts, None
+    if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
+        print('Warning: tvt is constant')
+        tvt = [ds_tvt] * n_pts
+    elif type(ds_tvt) in [str]:
+        if ds_tvt != 'svf_for':
+            raise ValueError(f"ds_tvt must be a number, 'svf_for' or a dataset with for_tau, not {ds_tvt}")
+        print('Warning: tvt is constant')
+        tvt = [df_forest.vfhp.iloc[i] for i in range(n_pts)]
+    else:
+        extra = ds_tvt
+    if n_jobs is None:
+        try:
+            n_jobs = mp.config.project.parallelization.setting.multicore.CPU_cores
+        except AttributeError:
+            n_jobs = 1
+    export_points(ds, ['SW_direct', 'SW_diffuse', 'LW', 't', 'p', 'q', 'tp', 'ws'], _write_fsm2oshd_met, fnames,
+                  info=tvt, extra=extra, n_jobs=n_jobs or 1, label='FSM2oshd met files',
+                  options={'snow_partition_method': snow_partition_method,
+                           'temperature_correction': temperature_correction})
 
-        ds_pt = mp.downscaled_pts.sel(point_name=pt_name).copy()
-
-
-        # [ ] Add checking of NaNs in ds_tvt. If NaN present stop process and send ERROR message
-
-        if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
-            tvt_pt = ds_tvt
-        elif type(ds_tvt) in [str]:
-            if ds_tvt == 'svf_for':
-                tvt_pt = df_forest.vfhp.iloc[pt_ind]
-        else:
-            tvt_pt = ds_tvt.sel(point_name=pt_name).copy()
-
+    # ----- namelists -----
+    for pt_ind in range(n_pts):
         row_forest = df_forest.iloc[pt_ind]
-        write_fsm2oshd_met(ds_pt,
-                           ds_tvt_pt=tvt_pt,
-                           n_digits=n_digits,
-                           pt_name=pt_name,
-                           pt_ind=pt_ind,
-                           fname_format=p/fname_format,
-                           temperature_correction=temperature_correction)
         write_fsm2oshd_namelist(row_forest,
                                 pt_ind=pt_ind,
                                 n_digits=n_digits,
@@ -1108,24 +1203,42 @@ def to_fsm2oshd(mp,
                                     fname_format=p/fname_format,
                                     mode='open',
                                     namelist_param=namelist_param) # write open namelist
-
-        ds_pt = None
-        tvt_pt = None
         # [ ] add logic to computed weighted average outputs based on forest cover fraction per point.
 
     df_forest.to_pickle(p / 'df_forest.pckl')
     return
 
 
-def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n_digits=None):
+def _write_fsm(fname, ds_pt, info, extra_pt, tstep, snow_partition_method):
+    df = pd.DataFrame()
+    df['year'] = pd.to_datetime(ds_pt.time.values).year
+    df['month'] = pd.to_datetime(ds_pt.time.values).month
+    df['day'] = pd.to_datetime(ds_pt.time.values).day
+    df['hr'] = pd.to_datetime(ds_pt.time.values).hour
+    df['SW'] = ds_pt.SW.values
+    df['LW'] = ds_pt.LW.values
+    rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+    rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values,
+                                   method=snow_partition_method)
+    df['snowfall'] = snow / tstep  # mm per time step to kg m-2 s-1
+    df['rainfall'] = rain / tstep
+    df['Tair'] = np.round(ds_pt.t.values, 2)
+    df['RH'] = rh * 100
+    df['speed'] = ds_pt.ws.values
+    df['p'] = ds_pt.p.values
+    df.to_csv(fname, index=False, header=False, sep=' ')
+
+
+def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n_digits=None, n_jobs=1):
     """
     Function to export data for FSM.
 
     Args:
         ds (dataset): downscaled_pts,
-        df_pts (dataframe): toposub.df_centroids,
         fname_format (str pattern): output format of filename
         snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
+        n_digits (int): digits of the point index in the file names. Default: those of the number of points
+        n_jobs (int): number of processes writing the files (see export_points)
 
     format is a text file with the following columns
     year month  day   hour  SW      LW      Sf         Rf     Ta  RH   Ua    Ps
@@ -1140,40 +1253,40 @@ def to_fsm(ds, fname_format='FSM_pt_*.tx', snow_partition_method='continuous', n
     """
     if n_digits is None:
         n_digits = len(str(len(ds.point_name)))
-
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        df = pd.DataFrame()
-        df['year'] = pd.to_datetime(ds_pt.time.values).year
-        df['month'] = pd.to_datetime(ds_pt.time.values).month
-        df['day'] = pd.to_datetime(ds_pt.time.values).day
-        df['hr'] = pd.to_datetime(ds_pt.time.values).hour
-        df['SW'] = ds_pt.SW.values
-        df['LW'] = ds_pt.LW.values
-        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        rain, snow = mu.partition_snow(ds_pt.tp.values, ds_pt.t.values, rh * 100, ds_pt.p.values,
-                                       method=snow_partition_method)
-        df['snowfall'] = snow / _tstep_seconds(ds)  # mm per time step to kg m-2 s-1
-        df['rainfall'] = rain / _tstep_seconds(ds)
-        df['Tair'] = np.round(ds_pt.t.values, 2)
-        df['RH'] = rh * 100
-        df['speed'] = ds_pt.ws.values
-        df['p'] = ds_pt.p.values
-
-        df.to_csv(foutput, index=False, header=False, sep=' ')
-        print('---> File {} saved'.format(foutput))
+    fnames = point_file_names(fname_format, ds.sizes['point_name'], n_digits)
+    return export_points(ds, ['SW', 'LW', 't', 'p', 'q', 'tp', 'ws'], _write_fsm, fnames,
+                         options={'tstep': _tstep_seconds(ds), 'snow_partition_method': snow_partition_method},
+                         n_jobs=n_jobs, label='FSM files')
 
 
-def to_TC(ds, fname_format='pt_*.tx'):
+def _write_tc(fname, ds_pt, info, extra_pt):
+    df = pd.DataFrame()
+    df['datetime'] = pd.to_datetime(ds_pt.time.values)
+    df['TA'] = np.round(ds_pt.t.values, 2)  # air temperature
+    rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+    df['RH'] = rh * 100  # relative humidity
+    df['PP'] = ds_pt.tp.values  # precipitation
+    df['PRESS'] = ds_pt.p.values  # pressure
+    df['SWIN'] = ds_pt.SW.values  # shortwave
+    df['LWIN'] = ds_pt.LW.values  # longwave
+    df['WS'] = ds_pt.ws.values  # wind speed
+    df['WDIR'] = ds_pt.wd.values * (180 / np.pi)  # wind direction
+
+    # convert units
+    df.TA = df.TA - 273.15  # to °C (from Kelvin)
+    df.PRESS = df.PRESS / 100  # to hPa (from Pascal)
+    df.to_csv(fname, index=False, header=True, sep=',')
+
+
+def to_TC(ds, fname_format='pt_*.tx', n_jobs=1):
     """
     Function to export data for the T&C model.
     https://hyd.ifu.ethz.ch/research-data-models/t-c.html
 
     Args:
         ds (dataset): downscaled_pts,
-        df_pts (dataframe): toposub.df_centroids,
         fname_format (str pattern): output format of filename
+        n_jobs (int): number of processes writing the files (see export_points)
 
     format is a text file with the following columns
     datetime    TA  P       PRESS RH  SWIN    LWIN    WS   WDIR
@@ -1181,38 +1294,44 @@ def to_TC(ds, fname_format='pt_*.tx'):
 
     """
 
-    # set n_digits
     n_digits = len(str(len(ds.point_name))) + 1
+    fnames = point_file_names(fname_format, ds.sizes['point_name'], n_digits)
+    return export_points(ds, ['t', 'p', 'q', 'tp', 'SW', 'LW', 'ws', 'wd'], _write_tc, fnames, n_jobs=n_jobs,
+                         label='T&C files')
 
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        df = pd.DataFrame()
-        df['datetime'] = pd.to_datetime(ds_pt.time.values)
-        df['TA'] = np.round(ds_pt.t.values, 2)  # air temperature
-        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        df['RH'] = rh * 100  # relative humidity
-        df['PP'] = ds_pt.tp.values  # precipitation
-        df['PRESS'] = ds_pt.p.values  # pressure
-        df['SWIN'] = ds_pt.SW.values  # shortwave
-        df['LWIN'] = ds_pt.LW.values  # longwave
-        df['WS'] = ds_pt.ws.values  # wind speed
-        df['WDIR'] = ds_pt.wd.values * (180 / np.pi)  # wind direction
 
-        # convert units
-        df.TA = df.TA - 273.15  # to °C (from Kelvin)
-        df.PRESS = df.PRESS / 100  # to hPa (from Pascal)
+MICROMET_HEADER = ('year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     '
+                   'precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   '
+                   '(deg)    (mm/dt)\n')
 
-        # save
-        df.to_csv(foutput, index=False, header=True, sep=',')
-        print('---> File {} saved'.format(foutput))
+
+def _write_micromet(fname, ds_pt, info, extra_pt, na_values, headers):
+    df = pd.DataFrame()
+    df['year'] = pd.to_datetime(ds_pt.time.values).year
+    df['mo'] = pd.to_datetime(ds_pt.time.values).month
+    df['dy'] = pd.to_datetime(ds_pt.time.values).day
+    df['hr'] = pd.to_datetime(ds_pt.time.values).hour
+    df['stn_id'] = info['stn_id']
+    df['easting'] = np.round(info['x'], 2)
+    df['northing'] = np.round(info['y'], 2)
+    df['elevation'] = np.round(info['elevation'], 2)
+    df['Tair'] = np.round(ds_pt.t.values - 273.15, 2)
+    df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
+    df['speed'] = ds_pt.ws.values
+    df['dir'] = np.round(np.rad2deg(ds_pt.wd.values), 1)
+    df['precip'] = ds_pt.tp.values
+    with open(fname, 'w') as f:
+        if headers:
+            f.write(MICROMET_HEADER + '\n')
+        df.to_csv(f, index=False, header=False, sep=' ', na_rep=na_values)
 
 
 def to_micromet_single_station(ds,
                                df_pts,
                                fname_format='Snowmodel_pt_*.csv',
                                na_values=-9999,
-                               headers=False):
+                               headers=False,
+                               n_jobs=1):
     """
     Function to export TopoScale output in the format for Listn's Snowmodel (using Micromet). One CSV file per point_name
 
@@ -1222,6 +1341,7 @@ def to_micromet_single_station(ds,
         fname_format (str): filename format. point_name is inserted where * is
         na_values (int): na_value default
         headers (bool): add headers to file
+        n_jobs (int): number of processes writing the files (see export_points)
 
 
     Example of the compatible format for micromet (headers should be removed to run the model:
@@ -1235,33 +1355,133 @@ def to_micromet_single_station(ds,
     """
 
     n_digits = len(str(len(ds.point_name))) + 1
+    fnames = point_file_names(fname_format, ds.sizes['point_name'], n_digits)
+    # stn_id is the index of the point, its position in df_pts
+    info = [{'stn_id': i, 'x': df_pts.x.iloc[i], 'y': df_pts.y.iloc[i], 'elevation': df_pts.elevation.iloc[i]}
+            for i in range(len(fnames))]
+    return export_points(ds, ['t', 'p', 'q', 'ws', 'wd', 'tp'], _write_micromet, fnames, info=info,
+                         options={'na_values': na_values, 'headers': headers}, n_jobs=n_jobs,
+                         label='SnowModel files')
 
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        df = pd.DataFrame()
-        df['year'] = pd.to_datetime(ds_pt.time.values).year
-        df['mo'] = pd.to_datetime(ds_pt.time.values).month
-        df['dy'] = pd.to_datetime(ds_pt.time.values).day
-        df['hr'] = pd.to_datetime(ds_pt.time.values).hour
-        df['stn_id'] = pt
-        df['easting'] = np.round(df_pts.x.iloc[pt], 2)
-        df['northing'] = np.round(df_pts.y.iloc[pt], 2)
-        df['elevation'] = np.round(df_pts.elevation.iloc[pt], 2)
-        df['Tair'] = np.round(ds_pt.t.values - 273.15, 2)
-        df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
-        df['speed'] = ds_pt.ws.values
-        df['dir'] = np.round(np.rad2deg(ds_pt.wd.values), 1)
-        df['precip'] = ds_pt.tp.values
 
-        df.to_csv(foutput, index=False, header=False, sep=' ', na_rep=na_values)
-        if headers:
-            header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
-            with open(foutput, 'r+') as f:
-                f_data = f.read()
-                f.seek(0, 0)
-                f.write(header + '\n' + f_data)
-        print('---> File {} saved'.format(foutput))
+def _write_crocus(fname, ds_pt, row, extra_pt, tstep, scale_precip, snow_partition_method, climate_dataset_name,
+                  project_author, ver_dict):
+    df = pd.DataFrame()
+    df['time'] = ds_pt.time.values
+    df['Tair'] = ds_pt.t.values
+    df['DIR_SWdown'] = ds_pt.SW.values
+    df['LWdown'] = ds_pt.LW.values
+    df['PSurf'] = ds_pt.p.values
+    df['HUMREL'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
+    df['xwind'] = ds_pt.u.values
+    df['ywind'] = ds_pt.v.values
+    df['precip'] = ds_pt.tp.values / tstep * scale_precip  # mm per time step to mm/s
+    rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+    df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values, rh * 100, ds_pt.p.values,
+                                                 method=snow_partition_method)
+
+    # Derive variables: Q- humidity, WD - wind direction (deg), and WS
+    df['Qair'] = ds_pt.q.values
+    df['Wind'], df['Wind_DIR'] = ds_pt.ws.values, np.rad2deg(ds_pt.wd.values)
+    df['NEB'] = np.zeros(df.shape[0])
+    df['CO2air'] = np.zeros(df.shape[0])
+    df['SCA_SWdown'] = np.zeros(df.shape[0])
+
+    df.drop(columns=['precip', 'xwind', 'ywind'], inplace=True)
+    ds_pt.close()
+
+    # df = df.loc[(df.time>=pd.Timestamp(start)) & (df.time<pd.Timestamp(end)+pd.Timedelta('1D'))]
+
+    # Build netcdf forcing file for CROCUS
+    fo = xr.Dataset.from_dataframe(df.set_index('time'))
+    fo = df.set_index(['time']).to_xarray()
+    fo.Tair.attrs = {'units': 'K', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
+                     '_FillValue': -9999999.0}
+    fo.Qair.attrs = {'units': 'kg/kg', 'standard_name': 'Qair', 'long_name': 'Near Surface Specific Humidity',
+                     '_FillValue': -9999999.0}
+    fo.HUMREL.attrs = {'units': '%', 'standard_name': 'HUMREL', 'long_name': 'Relative Humidity',
+                       '_FillValue': -9999999.0}
+    fo.Wind.attrs = {'units': 'm/s', 'standard_name': 'Wind', 'long_name': 'Wind Speed', '_FillValue': -9999999.0}
+    fo.Wind_DIR.attrs = {'units': 'deg', 'standard_name': 'Wind_DIR', 'long_name': 'Wind Direction',
+                         '_FillValue': -9999999.0}
+    fo.Rainf.attrs = {'units': 'kg/m2/s', 'standard_name': 'Rainf', 'long_name': 'Rainfall Rate',
+                      '_FillValue': -9999999.0}
+    fo.Snowf.attrs = {'units': 'kg/m2/s', 'standard_name': 'Snowf', 'long_name': 'Snowfall Rate',
+                      '_FillValue': -9999999.0}
+    fo.DIR_SWdown.attrs = {'units': 'W/m2', 'standard_name': 'DIR_SWdown',
+                           'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
+    fo.LWdown.attrs = {'units': 'W/m2', 'standard_name': 'LWdown',
+                       'long_name': 'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
+    fo.PSurf.attrs = {'units': 'Pa', 'standard_name': 'PSurf', 'long_name': 'Surface Pressure',
+                      '_FillValue': -9999999.0}
+    fo.SCA_SWdown.attrs = {'units': 'W/m2', 'standard_name': 'SCA_SWdown',
+                           'long_name': 'Surface Incident Diffuse Shortwave Radiation', '_FillValue': -9999999.0}
+    fo.CO2air.attrs = {'units': 'kg/m3', 'standard_name': 'CO2air', 'long_name': 'Near Surface CO2 Concentration',
+                       '_FillValue': -9999999.0}
+    fo.NEB.attrs = {'units': 'between 0 and 1', 'standard_name': 'NEB', 'long_name': 'Nebulosity',
+                    '_FillValue': -9999999.0}
+
+    fo.attrs = {'title': 'Forcing for SURFEX CROCUS',
+                'source': 'data from {} downscaled with TopoPyScale ready for CROCUS'.format(climate_dataset_name),
+                'creator_name': 'Dataset created by {}'.format(project_author),
+                'package_version': ver_dict.get('package_version'),
+                'git_commit': ver_dict.get('git_commit'),
+                'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
+
+    fo['ZS'] = np.float64(row.elevation)
+    fo['aspect'] = np.float64(np.rad2deg(row.aspect))
+    fo['slope'] = np.float64(np.rad2deg(row.slope))
+    fo['massif_number'] = np.float64(0)
+    fo['LAT'] = row.latitude
+    fo['LON'] = row.longitude
+    fo.LAT.attrs = {'units': 'degrees_north', 'standard_name': 'LAT', 'long_name': 'latitude',
+                    '_FillValue': -9999999.0}
+    fo.LON.attrs = {'units': 'degrees_east', 'standard_name': 'LON', 'long_name': 'longitude',
+                    '_FillValue': -9999999.0}
+    fo['ZREF'] = np.float64(2)
+    fo['UREF'] = np.float64(10)
+    fo.ZREF.attrs = {'units': 'm', 'standard_name': 'ZREF', 'long_name': 'Reference_Height',
+                     '_FillValue': -9999999.0}
+    fo.UREF.attrs = {'units': 'm', 'standard_name': 'UREF', 'long_name': 'Reference_Height_for_Wind',
+                     '_FillValue': -9999999.0}
+    fo.aspect.attrs = {'units': 'degree from north', 'standard_name': 'aspect', 'long_name': 'slope aspect',
+                       '_FillValue': -9999999.0}
+    fo.slope.attrs = {'units': 'degrees from horizontal', 'standard_name': 'slope', 'long_name': 'slope angle',
+                      '_FillValue': -9999999.0}
+    fo.ZS.attrs = {'units': 'm', 'standard_name': 'ZS', 'long_name': 'altitude', '_FillValue': -9999999.0}
+    fo.massif_number.attrs = {'units': '', 'standard_name': 'massif_number',
+                              'long_name': 'SAFRAN massif number in SOPRANO world', '_FillValue': -9999999.0}
+    fo.time.attrs = {'standard_name': 'time', 'long_name': 'time', '_FillValue': -9999999.0}
+    fo['FRC_TIME_STP'] = np.float64(3600)
+    fo.FRC_TIME_STP.attrs = {'units': 's', 'standard_name': 'FRC_TIME_STP', 'long_name': 'Forcing_Time_Step',
+                             '_FillValue': -9999999.0}
+    fo['FORCE_TIME_STEP'] = np.float64(3600)
+    fo.FORCE_TIME_STEP.attrs = {'units': 's', 'standard_name': 'FORCE_TIME_STEP', 'long_name': 'Forcing_Time_Step',
+                                '_FillValue': -9999999.0}
+
+    # one point: time-dependent and point variables on (time, Number_of_points), as SURFEX reads them
+    scalars = ['FRC_TIME_STP', 'FORCE_TIME_STEP']
+    fo = xr.merge([fo.drop_vars(scalars).expand_dims('Number_of_points'), fo[scalars]], combine_attrs='override')
+    fo = fo.transpose()
+
+    fo.to_netcdf(fname, mode='w', format='NETCDF3_CLASSIC', unlimited_dims={'time': True},
+                 encoding={'time': {'dtype': 'float64', 'calendar': 'standard'},
+                           'Tair': {'dtype': 'float64'},
+                           'Qair': {'dtype': 'float64'},
+                           'Snowf': {'dtype': 'float64'},
+                           'Rainf': {'dtype': 'float64'},
+                           'DIR_SWdown': {'dtype': 'float64'},
+                           'LWdown': {'dtype': 'float64'},
+                           'PSurf': {'dtype': 'float64'},
+                           'HUMREL': {'dtype': 'float64'},
+                           'Wind': {'dtype': 'float64'},
+                           'Wind_DIR': {'dtype': 'float64'},
+                           'CO2air': {'dtype': 'float64'},
+                           'NEB': {'dtype': 'float64'},
+                           'SCA_SWdown': {'dtype': 'float64'},
+                           'ZREF': {'dtype': 'float64'},
+                           'UREF': {'dtype': 'float64'}})
 
 
 def to_crocus(ds,
@@ -1270,7 +1490,8 @@ def to_crocus(ds,
               scale_precip=1,
               climate_dataset_name='ERA5',
               project_author='S. Filhol',
-              snow_partition_method='continuous'):
+              snow_partition_method='continuous',
+              n_jobs=1):
     """
     Functiont to export toposcale output to CROCUS netcdf format. Generates one file per point_name
 
@@ -1282,129 +1503,19 @@ def to_crocus(ds,
         climate_dataset_name (str): name of original climate dataset. Default 'ERA5',
         project_author (str): name of project author(s)
         snow_partition_method (str): snow/rain partitioning method: default 'jennings2018_trivariate'
+        n_jobs (int): number of processes writing the files (see export_points)
     """
-    # create one file per point_name
-    n_digits = len(str(ds.point_name.values.max()))
-    ver_dict = tu.get_versionning()
-
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        df = pd.DataFrame()
-        df['time'] = ds_pt.time.values
-        df['Tair'] = ds_pt.t.values
-        df['DIR_SWdown'] = ds_pt.SW.values
-        df['LWdown'] = ds_pt.LW.values
-        df['PSurf'] = ds_pt.p.values
-        df['HUMREL'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
-        df['xwind'] = ds_pt.u.values
-        df['ywind'] = ds_pt.v.values
-        df['precip'] = ds_pt.tp.values / _tstep_seconds(ds) * scale_precip  # mm per time step to mm/s
-        rh = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        df['Rainf'], df['Snowf'] = mu.partition_snow(df.precip, ds_pt.t.values, rh * 100, ds_pt.p.values,
-                                                     method=snow_partition_method)
-
-        # Derive variables: Q- humidity, WD - wind direction (deg), and WS
-        df['Qair'] = ds_pt.q.values
-        df['Wind'], df['Wind_DIR'] = ds_pt.ws.values, np.rad2deg(ds_pt.wd.values)
-        df['NEB'] = np.zeros(df.shape[0])
-        df['CO2air'] = np.zeros(df.shape[0])
-        df['SCA_SWdown'] = np.zeros(df.shape[0])
-
-        df.drop(columns=['precip', 'xwind', 'ywind'], inplace=True)
-        ds_pt.close()
-
-        # df = df.loc[(df.time>=pd.Timestamp(start)) & (df.time<pd.Timestamp(end)+pd.Timedelta('1D'))]
-
-        # Build netcdf forcing file for CROCUS
-        fo = xr.Dataset.from_dataframe(df.set_index('time'))
-        fo = df.set_index(['time']).to_xarray()
-        fo.Tair.attrs = {'units': 'K', 'standard_name': 'Tair', 'long_name': 'Near Surface Air Temperature',
-                         '_FillValue': -9999999.0}
-        fo.Qair.attrs = {'units': 'kg/kg', 'standard_name': 'Qair', 'long_name': 'Near Surface Specific Humidity',
-                         '_FillValue': -9999999.0}
-        fo.HUMREL.attrs = {'units': '%', 'standard_name': 'HUMREL', 'long_name': 'Relative Humidity',
-                           '_FillValue': -9999999.0}
-        fo.Wind.attrs = {'units': 'm/s', 'standard_name': 'Wind', 'long_name': 'Wind Speed', '_FillValue': -9999999.0}
-        fo.Wind_DIR.attrs = {'units': 'deg', 'standard_name': 'Wind_DIR', 'long_name': 'Wind Direction',
-                             '_FillValue': -9999999.0}
-        fo.Rainf.attrs = {'units': 'kg/m2/s', 'standard_name': 'Rainf', 'long_name': 'Rainfall Rate',
-                          '_FillValue': -9999999.0}
-        fo.Snowf.attrs = {'units': 'kg/m2/s', 'standard_name': 'Snowf', 'long_name': 'Snowfall Rate',
-                          '_FillValue': -9999999.0}
-        fo.DIR_SWdown.attrs = {'units': 'W/m2', 'standard_name': 'DIR_SWdown',
-                               'long_name': 'Surface Incident Direct Shortwave Radiation', '_FillValue': -9999999.0}
-        fo.LWdown.attrs = {'units': 'W/m2', 'standard_name': 'LWdown',
-                           'long_name': 'Surface Incident Longtwave Radiation', '_FillValue': -9999999.0}
-        fo.PSurf.attrs = {'units': 'Pa', 'standard_name': 'PSurf', 'long_name': 'Surface Pressure',
-                          '_FillValue': -9999999.0}
-        fo.SCA_SWdown.attrs = {'units': 'W/m2', 'standard_name': 'SCA_SWdown',
-                               'long_name': 'Surface Incident Diffuse Shortwave Radiation', '_FillValue': -9999999.0}
-        fo.CO2air.attrs = {'units': 'kg/m3', 'standard_name': 'CO2air', 'long_name': 'Near Surface CO2 Concentration',
-                           '_FillValue': -9999999.0}
-        fo.NEB.attrs = {'units': 'between 0 and 1', 'standard_name': 'NEB', 'long_name': 'Nebulosity',
-                        '_FillValue': -9999999.0}
-
-        fo.attrs = {'title': 'Forcing for SURFEX CROCUS',
-                    'source': 'data from {} downscaled with TopoPyScale ready for CROCUS'.format(climate_dataset_name),
-                    'creator_name': 'Dataset created by {}'.format(project_author),
-                    'package_version': ver_dict.get('package_version'),
-                    'git_commit': ver_dict.get('git_commit'),
-                    'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
-                    'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
-
-        fo['ZS'] = np.float64(df_pts.iloc[pt].elevation)
-        fo['aspect'] = np.float64(np.rad2deg(df_pts.iloc[pt].aspect))
-        fo['slope'] = np.float64(np.rad2deg(df_pts.iloc[pt].slope))
-        fo['massif_number'] = np.float64(0)
-        fo['LAT'] = df_pts.iloc[pt].latitude
-        fo['LON'] = df_pts.iloc[pt].longitude
-        fo.LAT.attrs = {'units': 'degrees_north', 'standard_name': 'LAT', 'long_name': 'latitude',
-                        '_FillValue': -9999999.0}
-        fo.LON.attrs = {'units': 'degrees_east', 'standard_name': 'LON', 'long_name': 'longitude',
-                        '_FillValue': -9999999.0}
-        fo['ZREF'] = np.float64(2)
-        fo['UREF'] = np.float64(10)
-        fo.ZREF.attrs = {'units': 'm', 'standard_name': 'ZREF', 'long_name': 'Reference_Height',
-                         '_FillValue': -9999999.0}
-        fo.UREF.attrs = {'units': 'm', 'standard_name': 'UREF', 'long_name': 'Reference_Height_for_Wind',
-                         '_FillValue': -9999999.0}
-        fo.aspect.attrs = {'units': 'degree from north', 'standard_name': 'aspect', 'long_name': 'slope aspect',
-                           '_FillValue': -9999999.0}
-        fo.slope.attrs = {'units': 'degrees from horizontal', 'standard_name': 'slope', 'long_name': 'slope angle',
-                          '_FillValue': -9999999.0}
-        fo.ZS.attrs = {'units': 'm', 'standard_name': 'ZS', 'long_name': 'altitude', '_FillValue': -9999999.0}
-        fo.massif_number.attrs = {'units': '', 'standard_name': 'massif_number',
-                                  'long_name': 'SAFRAN massif number in SOPRANO world', '_FillValue': -9999999.0}
-        fo.time.attrs = {'standard_name': 'time', 'long_name': 'time', '_FillValue': -9999999.0}
-        fo['FRC_TIME_STP'] = np.float64(3600)
-        fo.FRC_TIME_STP.attrs = {'units': 's', 'standard_name': 'FRC_TIME_STP', 'long_name': 'Forcing_Time_Step',
-                                 '_FillValue': -9999999.0}
-        fo['FORCE_TIME_STEP'] = np.float64(3600)
-        fo.FORCE_TIME_STEP.attrs = {'units': 's', 'standard_name': 'FORCE_TIME_STEP', 'long_name': 'Forcing_Time_Step',
-                                    '_FillValue': -9999999.0}
-
-        fo = fo.rename_dims({'point_name':'Number_of_points'})
-        fo = fo.transpose()
-
-        fo.to_netcdf(foutput, mode='w', format='NETCDF3_CLASSIC', unlimited_dims={'time': True},
-                     encoding={'time': {'dtype': 'float64', 'calendar': 'standard'},
-                               'Tair': {'dtype': 'float64'},
-                               'Qair': {'dtype': 'float64'},
-                               'Snowf': {'dtype': 'float64'},
-                               'Rainf': {'dtype': 'float64'},
-                               'DIR_SWdown': {'dtype': 'float64'},
-                               'LWdown': {'dtype': 'float64'},
-                               'PSurf': {'dtype': 'float64'},
-                               'HUMREL': {'dtype': 'float64'},
-                               'Wind': {'dtype': 'float64'},
-                               'Wind_DIR': {'dtype': 'float64'},
-                               'CO2air': {'dtype': 'float64'},
-                               'NEB': {'dtype': 'float64'},
-                               'SCA_SWdown': {'dtype': 'float64'},
-                               'ZREF': {'dtype': 'float64'},
-                               'UREF': {'dtype': 'float64'}})
-        print('---> File {} saved'.format(foutput))
+    # one file per point, named by the index of the point, with the digits of the largest point number
+    names = ds.point_name.values
+    numeric = all(str(n).isdigit() for n in names)
+    n_digits = len(str(max(int(n) for n in names))) if numeric else len(str(len(names)))
+    fnames = point_file_names(fname_format, len(names), n_digits)
+    options = {'tstep': _tstep_seconds(ds), 'scale_precip': scale_precip, 'snow_partition_method': snow_partition_method,
+               'climate_dataset_name': climate_dataset_name, 'project_author': project_author,
+               'ver_dict': tu.get_versionning()}
+    return export_points(ds, ['t', 'SW', 'LW', 'p', 'q', 'u', 'v', 'tp', 'ws', 'wd'], _write_crocus, fnames,
+                         info=[df_pts.iloc[i] for i in range(len(names))], options=options, n_jobs=n_jobs,
+                         label='CROCUS files')
 
 
 def to_surfex(ds,
@@ -1569,15 +1680,28 @@ def to_surfex(ds,
 
 
 
-def to_snowpack(ds, fname_format='smet_pt_*.tx'):
+def _write_snowpack(fname, ds_pt, info, extra_pt):
+    df = pd.DataFrame()
+    df['timestamp'] = pd.DatetimeIndex(ds_pt.time.values).strftime('%Y-%m-%dT%H:%M:%S')  # SMET ISO format
+    df['Tair'] = np.round(ds_pt.t.values, 2)
+    df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
+    df['VW'] = ds_pt.ws.values
+    df['DW'] = np.rad2deg(ds_pt.wd.values)  # SMET expects degrees
+    df['SW'] = ds_pt.SW.values
+    df['LW'] = ds_pt.LW.values
+    df['PSUM'] = ds_pt.tp.values
+    df.to_csv(fname, index=False, header=False, sep=' ')
+
+
+def to_snowpack(ds, fname_format='smet_pt_*.tx', n_jobs=1):
     """
     Function to export data for snowpack model as smet.
     https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf
 
     Args:
         ds (dataset): downscaled_pts,
-        df_pts (dataframe): toposub.df_centroids,
         fname_format (str pattern): output format of filename
+        n_jobs (int): number of processes writing the files (see export_points)
 
     format is a text file with the following columns (coulumns can vary)
 
@@ -1610,41 +1734,39 @@ def to_snowpack(ds, fname_format='smet_pt_*.tx'):
     """
 
     n_digits = len(str(len(ds.point_name))) + 1
-
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        df = pd.DataFrame()
-        df['timestamp'] = pd.DatetimeIndex(ds_pt.time.values).strftime('%Y-%m-%dT%H:%M:%S')  # SMET ISO format
-        df['Tair'] = np.round(ds_pt.t.values, 2)
-        df['RH'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values)
-        df['VW'] = ds_pt.ws.values
-        df['DW'] = np.rad2deg(ds_pt.wd.values)  # SMET expects degrees
-        df['SW'] = ds_pt.SW.values
-        df['LW'] = ds_pt.LW.values
-        df['PSUM'] = ds_pt.tp.values
-
-        df.to_csv(foutput, index=False, header=False, sep=' ')
-        print('---> File {} saved'.format(foutput))
-
-        # if headers:
-        #     header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
-        #     with open(foutput, 'r+') as f:
-        #         f_data = f.read()
-        #         f.seek(0,0)
-        #         f.write(header + '\n' + f_data)
-        # print('---> File {} saved'.format(foutput))
+    fnames = point_file_names(fname_format, ds.sizes['point_name'], n_digits)
+    return export_points(ds, ['t', 'p', 'q', 'ws', 'wd', 'SW', 'LW', 'tp'], _write_snowpack, fnames, n_jobs=n_jobs,
+                         label='SNOWPACK files')
 
 
-def to_geotop(ds, fname_format='geotop_pt_*.txt'):
+GEOTOP_HEADER = 'Date, AirT, RelHum, WindS, WindDr, Swglob, Lwin, Iprec'
+
+
+def _write_geotop(fname, ds_pt, info, extra_pt):
+    df = pd.DataFrame()
+    dt = pd.to_datetime(ds_pt.time.values)
+    df['Date'] = dt.strftime("%d/%m/%Y %H:%M")
+    df['AirT'] = np.round(ds_pt.t.values - 273.15, 2)
+    df['RelHum'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
+    df['WindS'] = ds_pt.ws.values
+    df['WIndDr'] = ds_pt.wd.values * 180 / np.pi
+    df['Swglob'] = ds_pt.SW.values
+    df['Lwin'] = ds_pt.LW.values
+    df['Iprec'] = ds_pt.tp.values
+    with open(fname, 'w') as f:
+        f.write(GEOTOP_HEADER + '\n')
+        df.to_csv(f, index=False, header=False, sep=',', quoting=csv.QUOTE_NONE)
+
+
+def to_geotop(ds, fname_format='geotop_pt_*.txt', n_jobs=1):
     """
     Function to export data for snowpack model as smet.
     https://models.slf.ch/docserver/meteoio/SMET_specifications.pdf
 
     Args:
         ds (dataset): downscaled_pts,
-        df_pts (dataframe): toposub.df_centroids,
         fname_format (str pattern): output format of filename
+        n_jobs (int): number of processes writing the files (see export_points)
 
 
     Date format = DD/MM/YYYY hh:mm
@@ -1679,35 +1801,6 @@ def to_geotop(ds, fname_format='geotop_pt_*.txt'):
     """
 
     n_digits = len(str(len(ds.point_name))) + 1
-
-    for pt_ind, pt_name in enumerate(ds.point_name.values):
-        foutput = str(fname_format).split('*')[0] + str(pt_ind).zfill(n_digits) + str(fname_format).split('*')[1]
-        ds_pt = ds.sel(point_name=pt_name).copy()
-        df = pd.DataFrame()
-        dt = pd.to_datetime(ds_pt.time.values)
-        df['Date'] = dt.strftime("%d/%m/%Y %H:%M")
-        # df['Date'] = str(pd.to_datetime(ds_pt.time.values).day) +   "/" + str(pd.to_datetime(ds_pt.time.values).month) +  "/" + str(pd.to_datetime(ds_pt.time.values).year) +  " " + str(pd.to_datetime(ds_pt.time.values).hour) + ":" + str(pd.to_datetime(ds_pt.time.values).minute)
-        df['AirT'] = np.round(ds_pt.t.values - 273.15, 2)
-        df['RelHum'] = mu.q_2_rh(ds_pt.t.values, ds_pt.p.values, ds_pt.q.values) * 100
-        df['WindS'] = ds_pt.ws.values
-        df['WIndDr'] = ds_pt.wd.values * 180 / np.pi
-        df['Swglob'] = ds_pt.SW.values
-        df['Lwin'] = ds_pt.LW.values
-        df['Iprec'] = ds_pt.tp.values
-
-        df.to_csv(foutput, index=False, header=False, sep=',', quoting=csv.QUOTE_NONE)
-
-        header = 'Date, AirT, RelHum, WindS, WindDr, Swglob, Lwin, Iprec'
-        with open(foutput, 'r+') as f:
-            f_data = f.read()
-            f.seek(0, 0)
-            f.write(header + '\n' + f_data)
-        print('---> File {} saved'.format(foutput))
-
-        # if headers:
-        #     header = 'year   mo   dy    hr     stn_id  easting  northing  elevation   Tair     RH     speed    dir     precip\n(yyyy) (mm) (dd) (hh.hh) (number)   (m)       (m)      (m)        (C)    (%)     (m/s)   (deg)    (mm/dt)\n'
-        #     with open(foutput, 'r+') as f:
-        #         f_data = f.read()
-        #         f.seek(0,0)
-        #         f.write(header + '\n' + f_data)
-        # print('---> File {} saved'.format(foutput))
+    fnames = point_file_names(fname_format, ds.sizes['point_name'], n_digits)
+    return export_points(ds, ['t', 'p', 'q', 'ws', 'wd', 'SW', 'LW', 'tp'], _write_geotop, fnames, n_jobs=n_jobs,
+                         label='GEOtop files')
