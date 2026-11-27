@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 370" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+  </defs>
+  <rect width="760" height="370" fill="#fff"/>
+  <line x1="80" y1="340" x2="620" y2="340" stroke="#333" stroke-width="1.5" marker-end="url(#k)"/>
+  <line x1="80" y1="340" x2="80" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#k)"/>
+  <text x="626" y="344">temperature</text>
+  <text x="40" y="24">elevation</text>
+  <!-- free atmosphere -->
+  <line x1="520" y1="320" x2="200" y2="50" stroke="#4a7fb0" stroke-width="2.5"/>
+  <text x="212" y="44" fill="#4a7fb0">pressure levels, interpolated: T<tspan baseline-shift="sub" font-size="10">pl</tspan>(z)</text>
+  <!-- ERA5 surface -->
+  <line x1="80" y1="240" x2="600" y2="240" stroke="#888" stroke-width="1.5" stroke-dasharray="8 5"/>
+  <text x="604" y="244" fill="#666">z<tspan baseline-shift="sub" font-size="10">s</tspan> (ERA5 surface)</text>
+  <path d="M345,240 C360,215 380,200 395,190 C400,186 404,183 407,180" fill="none" stroke="#888" stroke-width="2" stroke-dasharray="3 3"/>
+  <circle cx="345" cy="240" r="6" fill="#888"/>
+  <text x="196" y="268" fill="#555">T<tspan baseline-shift="sub" font-size="10">2m</tspan> of ERA5 (inversion)</text>
+  <line x1="420" y1="232" x2="352" y2="232" stroke="#333" stroke-width="1.5" marker-end="url(#k)"/>
+  <text x="365" y="224">ΔT</text>
+  <!-- ridge point -->
+  <circle cx="271" cy="110" r="6" fill="#c0392b"/>
+  <text x="286" y="114" fill="#c0392b">ridge, w ≈ 0: T = T<tspan baseline-shift="sub" font-size="10">pl</tspan>(z)</text>
+  <!-- valley point -->
+  <circle cx="484" cy="290" r="5" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+  <line x1="478" y1="290" x2="412" y2="290" stroke="#c0392b" stroke-width="1.5" marker-end="url(#r)"/>
+  <circle cx="404" cy="290" r="6" fill="#c0392b"/>
+  <text x="500" y="294" fill="#c0392b">valley, w ≈ 1: T = T<tspan baseline-shift="sub" font-size="10">pl</tspan>(z) + w ΔT</text>
+  <text x="90" y="362" fill="#555" font-size="12">ΔT = T<tspan baseline-shift="sub" font-size="10">2m</tspan> − T<tspan baseline-shift="sub" font-size="10">pl</tspan>(z<tspan baseline-shift="sub" font-size="10">s</tspan>): the surface effect of the grid cell, transferred with the weight w of each point</text>
+</svg>

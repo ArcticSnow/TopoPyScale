@@ -158,3 +158,8 @@ dmypy.json
 # patch series to apply with git am, not to commit
 tps-patches-*/
 tps-examples-patches-*/
+
+# sketches of the documentation (doc/sketches/roughen.js)
+doc/sketches/node_modules/
+doc/sketches/package-lock.json
+doc/sketches/package.json

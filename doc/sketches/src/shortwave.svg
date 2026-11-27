@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 450" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d99a00"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a7fb0"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6b8e23"/></marker>
+    <marker id="k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <rect width="900" height="450" fill="#fff"/>
+  <!-- terrain -->
+  <path d="M0,330 L60,250 L180,150 L260,250 L330,330 L430,360 L850,120 L900,112 L900,450 L0,450 Z" fill="#efe7dc" stroke="#8c7b6b" stroke-width="2"/>
+  <!-- sky view arc of P -->
+  <path d="M522.6,219.3 A130,130 0 0 1 763,180.6" fill="none" stroke="#4a7fb0" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <line x1="650" y1="245" x2="180" y2="150" stroke="#8c7b6b" stroke-dasharray="4 4"/>
+  <text x="285" y="215" fill="#8c7b6b">horizon H(φ)</text>
+  <!-- diffuse arrows -->
+  <g stroke="#4a7fb0" stroke-width="1.5" marker-end="url(#b)">
+    <line x1="560" y1="165" x2="618" y2="222"/>
+    <line x1="640" y1="122" x2="646" y2="218"/>
+    <line x1="720" y1="140" x2="672" y2="222"/>
+  </g>
+  <text x="560" y="70" fill="#4a7fb0">sky diffuse from the visible sky</text>
+  <text x="560" y="87" fill="#4a7fb0">(fraction V<tspan baseline-shift="sub" font-size="10">d</tspan>: isotropic part)</text>
+  <!-- sun and beam -->
+  <circle cx="80" cy="100" r="16" fill="#f2a900" stroke="#d99a00"/>
+  <text x="62" y="70" fill="#d99a00" font-weight="bold">sun</text>
+  <g stroke="#d99a00" stroke-width="2" marker-end="url(#o)">
+    <line x1="473" y1="200" x2="616" y2="236"/>
+    <line x1="505" y1="208" x2="648" y2="244"/>
+    <line x1="537" y1="180" x2="680" y2="216"/>
+  </g>
+  <line x1="98" y1="104" x2="470" y2="198" stroke="#d99a00" stroke-width="1.2" stroke-dasharray="2 4"/>
+  <text x="250" y="128" fill="#d99a00">direct beam B, and with hay_davies the</text>
+  <text x="250" y="145" fill="#d99a00">circumsolar diffuse A·D, both shaded by terrain</text>
+  <!-- normal -->
+  <line x1="650" y1="245" x2="612" y2="178" stroke="#333" stroke-width="1.5" marker-end="url(#k)"/>
+  <text x="598" y="176" font-weight="bold">n</text>
+  <text x="618" y="205" font-size="13" font-style="italic">i</text>
+  <!-- point P -->
+  <circle cx="650" cy="245" r="6" fill="#c0392b"/>
+  <text x="664" y="262" fill="#c0392b" font-weight="bold">P</text>
+  <text x="680" y="300">slope S facing the sun:</text>
+  <text x="680" y="317">B<tspan baseline-shift="sub" font-size="10">P</tspan> = B<tspan baseline-shift="sub" font-size="10">flat</tspan> cos i / cos z</text>
+  <!-- terrain reflection -->
+  <line x1="300" y1="290" x2="636" y2="250" stroke="#6b8e23" stroke-width="2" marker-end="url(#g)"/>
+  <text x="305" y="240" fill="#6b8e23">reflected by the terrain:</text>
+  <text x="305" y="257" fill="#6b8e23">α (1 − V<tspan baseline-shift="sub" font-size="10">d</tspan>)(B<tspan baseline-shift="sub" font-size="10">flat</tspan> + D)</text>
+  <!-- shaded point V -->
+  <line x1="400" y1="345" x2="190" y2="185" stroke="#d99a00" stroke-width="1.2" stroke-dasharray="2 4"/>
+  <circle cx="400" cy="345" r="6" fill="#555"/>
+  <text x="120" y="380" fill="#555">V: the ridge hides the sun → no direct beam,</text>
+  <text x="120" y="397" fill="#555">no circumsolar part; sky diffuse and reflection remain</text>
+</svg>

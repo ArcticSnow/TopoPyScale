@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 390" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a7fb0"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#888"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+  </defs>
+  <rect width="900" height="390" fill="#fff"/>
+  <!-- (a) blend -->
+  <text x="20" y="26" font-weight="bold">(a) surface_blend: towards the ERA5 10 m wind</text>
+  <g stroke="#4a7fb0" stroke-width="2" marker-end="url(#b)">
+    <line x1="40" y1="70" x2="140" y2="70"/><line x1="170" y1="70" x2="270" y2="70"/><line x1="300" y1="70" x2="400" y2="70"/>
+  </g>
+  <text x="40" y="56" fill="#4a7fb0">pressure-level wind u<tspan baseline-shift="sub" font-size="10">pl</tspan> (free atmosphere)</text>
+  <path d="M20,330 L70,300 L130,190 L190,300 L250,325 L310,300 L380,160 L430,200 L430,390 L20,390 Z" fill="#efe7dc" stroke="#8c7b6b" stroke-width="2"/>
+  <path d="M20,262 C120,250 300,250 430,245" fill="none" stroke="#888" stroke-width="3" stroke-dasharray="8 5"/>
+  <g stroke="#888" stroke-width="2" marker-end="url(#g)">
+    <line x1="40" y1="238" x2="75" y2="238"/><line x1="200" y1="232" x2="235" y2="232"/>
+  </g>
+  <text x="30" y="200" fill="#666">u10 at the</text>
+  <text x="30" y="216" fill="#666">ERA5 surface</text>
+  <circle cx="250" cy="325" r="6" fill="#c0392b"/>
+  <line x1="262" y1="318" x2="290" y2="318" stroke="#c0392b" stroke-width="2" marker-end="url(#r)"/>
+  <text x="150" y="352" fill="#c0392b">valley: w ≈ 1, weak wind</text>
+  <circle cx="380" cy="160" r="6" fill="#c0392b"/>
+  <line x1="300" y1="140" x2="368" y2="140" stroke="#c0392b" stroke-width="2" marker-end="url(#r)"/>
+  <text x="240" y="125" fill="#c0392b">ridge: w ≈ 0</text>
+  <text x="24" y="378">u = u<tspan baseline-shift="sub" font-size="10">pl</tspan> + w (u10 − u<tspan baseline-shift="sub" font-size="10">pl</tspan>), and the same for v</text>
+
+  <!-- (b) MicroMet -->
+  <text x="470" y="26" font-weight="bold">(b) terrain: liston_elder (MicroMet)</text>
+  <g stroke="#4a7fb0" stroke-width="2" marker-end="url(#b)">
+    <line x1="480" y1="90" x2="560" y2="90"/>
+  </g>
+  <text x="480" y="76" fill="#4a7fb0">wind W from the west</text>
+  <path d="M460,330 L540,320 C600,300 640,210 690,170 C740,210 780,300 840,320 L890,325 L890,390 L460,390 Z" fill="#efe7dc" stroke="#8c7b6b" stroke-width="2"/>
+  <circle cx="625" cy="236" r="6" fill="#c0392b"/>
+  <line x1="566" y1="262" x2="614" y2="236" stroke="#c0392b" stroke-width="3" marker-end="url(#r)"/>
+  <text x="482" y="205" fill="#c0392b">windward slope</text>
+  <text x="482" y="222" fill="#c0392b">Ω<tspan baseline-shift="sub" font-size="10">s</tspan> &gt; 0: faster</text>
+  <circle cx="690" cy="170" r="6" fill="#c0392b"/>
+  <line x1="640" y1="150" x2="680" y2="150" stroke="#c0392b" stroke-width="3" marker-end="url(#r)"/>
+  <text x="650" y="132" fill="#c0392b">crest: Ω<tspan baseline-shift="sub" font-size="10">c</tspan> &gt; 0, faster</text>
+  <circle cx="760" cy="248" r="6" fill="#c0392b"/>
+  <line x1="770" y1="232" x2="790" y2="244" stroke="#c0392b" stroke-width="1.5" marker-end="url(#r)"/>
+  <text x="776" y="212" fill="#c0392b">lee slope</text>
+  <text x="776" y="229" fill="#c0392b">Ω<tspan baseline-shift="sub" font-size="10">s</tspan> &lt; 0: slower</text>
+  <circle cx="540" cy="320" r="6" fill="#c0392b"/>
+  <text x="470" y="352" fill="#c0392b">foot (concave): Ω<tspan baseline-shift="sub" font-size="10">c</tspan> &lt; 0, slower</text>
+  <text x="470" y="378">W<tspan baseline-shift="sub" font-size="10">t</tspan> = W (1 + γ<tspan baseline-shift="sub" font-size="10">s</tspan> Ω<tspan baseline-shift="sub" font-size="10">s</tspan> + γ<tspan baseline-shift="sub" font-size="10">c</tspan> Ω<tspan baseline-shift="sub" font-size="10">c</tspan>), direction turned along the slope</text>
+</svg>

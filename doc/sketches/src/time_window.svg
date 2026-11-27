@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect width="900" height="330" fill="#fff"/>
+  <text x="20" y="26" font-weight="bold">(a) Hourly data: the value at time stamp t</text>
+  <line x1="60" y1="110" x2="860" y2="110" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="866" y="114" fill="#333">time</text>
+  <rect x="260" y="80" width="400" height="30" fill="#fbe5b3" stroke="#d99a00"/>
+  <g stroke="#333"><line x1="260" y1="104" x2="260" y2="118"/><line x1="660" y1="104" x2="660" y2="124"/><line x1="460" y1="106" x2="460" y2="116"/></g>
+  <text x="260" y="134" text-anchor="middle">t − 1 h</text>
+  <text x="660" y="140" text-anchor="middle" font-weight="bold">t</text>
+  <g fill="#d99a00">
+    <circle cx="293" cy="95" r="4"/><circle cx="360" cy="95" r="4"/><circle cx="427" cy="95" r="4"/>
+    <circle cx="493" cy="95" r="4"/><circle cx="560" cy="95" r="4"/><circle cx="627" cy="95" r="4"/>
+  </g>
+  <line x1="460" y1="80" x2="460" y2="56" stroke="#c0392b" stroke-width="2"/>
+  <circle cx="460" cy="52" r="6" fill="#f2a900" stroke="#c0392b"/>
+  <text x="474" y="50" fill="#c0392b">sun position at the centre t − 30 min (zenith z, azimuth φ)</text>
+  <text x="270" y="160">tp, ssrd, strd (fdir): accumulated over (t − 1 h, t]</text>
+  <text x="270" y="178" fill="#555">SW<tspan baseline-shift="sub" font-size="10">toa</tspan> and terrain shading: mean over 6 sub-steps (dots)</text>
+  <line x1="660" y1="64" x2="660" y2="80" stroke="#4a7fb0" stroke-width="2"/>
+  <text x="672" y="74" fill="#4a7fb0" font-size="11.5">T, q, u, v, p<tspan baseline-shift="sub" font-size="10">s</tspan>, T<tspan baseline-shift="sub" font-size="10">2m</tspan>…: instantaneous at t</text>
+
+  <text x="20" y="218" font-weight="bold">(b) 3 h time step: sum of the hourly accumulations of the step</text>
+  <line x1="60" y1="280" x2="860" y2="280" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+  <rect x="160" y="250" width="166" height="30" fill="#fbe5b3" stroke="#d99a00"/>
+  <rect x="326" y="250" width="167" height="30" fill="#fbe5b3" stroke="#d99a00"/>
+  <rect x="493" y="250" width="167" height="30" fill="#fbe5b3" stroke="#d99a00"/>
+  <text x="243" y="270" text-anchor="middle">h<tspan baseline-shift="sub" font-size="10">1</tspan></text>
+  <text x="410" y="270" text-anchor="middle">+ h<tspan baseline-shift="sub" font-size="10">2</tspan></text>
+  <text x="576" y="270" text-anchor="middle">+ h<tspan baseline-shift="sub" font-size="10">3</tspan></text>
+  <g stroke="#333"><line x1="160" y1="274" x2="160" y2="288"/><line x1="660" y1="274" x2="660" y2="294"/></g>
+  <text x="160" y="304" text-anchor="middle">t − 3 h</text>
+  <text x="660" y="310" text-anchor="middle" font-weight="bold">t</text>
+  <line x1="410" y1="250" x2="410" y2="234" stroke="#c0392b" stroke-width="2"/>
+  <circle cx="410" cy="230" r="5" fill="#f2a900" stroke="#c0392b"/>
+  <text x="672" y="246" font-size="12">sun at t − 1.5 h, SW<tspan baseline-shift="sub" font-size="10">toa</tspan> over the 3 h</text>
+  <text x="672" y="266" font-size="12">accumulation_hours = 3</text>
+</svg>

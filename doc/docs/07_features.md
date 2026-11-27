@@ -2,6 +2,8 @@
 
 `TopoPyScale` (TPS) has a number of features to customize your downscaling. This pages is an attempt to describe all features currently implemented.
 
+The equations behind them, with sketches, are in [How it works](11_how_it_works.md) and [Variables and options](12_variables.md).
+
 ## Spatial vs. Point downscaling
 
 TPS can be used to downscaled in two modes. The simplest case is to use the library to downscale weather timeseries at a list of points. This list of points id specified in a `.csv` file using coordinate system of the same projection (*i.e.* EPSG code). At minimum each line of the `.csv` file should contain:
