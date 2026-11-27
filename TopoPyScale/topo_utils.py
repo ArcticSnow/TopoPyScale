@@ -14,22 +14,96 @@ import warnings
 import xarray as xr
 
 
-def read_downscaled(path='outputs/down_pt*.nc'):
+def as_str(values):
+    """Fixed-width unicode array (zarr v3 returns numpy StringDType, which cannot be cast with astype(str))."""
+    values = np.asarray(values)
+    return np.array([str(v) for v in values.ravel()]).reshape(values.shape)
+
+
+def horizon_matches_points(da_horizon, df_points, tol=1e-3):
     """
-    Function to read downscaled points saved into netcdf files into one single dataset using Dask
+    True if da_horizon holds the horizons of exactly these points (names and positions within tol m).
+    """
+    if 'point_name' not in da_horizon.dims:
+        return False
+    names = as_str(df_points.point_name.values)
+    hor = da_horizon.assign_coords(point_name=as_str(da_horizon.point_name.values))
+    if set(names) - set(hor.point_name.values):
+        return False
+    hor = hor.sel(point_name=names)
+    if 'x' in hor.coords and 'y' in hor.coords:
+        return bool(np.allclose(hor.x.values, df_points.x.values.astype(float), atol=tol, rtol=0)
+                    and np.allclose(hor.y.values, df_points.y.values.astype(float), atol=tol, rtol=0))
+    return True
+
+
+def horizon_at_points(da_horizon, df_points):
+    """
+    Horizon profile of each point of df_points, in the order of its rows.
 
     Args:
-        path (str): path and pattern to use into xr.open_mfdataset
+        da_horizon (dataarray): horizon angles [rad] of the points (azimuth, point_name), from
+            topo_param.compute_horizon_points
+        df_points (dataframe): points with columns point_name, x, y
 
     Returns:
-        dataset: merged dataset readily to use and loaded in chuncks via Dask
+        dataarray: horizon angles [rad], (azimuth, point)
     """
+    if not horizon_matches_points(da_horizon, df_points):
+        raise ValueError('The horizons were computed for other points (names or positions differ): delete the '
+                         'horizon file (outputs/da_horizon.nc) and run compute_horizon() again')
+    names = as_str(df_points.point_name.values)
+    hor = da_horizon.assign_coords(point_name=as_str(da_horizon.point_name.values)).sel(point_name=names)
+    return hor.rename(point_name='point')
 
-    down_pts = xr.open_mfdataset(path, concat_dim='point_name', combine='nested')
-    return down_pts
+
+def open_downscaled_store(store):
+    """
+    Open the zarr store of downscaled points (dimensions point_name, time), lazily with Dask.
+
+    Args:
+        store (str): path to the zarr store, e.g. outputs/downscaled/down.zarr
+
+    Returns:
+        dataset: point_name as plain strings
+    """
+    ds = xr.open_zarr(str(store))
+    return ds.assign_coords(point_name=as_str(ds.point_name.values))
 
 
-def ds_to_indexed_dataframe(ds):
+def open_netcdf_stack(files, concat_dim):
+    """
+    Open netcdf files one by one (lazily, with Dask) and concatenate them along concat_dim.
+
+    Args:
+        files (list): netcdf files, in the order of concatenation
+        concat_dim (str): dimension along which to concatenate
+
+    Returns:
+        dataset
+    """
+    files = list(files)
+    if not files:
+        raise FileNotFoundError('No file to open')
+    return xr.concat([xr.open_dataset(f, chunks={}) for f in files], dim=concat_dim)
+
+
+def read_downscaled(path='outputs/downscaled/down.zarr'):
+    """
+    Read downscaled points as one dataset, lazily with Dask.
+
+    Args:
+        path (str): zarr store of downscaled points (*.zarr)
+
+    Returns:
+        dataset: dimensions point_name, time
+    """
+    if not str(path).rstrip('/').endswith('.zarr'):
+        raise ValueError(f'{path} is not a zarr store: downscaled points are stored in outputs/downscaled/*.zarr')
+    return open_downscaled_store(path)
+
+
+def ds_to_indexed_dataframe(ds, dim_order=None):
     """
     Function to convert an Xarray dataset with multi-dimensions to indexed dataframe (and not a multilevel indexed dataframe).
     WARNING: this only works if the variable of the dataset have all the same dimensions!
@@ -38,11 +112,14 @@ def ds_to_indexed_dataframe(ds):
 
     Args:
         ds (dataset): xarray dataset with all variable of same number of dimensions
+        dim_order (list): order of the dimensions in the rows (e.g. ['y', 'x']: row-major for a map). Default: the
+            order of ds.dims, which depends on how the dataset was built (e.g. (x, y) from a GeoTIFF, (y, x) from a
+            netcdf file)
 
     Returns:
         pandas dataframe:
     """
-    df = ds.to_dataframe()
+    df = ds.to_dataframe(dim_order=dim_order)
     n_levels = df.index.names.__len__()
     return df.reset_index(level=list(range(0, n_levels)))
 
@@ -66,10 +143,11 @@ def multicore_pooling(fun, fun_param, n_cores):
         n_cores = 1
 
     pool = Pool(n_cores)
-    pool.starmap(fun, fun_param)
+    results = pool.starmap(fun, fun_param)
     pool.close()
     pool.join()
     pool = None
+    return results
 
 
 def multithread_pooling(fun, fun_param, n_threads):
@@ -92,7 +170,7 @@ def get_versionning():
     try:
         repo = git.Repo(path=tps.__file__, search_parent_directories=True)
         hash = repo.head.object.hexsha
-    except:
+    except Exception:   # no git, not a repository...
         hash = 'Not available'
     try:
         version = metadata.version('TopoPyScale')

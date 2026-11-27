@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect width="900" height="500" fill="#fff"/>
+  <!-- inputs -->
+  <rect x="20" y="20" width="250" height="64" rx="8" fill="#efe7dc" stroke="#8c7b6b"/>
+  <text x="145" y="46" text-anchor="middle" font-weight="bold">DEM</text>
+  <text x="145" y="66" text-anchor="middle">elevation z, e.g. 30 m cells</text>
+
+  <rect x="540" y="20" width="340" height="92" rx="8" fill="#e4eef7" stroke="#4a7fb0"/>
+  <text x="710" y="42" text-anchor="middle" font-weight="bold">ERA5 store (0.25°, hourly)</text>
+  <text x="556" y="62">pressure levels: geopotential Φ, T, q, u, v</text>
+  <text x="556" y="80">surface: Φ<tspan baseline-shift="sub" font-size="10">s</tspan>, p<tspan baseline-shift="sub" font-size="10">s</tspan>, T<tspan baseline-shift="sub" font-size="10">2m</tspan>, T<tspan baseline-shift="sub" font-size="10">d,2m</tspan>, tp, SW↓, LW↓</text>
+  <text x="556" y="98" fill="#555">options: fdir, u10, v10</text>
+
+  <!-- terrain column -->
+  <rect x="20" y="130" width="250" height="84" rx="8" fill="#efe7dc" stroke="#8c7b6b"/>
+  <text x="145" y="154" text-anchor="middle" font-weight="bold">Terrain parameters</text>
+  <text x="34" y="174">slope S, aspect A (Horn)</text>
+  <text x="34" y="192">sky view factor V<tspan baseline-shift="sub" font-size="10">d</tspan></text>
+  <text x="34" y="208">horizons H(φ) at the points</text>
+  <line x1="145" y1="84" x2="145" y2="128" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="20" y="258" width="250" height="92" rx="8" fill="#efe7dc" stroke="#8c7b6b"/>
+  <text x="145" y="282" text-anchor="middle" font-weight="bold">Sampling</text>
+  <text x="34" y="302">TopoSUB clusters, points or grid</text>
+  <text x="34" y="320">→ points with x, y, z, S, A, V<tspan baseline-shift="sub" font-size="10">d</tspan>, H(φ)</text>
+  <text x="34" y="338" fill="#555">each DEM cell → one point</text>
+  <line x1="145" y1="214" x2="145" y2="256" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- engine -->
+  <rect x="300" y="140" width="580" height="250" rx="10" fill="#f6f8f6" stroke="#2e7d6b" stroke-dasharray="6 4"/>
+  <text x="590" y="162" text-anchor="middle" font-weight="bold" fill="#2e7d6b">Downscaling, by blocks of points × time steps</text>
+
+  <rect x="320" y="176" width="540" height="40" rx="6" fill="#fff" stroke="#2e7d6b"/>
+  <text x="334" y="201"><tspan font-weight="bold">1  Horizontal</tspan>: 3 × 3 ERA5 nodes → the column of air above each point</text>
+  <rect x="320" y="226" width="540" height="40" rx="6" fill="#fff" stroke="#2e7d6b"/>
+  <text x="334" y="251"><tspan font-weight="bold">2  Vertical</tspan>: pressure levels → elevation z of the point</text>
+  <rect x="320" y="276" width="540" height="40" rx="6" fill="#fff" stroke="#2e7d6b"/>
+  <text x="334" y="301"><tspan font-weight="bold">3  Sun</tspan>: solar geometry and terrain shading in the accumulation window</text>
+  <rect x="320" y="326" width="540" height="50" rx="6" fill="#fff" stroke="#2e7d6b"/>
+  <text x="334" y="347"><tspan font-weight="bold">4  Physics per variable</tspan>: T, q, p, wind, precipitation, SW, LW</text>
+  <text x="352" y="366" fill="#555">with the options of the toposcale section of config.yml</text>
+  <line x1="590" y1="216" x2="590" y2="224" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="590" y1="266" x2="590" y2="274" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="590" y1="316" x2="590" y2="324" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <line x1="710" y1="112" x2="710" y2="174" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="270" y1="304" x2="298" y2="304" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- outputs -->
+  <rect x="300" y="420" width="270" height="62" rx="8" fill="#e8f3ef" stroke="#2e7d6b"/>
+  <text x="435" y="446" text-anchor="middle" font-weight="bold">outputs/downscaled/down.zarr</text>
+  <text x="435" y="466" text-anchor="middle">time series (point, time)</text>
+  <line x1="435" y1="390" x2="435" y2="418" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="600" y="420" width="280" height="62" rx="8" fill="#fff" stroke="#888"/>
+  <text x="614" y="444">exports: FSM, CryoGrid, SNOWPACK…</text>
+  <text x="614" y="464">maps: each cell takes its point's series</text>
+  <line x1="570" y1="451" x2="598" y2="451" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="20" y="420" width="250" height="62" rx="8" fill="#fff" stroke="#888"/>
+  <text x="145" y="446" text-anchor="middle">physics checks</text>
+  <text x="145" y="466" text-anchor="middle" fill="#555">mp.check_physics()</text>
+  <line x1="298" y1="451" x2="272" y2="451" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+</svg>

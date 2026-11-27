@@ -18,7 +18,7 @@ Methods to fetch DEM from various public repository
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L195"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L198"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fetch_copernicus_dem`
 
@@ -47,7 +47,7 @@ Routine to download Copernicus DEM product for a given extent
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L223"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L226"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `fetch_dem`
 
@@ -69,7 +69,7 @@ Function to fetch DEM data from SRTM and potentially other sources
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L24"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L25"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>class</kbd> `copernicus_dem`
 
@@ -81,9 +81,9 @@ Function to fetch DEM data from SRTM and potentially other sources
  
  - <b>`directory`</b> (str):  directory where to store downloads 
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L31"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L32"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>method</kbd> `__init__`
+### <kbd>method</kbd> `copernicus_dem.__init__`
 
 ```python
 __init__(directory='.', product=None, n_download_threads=1)
@@ -98,9 +98,9 @@ __init__(directory='.', product=None, n_download_threads=1)
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L137"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L140"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>method</kbd> `download_tiles_in_extent`
+### <kbd>method</kbd> `copernicus_dem.download_tiles_in_extent`
 
 ```python
 download_tiles_in_extent(extent=[22, 28, 44, 45])
@@ -122,9 +122,9 @@ Function to download tiles falling into the extent requested
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L169"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L172"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>method</kbd> `extract_all_tar`
+### <kbd>method</kbd> `copernicus_dem.extract_all_tar`
 
 ```python
 extract_all_tar(dem_extension='DEM.dt2')
@@ -138,9 +138,9 @@ Function to extract DEM file from Copernicus tar file
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L55"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L56"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>method</kbd> `fetch_copernicus_dem_product_list`
+### <kbd>method</kbd> `copernicus_dem.fetch_copernicus_dem_product_list`
 
 ```python
 fetch_copernicus_dem_product_list()
@@ -150,9 +150,9 @@ Function to fetch the list of Copernicus DEM products available to download.
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L72"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/fetch_dem.py#L73"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
-### <kbd>method</kbd> `request_tile_list`
+### <kbd>method</kbd> `copernicus_dem.request_tile_list`
 
 ```python
 request_tile_list(fname_tile=None)

@@ -12,25 +12,38 @@ nav:
     - Outputs: 05_outputs.md
     - Examples: 06_examples.md
     - Features: 07_features.md
+    - Science:
+        - How it works: 11_how_it_works.md
+        - Variables and options: 12_variables.md
+    - Physics Checks: 09_physics_checks.md
+    - Release Notes: 10_release_notes.md
     - Development: 08_development.md
     - FAQ: 20_FAQ.md
     - API:
         - topoclass: TopoPyScale.topoclass.md
         - topo_sub: TopoPyScale.topo_sub.md
-        - topo_scale: TopoPyScale.topo_scale.md
+        - topo_scale_zarr: TopoPyScale.topo_scale_zarr.md
+        - toposcale_core: TopoPyScale.toposcale_core.md
+        - surface_effect: TopoPyScale.surface_effect.md
+        - surface_calib: TopoPyScale.surface_calib.md
         - solar_geom: TopoPyScale.solar_geom.md
         - topo_param: TopoPyScale.topo_param.md
+        - wind: TopoPyScale.wind.md
         - fetch_era5: TopoPyScale.fetch_era5.md
+        - era5_store: TopoPyScale.era5_store.md
         - fetch_dem: TopoPyScale.fetch_dem.md
         - meteo_util: TopoPyScale.meteo_util.md
         - sim_fsm: TopoPyScale.sim_fsm.md
         - sim_fsm2oshd: TopoPyScale.sim_fsm2oshd.md
         - topo_export: TopoPyScale.topo_export.md
+        - topo_checks: TopoPyScale.topo_checks.md
         - topo_da: TopoPyScale.topo_da.md
         - topo_obs: TopoPyScale.topo_obs.md
         - topo_utils: TopoPyScale.topo_utils.md
         - topo_compare: TopoPyScale.topo_compare.md
         - topo_plot: TopoPyScale.topo_plot.md
+        - log: TopoPyScale.log.md
+        - config_check: TopoPyScale.config_check.md
 
 
 theme:
@@ -48,6 +61,11 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.superfences
   - footnotes
+  - pymdownx.arithmatex:
+      generic: true
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 plugins:
   - search
   - bibtex:

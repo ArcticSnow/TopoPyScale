@@ -111,7 +111,7 @@ def printDic(inDictionary, inPTable, indent):
            If needed call same function again (recursively) until we key : value dictionary
            Add key , value , isItRequired , description to pretty table object (inPTable)
     """
-    global SPACE_CHAR  # No space character that will be replaced when we print this table to text/html
+    # SPACE_CHAR (module level): no-break space replaced when the table is printed to text/html
 
     # Go ver dictionary
     for item in inDictionary:

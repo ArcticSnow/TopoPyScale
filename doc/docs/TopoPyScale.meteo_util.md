@@ -59,7 +59,7 @@ Function to partition precipitation in between rain vs snow based on temperature
  
  - <b>`precip`</b> (array):  1D array, precipitation in mm/hr 
  - <b>`temp`</b> (arrray):  1D array, air temperature in K 
- - <b>`rh`</b> (array):  1D array, relative humidity in % 
+ - <b>`rh`</b> (array):  1D array, relative humidity in % (0-100), e.g. 100 * q_2_rh(...) 
  - <b>`sp`</b> (array):  1D array, surface pressure in Pa 
  - <b>`method`</b> (str):  'continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'. 
  - <b>`tair_low_thresh`</b> (float):  lower temperature threshold under which all precip is snow. degree K 
@@ -75,7 +75,7 @@ Function to partition precipitation in between rain vs snow based on temperature
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L120"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L122"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `q_2_rh`
 
@@ -90,7 +90,7 @@ Function to convert specific humidity (q) to relative humidity (RH) following Bo
 **Args:**
  
  - <b>`temp`</b> (array):  temperature in degree K 
- - <b>`pressure`</b> (array):  aire pressure in Pa 
+ - <b>`pressure`</b> (array):  air pressure in Pa 
  - <b>`qair`</b> (array):  specific humidity in kg/kg 
 
 **Returns:**
@@ -100,7 +100,7 @@ Function to convert specific humidity (q) to relative humidity (RH) following Bo
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L141"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L143"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `mixing_ratio`
 
@@ -120,7 +120,7 @@ Function to compute mixing ratio
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L154"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L156"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `t_rh_2_dewT`
 
@@ -128,7 +128,7 @@ Function to compute mixing ratio
 t_rh_2_dewT(ds, var)
 ```
 
-Function to compute dea temperature from air temperature and relative humidity 
+Function to compute dew temperature from air temperature and relative humidity 
 
 
 
@@ -144,7 +144,7 @@ Function to compute dea temperature from air temperature and relative humidity
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L168"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L171"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `dewT_2_q_magnus`
 
@@ -168,7 +168,7 @@ A version of the Magnus formula with the AERK parameters. AERK from Alduchov and
 
 ---
 
-<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L185"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="https://github.com/ArcticSnow/TopoPyScale/TopoPyScale/meteo_util.py#L189"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `vapor_pressure`
 

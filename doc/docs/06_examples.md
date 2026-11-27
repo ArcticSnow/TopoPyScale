@@ -4,7 +4,7 @@ We present here a set of three downscaling project examples: 1) Finse Norway, 2)
 
 Each example contains the basic required `config.yml` file and its associated Python pipeline script to perform a downscaling. They perform various task to examplify some of the capabilities of `TopoPyscale`.  
 
-**WARNING 1:** the examples require to download the climate data from ERA5 data portal [CDS Copernicus](https://cds.climate.copernicus.eu/). Depending on the amount of data request and the servers' load, it may take up to few days to acquire the complete dataset. To perform the examples, the `cdsapi` credentials must be set as indicated in the [install](./01_instal.md) section. 
+**WARNING 1:** the examples require to download the climate data from ERA5 data portal [CDS Copernicus](https://cds.climate.copernicus.eu/). Depending on the amount of data request and the servers' load, it may take up to few days to acquire the complete dataset. To perform the examples, the `cdsapi` credentials must be set as indicated in the [install](./01_install.md) section. 
 
 **WARNING 2:** as TopoPyScale can have a large amount of verbose output for large projects, we recommand running `TopoPyScale` in a simple IPython console.
 

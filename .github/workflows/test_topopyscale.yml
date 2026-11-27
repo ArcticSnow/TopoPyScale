@@ -1,43 +1,29 @@
-name: Test TopoPyScale
+name: Tests
 
-on: [push]
+# the test suite on every push and pull request: a check mark (or a cross) next to each commit and pull request
+on:
+  push:
+  pull_request:
 
 jobs:
-  build-linux:
-    if: "contains(github.event.commits[0].message, '[trigger test]')"
+  tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
-    strategy:
-      max-parallel: 5
-
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v3
-      with:
-        python-version: '3.9'
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
-    - name: Install dependencies
-      run: |
-        conda install mamba -n base -c conda-forge
-        mamba env update --file environment.yml --name base
-    - name: Install TopoPyscale main development branch
-      run: |
-        pip install -e .
-    - name: Lint with flake8
-      run: |
-        conda install flake8
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Run TopoPyScale example
-      run: |
-        git clone https://github.com/ArcticSnow/TopoPyScale_examples.git
-        cd TopoPyScale_examples/ex1_norway_finse/
-        python pipeline_test.py
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install TopoPyScale and the test tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest flake8
+
+      - name: Lint (syntax errors and undefined names)
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Tests
+        run: python -m pytest tests -q

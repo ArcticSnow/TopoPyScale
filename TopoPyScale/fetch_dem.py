@@ -17,8 +17,10 @@ from xml.dom.minidom import parse, parseString
 import pandas as pd
 from TopoPyScale import topo_utils as tu
 
-import warnings, os
-warnings.filterwarnings('ignore')
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class copernicus_dem():
     """---> Class to download Publicly available Copernicus DEM products
@@ -39,7 +41,7 @@ class copernicus_dem():
                                         'COP-DEM_GLO-90-DTED/2023_1':'DEM.dt1'}
         self.copernicus_public_url = 'https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs'
 
-        print("""
+        logger.info("""
 Class to download Publicly available Copernicus DEM products. 
 
 Data are directly available via HTTPS requests at https://prism-dem-open.copernicus.eu/pd-desk-open-access/publicDemURLs
@@ -61,10 +63,10 @@ Further online Resources:
         products = products_xml.getElementsByTagName('datasetId')
 
         self.product_list = []
-        print('---> List of product available:')
+        logger.info('---> List of product available:')
         for i, d in enumerate(products):
             self.product_list.append(d.firstChild.data)
-            print(f'\t [{i}]-> {d.firstChild.data}')
+            logger.info(f'\t [{i}]-> {d.firstChild.data}')
         if self.product is None:
             self._product_ind = int(input('Which product to download?'))
             
@@ -82,7 +84,7 @@ Further online Resources:
         # Add code to check first if fname_file does not exist already
         if not os.path.isfile(self.directory / fname_tile):
 
-            print(f'---> Requesting list of tiles for {self.product}')
+            logger.info(f'---> Requesting list of tiles for {self.product}')
 
             headers = {'accept': 'csv',}
             url = f"{self.copernicus_public_url}/{self.product.replace('/', '__')}"
@@ -91,7 +93,7 @@ Further online Resources:
             with open(fname_tile, 'w') as file:
                 file.write(r.content.decode("utf-8"))
 
-            print(f'---> All tile URL written to {fname_tile}')
+            logger.info(f'---> All tile URL written to {fname_tile}')
 
         # open csv file containing list of tar file urls
         df = pd.read_csv(self.directory / fname_tile, header=None)
@@ -128,7 +130,7 @@ Further online Resources:
             if (not os.path.isfile(tar_file)) | (os.path.getsize(tar_file) < 100):
                 downloaded_list.append(False)
             else:
-                print(f'-> File {tar_file} already exists')
+                logger.info(f'-> File {tar_file} already exists')
                 downloaded_list.append(True)
 
         self.sub['downloaded'] = downloaded_list
@@ -149,22 +151,22 @@ Further online Resources:
         self.sub = self.df_tile_list.loc[(self.df_tile_list.lon>=extent[0]) & (self.df_tile_list.lon<=extent[1]) & (self.df_tile_list.lat>=extent[2]) & (self.df_tile_list.lat<=extent[3])]
 
         def _download_single_tile(url, tar_file):
-            print(f'---> Downloading {url}')
+            logger.info(f'---> Downloading {url}')
             ur.urlretrieve(url, tar_file)
 
-        _check_file_downloaded()
-        while self.sub.downloaded.sum()>0:
-            tar_download = sub.tar_file.loc[~sub.downloaded].values
-            url_download = sub.url.loc[~sub.downloaded].values
+        self._check_file_downloaded()
+        while (~self.sub.downloaded).sum() > 0:
+            tar_download = self.sub.tar_file.loc[~self.sub.downloaded].values
+            url_download = self.sub.url.loc[~self.sub.downloaded].values
 
             # Parallelize download of tiles
             fun_param = zip(url_download, tar_download)
             tu.multithread_pooling(_download_single_tile, fun_param, n_threads=self.n_download_threads)
-            _check_file_downloaded()
+            self._check_file_downloaded()
 
-        print("---> All tiles downloaded")
-        sub['downloaded'] = True
-        self.df_downloaded = sub
+        logger.info("---> All tiles downloaded")
+        self.sub['downloaded'] = True
+        self.df_downloaded = self.sub
         
 
     def extract_all_tar(self, dem_extension='DEM.dt2'):
@@ -189,8 +191,8 @@ Further online Resources:
 
                 file = None
             
-        print('\n---> READ DATA LICENSING IN TAR FILE <---')
-        print('--->        eula_F.pdf               <---\n')
+        logger.info('\n---> READ DATA LICENSING IN TAR FILE <---')
+        logger.info('--->        eula_F.pdf               <---\n')
         
         
 def fetch_copernicus_dem(directory='.', 
@@ -250,9 +252,9 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
                                                                                          xmax,
                                                                                          ymax,
                                                                                       0.2)
-        print('>===== command to download DEM  from SRTM1 ====<\n')
+        logger.info('>===== command to download DEM  from SRTM1 ====<\n')
         # os.system('eio clean')
-        print(cmd_1)
+        logger.info(cmd_1)
         try:
             os.system(cmd_1)
         except RuntimeError:
@@ -281,7 +283,7 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
         #                                                                                        dem_dir + 'inputs/dem/dem_SRTM1.tif',
         #                                                                                        dem_dir + 'inputs/dem/dem_SRTM1_proj.tif'
         #                                                                                                        )
-        print(cmd_2)
+        logger.info(cmd_2)
         os.system(cmd_2)
         # print(cmd_3)
         # os.system(cmd_3)
@@ -296,10 +298,10 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
                                                                                          xmax,
                                                                                          ymax,
                                                                                          0.2)
-        print('>===== command to download DEM  from SRTM3 ====<')
-        print('eio clean')
+        logger.info('>===== command to download DEM  from SRTM3 ====<')
+        logger.info('eio clean')
         os.system(cmd_1)
-        print('eio clean')
+        logger.info('eio clean')
         #target_epsg = input("---> provide target EPSG (default: 32632):") or '32632'
 
         if dem_resol is not None:
@@ -322,10 +324,9 @@ def fetch_dem(dem_dir, extent, dem_epsg, dem_file, dem_resol=None):
         # sys.exit('---> EXIT: run those commands and update dem_file in config.ini')
 
     elif ans == '3':
-        sys.exit('WARNING: fetch ArcticDEM functionality not available')
+        raise NotImplementedError('fetching ArcticDEM is not available')
     elif ans == '4':
-        print('WARNING: fetch ASTER DEM functionality not available')
-        print('Please visit https://lpdaacsvc.cr.usgs.gov/appeears/task/area to manually download a DEM')
-        sys.exit()
+        raise NotImplementedError('fetching ASTER DEM is not available: download a DEM from '
+                                  'https://lpdaacsvc.cr.usgs.gov/appeears/task/area')
     else:
-        sys.exit("ERROR: dem file '{}' not existing".format(dem_file))
+        raise FileNotFoundError(f"DEM file {dem_file} not found, and no download option chosen")

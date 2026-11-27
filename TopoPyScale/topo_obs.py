@@ -7,8 +7,9 @@ import requests, os, glob
 import pandas as pd
 import numpy as np
 import xarray as xr
-import warnings
-warnings.filterwarnings("ignore")
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -37,8 +38,8 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
     
     df_out = pd.DataFrame()
     for source in sources:
-        print('.............................................')
-        print('---> Retreiving data for {}'.format(source))
+        logger.info('.............................................')
+        logger.info('---> Retreiving data for {}'.format(source))
         for var in voi:
             parameters = {
                 'sources': source,
@@ -52,7 +53,7 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
             # Check if the request worked, print out any errors
             if r.status_code == 200:
                 data = json['data']
-                print('-> got VOI: {}'.format(var))
+                logger.info('-> got VOI: {}'.format(var))
                 df = pd.DataFrame()
                 for i in range(len(data)):
                     row = pd.DataFrame(data[i]['observations']) # [:1] # raw data = [:1]; corrected = [1:]
@@ -66,8 +67,8 @@ def get_metno_obs(sources, voi, start_date, end_date, client_id=os.getenv('FROST
                 df_out = df_out.append(df)
             else:
                 raise ValueError('..... Error with variable {}! Returned status code {}'.format(var, r.status_code))
-                print('..... Reason: %s' % json['error']['reason'])
-                print('---> {} for {} skipped'.format(var, source))
+                logger.info('..... Reason: %s' % json['error']['reason'])
+                logger.info('---> {} for {} skipped'.format(var, source))
     
     return df_out
 
@@ -120,11 +121,9 @@ def fetch_WMO_insitu_observations(years,
     import zipfile
 
     try:
-        if not os.path.isdir(target_path):
-            os.makedirs(target_path)
-    except:
-        raise ValueError(f'ERROR: path "{target_path}" does not exist')
-        return False
+        os.makedirs(target_path, exist_ok=True)
+    except OSError as e:
+        raise ValueError(f'cannot create the folder {target_path}: {e}') from e
 
     if product == 'sub_daily':
         var_avail = ['air_pressure', 'air_pressure_at_sea_level', 'air_temperature',
@@ -177,17 +176,17 @@ def fetch_WMO_insitu_observations(years,
             'format': 'zip',
         },
         target_path + os.sep + 'download.zip')
-    print('---> download complete')
+    logger.info('---> download complete')
 
     try:
         with zipfile.ZipFile(target_path + os.sep + 'download.zip') as z:
             z.extractall(path=target_path)
-            print('---> Observation extracted')
+            logger.info('---> Observation extracted')
             os.remove(target_path + os.sep + 'download.zip')
-            print(f'\t Stored in file {target_path + os.sep + "download.zip2"}')
+            logger.info(f'\t Stored in file {target_path + os.sep + "download.zip2"}')
             return
-    except:
-        raise ValueError(f'ERROR: Invalid target path\n\t target path used: {target_path}')
+    except OSError as e:
+        raise ValueError(f'Invalid target path {target_path}: {e}') from e
 
 
 def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/surf*subset_csv*.csv', path='./inputs/observations'):
@@ -241,7 +240,7 @@ def parse_WMO_insitu_observations(fname=None, file_pattern='inputs/observations/
         stn_f = stn.replace(' ', '_')
         foutput = f'{stn_f}_{dd.time.min().strftime("%Y%m%d")}_{dd.time.max().strftime("%Y%m%d")}.nc'
         ds.to_netcdf(path + os.sep + foutput)
-        print(f'---> Observation data for station {stn} parsed into file \n\t {foutput}')
+        logger.info(f'---> Observation data for station {stn} parsed into file \n\t {foutput}')
         dd = None
         de = None
         ds = None
@@ -271,6 +270,6 @@ if __name__ == "__main__":
 
 	dates = ['2018-01-01', '2019-01-01', '2020-01-01', '2021-01-01', '2021-08-31']
 	for i, start in enumerate(dates[:-1]):
-	    print('---> Downloading year {} {}'.format(start, dates[i+1]))
+	    logger.info('---> Downloading year {} {}'.format(start, dates[i+1]))
 	    df = get_metno_obs(sources, voi, start, dates[i+1], os.getenv('FROST_API_CLIENTID'))
 	    df.to_pickle('inputs/climate/metno_obs{}_{}.pckl'.format(start, dates[i+1]))

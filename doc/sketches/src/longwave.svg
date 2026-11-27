@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a7fb0"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5532a"/></marker>
+  </defs>
+  <rect width="900" height="430" fill="#fff"/>
+  <!-- cloud -->
+  <g fill="#e6e9ee" stroke="#9aa5b1">
+    <ellipse cx="470" cy="50" rx="55" ry="20"/><ellipse cx="515" cy="40" rx="42" ry="24"/><ellipse cx="558" cy="54" rx="46" ry="18"/>
+  </g>
+  <text x="620" y="40" fill="#555">clouds: ε<tspan baseline-shift="sub" font-size="10">cloud</tspan> from ERA5</text>
+  <text x="620" y="57" fill="#555">LW↓ / σT<tspan baseline-shift="sub" font-size="10">2m</tspan><tspan baseline-shift="super" font-size="10">4</tspan> − ε<tspan baseline-shift="sub" font-size="10">clear</tspan>(grid)</text>
+  <!-- terrain -->
+  <path d="M0,330 L60,250 L180,150 L260,250 L330,330 L430,360 L850,120 L900,112 L900,430 L0,430 Z" fill="#efe7dc" stroke="#8c7b6b" stroke-width="2"/>
+  <path d="M522.6,219.3 A130,130 0 0 1 763,180.6" fill="none" stroke="#4a7fb0" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <g stroke="#4a7fb0" stroke-width="1.5" marker-end="url(#b)">
+    <line x1="560" y1="165" x2="618" y2="222"/>
+    <line x1="640" y1="122" x2="646" y2="218"/>
+    <line x1="720" y1="140" x2="672" y2="222"/>
+  </g>
+  <text x="400" y="112" fill="#4a7fb0">sky (fraction V<tspan baseline-shift="sub" font-size="10">d</tspan>):</text>
+  <text x="400" y="129" fill="#4a7fb0">V<tspan baseline-shift="sub" font-size="10">d</tspan> (ε<tspan baseline-shift="sub" font-size="10">clear</tspan>(e, T) + ε<tspan baseline-shift="sub" font-size="10">cloud</tspan>) σ T<tspan baseline-shift="super" font-size="10">4</tspan></text>
+  <!-- terrain emission -->
+  <g stroke="#b5532a" stroke-width="2" marker-end="url(#r)">
+    <line x1="235" y1="225" x2="630" y2="242"/>
+    <line x1="290" y1="290" x2="632" y2="250"/>
+    <line x1="215" y1="195" x2="628" y2="236"/>
+  </g>
+  <circle cx="650" cy="245" r="6" fill="#c0392b"/>
+  <text x="664" y="262" fill="#c0392b" font-weight="bold">P</text>
+  <text x="20" y="372" fill="#b5532a">terrain (fraction 1 − V<tspan baseline-shift="sub" font-size="10">d</tspan>), with LW_terrain_contribution:</text>
+  <text x="20" y="390" fill="#b5532a">½ (1 + cos S)(1 − V<tspan baseline-shift="sub" font-size="10">d</tspan>) · 0.99 σ T<tspan baseline-shift="sub" font-size="10">t</tspan><tspan baseline-shift="super" font-size="10">4</tspan></text>
+  <text x="20" y="413" fill="#555">T<tspan baseline-shift="sub" font-size="10">t</tspan>: air temperature at P (default) | 273.15 K | a value | a field per point and time</text>
+  <text x="680" y="300">T, e: air temperature and</text>
+  <text x="680" y="317">vapour pressure at P</text>
+</svg>

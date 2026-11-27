@@ -9,7 +9,6 @@
 uv venv tps --python 3.13
 source tps/bin/activate
 uv pip install xarray matplotlib pandas scikit-learn netcdf4 h5netcdf pyproj dask cdsapi zarr
-uv pip install git+https://github.com/ArcticSnow/topocalc
 uv pip install TopoPyScale
 ```
 
@@ -33,9 +32,6 @@ conda activate downscaling
 
 # Recomended way to install dependencies:
 conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4 h5netcdf rasterio pyproj dask geopandas
-
-# install forked version of Topocalc compatible with Python >3.9 (tested with 3.13)
-pip install git+https://github.com/ArcticSnow/topocalc
 ```
 
 
@@ -49,11 +45,6 @@ TopoPyScale has been tested on the OS:
 - [x] Linux Ubuntu
 - [x] MacOS
 - [ ] Windows
-
-## Installing CDO
-`TopoPyScale` uses CDO to merge daily netcdf into yearly files. To install CDO, make sure to no install the version 2.5 which has an issue. Either pick an earlier version or >2.5. 
-Installation and documentatino avaialble on the website of the [Max Planck Institute](https://code.mpimet.mpg.de/projects/cdo/wiki)
-
 
 ## Setting up `cdsapi`
 
@@ -72,7 +63,7 @@ In order to use the routine to download ERA5 data from the [Google Cloud Storage
 
 ## Development version Installation
 
-Go to [Development page](./08_Development.md)
+Go to [Development page](./08_development.md)
 
 ### Step 1. Clone the repository
 

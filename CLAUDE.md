@@ -38,7 +38,7 @@ lazydocs --output-path="doc/docs" --overview-file="README.md" --src-base-url="ht
 The main entry point is `Topoclass` in `topoclass.py`. A typical workflow:
 
 1. **Configuration**: Load YAML config file → `Topoclass(config_file)`
-2. **Data Fetching**: `get_era5()` downloads ERA5 surface and pressure level data
+2. **Data Fetching**: `get_era5()` downloads ERA5 surface and pressure level data month by month into `ERA5.zarr` (`era5_store.py`)
 3. **DEM Processing**: `compute_dem_param()` calculates slope, aspect, sky view factor
 4. **Spatial Sampling**: `extract_topo_param()` either:
    - Clusters DEM using k-means (`topo_sub.py`) to reduce computation
@@ -53,10 +53,10 @@ The main entry point is `Topoclass` in `topoclass.py`. A typical workflow:
 |--------|---------|
 | `topoclass.py` | Main orchestration class wrapping all functionality |
 | `fetch_era5.py` | ERA5 data download via CDS API |
-| `topo_param.py` | DEM parameter computation (slope, aspect, SVF, horizon) |
+| `topo_param.py` | DEM parameters: slope, aspect, sky view factor (line sweep), horizons at points (straight rays) |
 | `topo_sub.py` | K-means clustering for DEM segmentation (TopoSUB method) |
-| `topo_scale.py` | Core downscaling algorithms (vertical/horizontal interpolation) |
-| `topo_scale_zarr.py` | Zarr-based parallel downscaling with Dask support |
+| `topo_scale_zarr.py` | Downscaling engine: blocks of points and time read from the ERA5 zarr store, written to `down.zarr` |
+| `toposcale_core.py` | Array formulas of the downscaling (vertical/horizontal interpolation, radiation, precipitation) |
 | `solar_geom.py` | Solar position calculations using pvlib |
 | `topo_export.py` | Export to model-specific formats |
 | `meteo_util.py` | Meteorological calculations (vapor pressure, LW radiation, etc.) |
@@ -88,12 +88,10 @@ Projects use YAML config files (see `TopoPyScale_examples` repo). Key sections:
 
 ### Parallelization
 
-Two methods supported in `topo_scale_zarr.py`:
-- `multicore`: Python multiprocessing
-- `dask`: Distributed computing with configurable workers
+`project.parallelization.setting.multicore.CPU_cores` sets:
+- the threads processing blocks of points in `topo_scale_zarr.py` (each block writes its own shards of the store)
+- the processes computing the sky view factor (one azimuth each) and the threads tracing horizons at points in `topo_param.py`
 
 ## External Dependencies
 
 - **CDS API**: Requires `~/.cdsapirc` with Copernicus credentials for ERA5 download
-- **topocalc**: Forked version for Python 3.9+ compatibility
-- **CDO**: Climate Data Operators for netCDF manipulation

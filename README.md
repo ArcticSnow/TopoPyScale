@@ -84,8 +84,6 @@ conda activate downscaling
 
 # Recomended way to install dependencies:
 conda install -c conda-forge xarray matplotlib scikit-learn pandas numpy netcdf4 h5netcdf rasterio pyproj dask rioxarray
-# install forked version of Topocalc compatible with Python >3.9 (tested with 3.13)
-pip install pip@git+https://github.com/ArcticSnow/topocalc
 ```
 
 Then install the code:
@@ -181,9 +179,7 @@ my_project/
             ├── my_dem.tif
             └── pts_list.csv  (optional)
         └── climate/
-            └── yearly/
-                ├── PLEV*.nc
-                └── SURF*.nc
+            └── ERA5.zarr     (written by mp.get_era5())
     ├── outputs/
     └── config.ini
 ```

@@ -4,11 +4,35 @@
 
 ## Downscaled Timeseries
 
+With `toposcale.physics_checks: True`, or after `mp.check_physics()`, the file `outputs/physics_checks.csv` reports the physics-consistency checks of the downscaled timeseries. See [Physics Checks](09_physics_checks.md).
+
+### Zarr store
+All downscaled timeseries are written to one zarr store, `outputs/downscaled/down.zarr` (name set by `outputs.file.zarr_store`). It has the dimensions `(point_name, time)` and carries the point attributes (`elevation`, `slope`, `aspect`, `svf`, `lat`, `lon`, `x`, `y`) as coordinates. Data are stored as float32, in chunks of up to 10 points × one time block, grouped in shards of `toposcale.point_block` points.
+
+```python
+from TopoPyScale import topo_utils as tu
+
+ds = tu.read_downscaled('outputs/downscaled/down.zarr')   # lazy, with Dask
+ds.t.sel(point_name='12').plot()
+```
+
+`Topoclass` loads the store into `mp.downscaled_pts`, which all export functions below use.
+
+### Writing one file per point, in parallel
+The exports that write one file per point (FSM, FSM2oshd, CryoGrid, CROCUS, SnowModel, SNOWPACK, GEOtop, T&C) read the store by blocks of consecutive points, aligned on its chunks: each block is read once, instead of once per point and variable. The blocks are shared between `project.parallelization.setting.multicore.CPU_cores` processes, as formatting the files is what takes time. The files do not depend on the number of processes.
+
+```python
+mp.to_fsm()                                 # CPU_cores processes
+te.to_fsm(mp.downscaled_pts, 'outputs/FSM_pt_*.txt', n_jobs=8)   # or n_jobs given directly
+```
+
+For 500 points over one hourly year, `to_fsm()` takes 25 s in one process instead of 50 s, and 16 s with two; `to_cryogrid()` takes 15 s and 8 s instead of 47 s. Each further core shares the formatting. The processes are joblib's loky workers: scripts need no `if __name__ == '__main__':` guard.
+
 ### Netcdf files
-It is possible to export netcdf files for a list of given variables. Otherwise, by default all downscaled timeseries are available in `outputs/`
+It is possible to export netcdf files for a list of given variables with `mp.to_netcdf()`.
 
 ### FSM Format
-`TopoPyScale` includes tools to interact and work with [FSM](https://github.com/RichardEssery/FSM). Those are available in the file `topo_sim.py`.
+`mp.to_fsm()` writes one met file per point for [FSM](https://github.com/RichardEssery/FSM). The tools to run FSM are in `sim_fsm.py`.
 
 ### Cryogrid Format
 [Cryogrid](https://github.com/CryoGrid/CryoGrid) is a model used for simulating the thermal regime of the ground, particularly applied to permafrost and hydrological application.
@@ -75,7 +99,7 @@ Geotop is a hydrological model
 
 - `ds_param.nc`: this file includes elevation, slope, aspect (zero pointed to South), sky view fraction, and cluster map when using `toposub`.
 - `df_centroids.pckl`: a pandas dataframe (saved as pickle) containing information relevant at the point scale.In case of `toposub`, this table is the list of the clusters' centroids.
-- `ds_solar.nc`: timeseries of incoming SW radiations (top of atmosphere), and sun geometry
-- `da_horizon.nc`: maps of horizon angles.
+- `ds_solar.nc`: solar geometry and top-of-atmosphere irradiance of the points, only written by `mp.compute_solar_geometry()` with `toposcale.save_solar_geometry: true` (the downscaling computes it block by block)
+- `da_horizon.nc`: horizon angles of the points [rad], dimensions (`azimuth`, `point_name`), with the point coordinates `x`, `y`. Azimuth in degrees: 0 = south, 90 = east, ±180 = north. See [Horizons](07_features.md#horizons).
 
 

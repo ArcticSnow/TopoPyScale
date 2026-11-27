@@ -1,0 +1,124 @@
+# Reference config.yml of TopoPyScale: every key the code reads, with its documentation.
+# Kept identical to the example of doc/docs/03_configurationFile.md (tests/test_config_doc.py).
+project:
+  name: Name of the project               # metadata
+  description: Describe the project       # metadata
+  authors:                                # written in the metadata of exported files
+    - Author 1 (can add contact and affiliation here)
+    - Author 2
+  date: Date at which the project is run  # metadata
+  directory: /path/to/project/            # (optional) default: current working directory
+  verbose: True                           # (optional) progress messages in the terminal: True, False (warnings and errors only) or a level such as debug. Default True
+  log_file: True                          # (optional) also write the messages to outputs/logs/topopyscale_<date>.log (True), to a given path, or not (False). Default True
+
+  # start and end date of the period of interest. The end day is included
+  start: 2018-01-01
+  end: 2018-01-31
+
+  # (optional) [latN, latS, lonW, lonE] in degrees. Box of the ERA5 download. Default: extent of the DEM
+  extent: [60.8, 60.4, 7.1, 7.7]
+
+
+  # indicate which climate data to use. Currently only era5 available (see climate section below)
+  climate: era5
+
+  parallelization:
+    setting:
+        multicore:
+            CPU_cores: 6                  # sky view factor, horizon, clustering and downscaling threads, FSM runs
+
+#.....................................................................................................
+climate:
+  precip_lapse_rate: False         # (optional) apply the precipitation lapse-rate correction (MicroMet monthly factors, shifted by six months south of the equator)
+  precip_lapse_rate_max_factor: 5  # (optional) bound of the precipitation elevation factor, kept within [1/max, max]. Default 5
+
+  # Settings for the ERA5 atmospheric forcings
+  era5:
+    path: inputs/climate/             # relative to the project directory, or absolute (e.g. a shared ERA5 archive)
+    product: reanalysis               # ensemble not available yet
+    timestep: 1h                      # 1h, 3h or 6h
+    accumulation_window: 1h           # (optional) window of the accumulated radiation and precipitation, ending at the time stamp. Default: what the climate store holds (the timestep for ERA5 fetched by TopoPyScale)
+
+    # Choose pressure levels relevant to your project and available in ERA5 Pressure Levels
+    plevels: [ 700,750,775,800,825,850,875,900,925,950,975,1000 ]
+    download_threads: 8               # parallel CDS requests (one month each, at most 10), or GDEX processes
+    realtime: False                   # (optional) CDS only. Set project.end to the last full day available and clean outputs/downscaled/
+    data_repository: cds              # (optional) cds (Copernicus Climate Data Store, default) or gdex (NCAR GDEX, see Dataset Sources)
+    gdex_root:                        # (optional) gdex only: path or URL of GDEX d633000. Default /gdex/data/d633000 on NCAR systems, else OSDF over HTTPS
+    cds_download_format: unarchived   # (optional) unarchived or zip, both are read
+    output_format: netcdf             # (optional) file format of get_era5_snowmapper() only
+    zarr_store: ERA5.zarr             # (optional) name of the ERA5 zarr store in the climate folder. Default ERA5.zarr
+
+#.....................................................................................................
+dem:
+  path: inputs/dem/                       # (optional) folder of the DEM, relative to the project directory or absolute. Default inputs/dem/
+  file: myDEM.tif                         # name of the DEM file. Must be a raster
+  epsg: 32632                             # EPSG code of the DEM projection (projected, in metres)
+  horizon_increments: 10                  # azimuth step of the horizons computed at the points, in degrees
+  solar_position_method: nrel_numpy       # (optional) pvlib solar position method. Default nrel_numpy
+
+#.....................................................................................................
+sampling:
+
+  # toposub (DEM clustering), points (list of points) or grid (every DEM pixel)
+  method: toposub
+
+  # In case method == 'points'
+  points:
+    csv_file: pts_list.csv              # in inputs/dem/, or absolute path. Columns x,y in the DEM projection
+    name_column: pt_name                # (optional) column containing point_name. If not provided, point_name will be automatically assigned
+
+  # In case method == 'toposub'
+  toposub:
+    clustering_method: minibatchkmean   # clustering method available: kmean, minibatchkmean
+    n_clusters: 50                      # number of cluster to segment the DEM
+    random_seed: 2                      # random seed for the K-mean clustering
+    clustering_features: { 'x': 1, 'y': 1, 'elevation': 1, 'slope': 1, 'aspect_cos': 1, 'aspect_sin': 1, 'svf': 1 }  # features used in the clustering with their relative importance (multiplier after scaling)
+    clustering_mask: inputs/dem/catchment_mask.tif      # (optional) .tif mask (0/1) on the DEM grid, relative to the project directory
+    clustering_groups: inputs/dem/groups.tif            # (optional) .tif of cluster groups (integers, e.g. land cover) on the DEM grid
+    clustering_group_weights: inputs/dem/gr_wgths.csv   # (optional) .csv with columns group,weight: fraction of the clusters per group. Default: proportional to group area
+
+#.....................................................................................................
+toposcale:
+  interpolation_method: idw               # horizontal interpolation of ERA5: idw or linear
+  LW_terrain_contribution: True           # (optional) terrain contribution to longwave. Default False
+  LW_terrain_temperature: air             # (optional) temperature of the terrain emitting that longwave: air (air temperature at the point), fixed (273.15 K) or a value in K. Default air
+  diffuse_model: isotropic                # (optional) sky diffuse on slopes: isotropic or hay_davies (circumsolar part from the sun direction). Default isotropic
+  SW_terrain_albedo: 0                    # (optional) albedo of the surrounding terrain reflecting shortwave to the point (output SW_terrain). 0: off. Default 0
+  wind_downscaling:                       # (optional) wind options, applied to the pressure-level wind at the point. Default: none
+    surface_blend: 0                      # weight of the ERA5 10 m wind (fetched with the surface fields when > 0): 0 (off), a value in [0, 1], or surface_effect (terrain weight of surface_effect). Default 0
+    terrain: none                         # none or liston_elder (MicroMet slope and curvature factors). Default none
+    slope_weight: 0.58                    # (optional) MicroMet slope weight. Default 0.58
+    curvature_weight: 0.42                # (optional) MicroMet curvature weight. Default 0.42
+    curvature_length: 500                 # (optional) MicroMet curvature length scale [m]. Default 500
+  physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'warning' or 'error' (raise)
+  point_block: 100                        # (optional) number of points downscaled together. Default 100
+  time_block: 8760                        # (optional) number of time steps downscaled together. Default one year
+  solar_constant: 1361                    # (optional) total solar irradiance at 1 AU [W m-2]. Default 1361
+  solar_substeps: 6                       # (optional) sub-steps of the accumulation window: average of the top-of-atmosphere irradiance and sunlit fraction of the direct beam. Default 6
+  save_solar_geometry: False             # (optional) also save the solar geometry of the points to outputs/ds_solar.nc (the downscaling computes it block by block). Default False
+  direct_diffuse: empirical               # (optional) direct/diffuse split of the ERA5 shortwave: empirical (from the clearness index) or era5 (ERA5 direct radiation fdir, fetched with the surface fields). Default empirical
+  surface_effect:                         # (optional) surface-effect correction of air temperature and dew point (inversions, cold-air pools). Default off
+    method: none                          # none, redcapp or dreamit
+    coefficients:                         # (optional) coefficients file from surface_calib.save_coefficients. Default: published values
+    context_dem:                          # (optional) DEM covering the points plus the window (30 km wide for redcapp, 50 km radius for dreamit). Default: project DEM
+    dewpoint: True                        # (optional) correct the humidity too. Default True
+    lw_consistent: True                   # (optional) longwave from the corrected temperature and humidity. Default True
+    allow_partial_window: False           # (optional) accept windows leaving the context DEM. Default False
+    diagnostics: False                    # (optional) store t_pl, dT_surf and dTd_surf (also with method none, for the calibration). Default False
+
+#.....................................................................................................
+outputs:
+  directory: outputs                    # (optional) relative to the project directory, or absolute. Default outputs
+  variables: all                        # (optional) list of variables to downscale and store, e.g. ['t', 'tp', 'SW']. Default all
+  file:
+    clean_outputs: False                # (optional) remove the entire outputs/ directory when Topoclass is created
+    clean_FSM: False                    # (optional) remove the fsm_sims/ and ensemble/ directories when Topoclass is created
+    df_centroids: df_centroids.pck      # (pickle)  dataframe containing the points of interest with their topographic features
+    ds_param: ds_param.nc               # (netcdf)  topographic parameters (slope, aspect, etc.)
+    ds_solar: ds_solar.nc               # (netcdf)  solar geometry
+    da_horizon: da_horizon.nc           # (netcdf)  horizon angles of the points
+    zarr_store: down.zarr               # (optional) store of the downscaled timeseries in outputs/downscaled/. Default down.zarr
+
+clean_up:
+  rm_tmp_dirs: True                     # (optional) remove the tmp directories after downscaling

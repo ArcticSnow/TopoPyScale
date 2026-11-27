@@ -1,68 +1,164 @@
 """
 S. Filhol, 2025
 
-Methods to execute downscaling using TopoScale method.
+TopoSCALE downscaling from an ERA5 zarr store to a zarr store of downscaled points.
 
-WARNING: Dask worker parameters must be fine tune to your machine (local, cluster or whaterver). If workers go to "pause" because of memory limit, the processing stops.
+The ERA5 store (pressure levels z, t, q, u, v and surface fields z_surf, sp, t2m, d2m, tp, ssrd, strd) is read in
+blocks of time steps and points. For each block, only the ERA5 nodes surrounding the points of the block are read,
+and all points are downscaled at once with the array functions of toposcale_core.py. Results are written to one zarr
+store with dimensions (point_name, time), chunked by point and by time block.
 
-TODO:
-- [x] implement another method using multiprocessing
-- [ ] make Dask worker parameters flexible. 
-- [ ] try pushing data to a Zarr store for outputs. Currently going to individual netcdf files
-- [ ] See how to potentially automate setting Dask worker config based on the number of core, and the memory size of one job.
-- [ ] incorporate method into TopoClass
+Create the ERA5 store from yearly netcdf files with fetch_era5.netcdf_to_zarr().
 """
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import xarray as xr
+import zarr
+import dask.array as da
+from pyproj import Transformer
 
 try:
     from zarr.codecs import BloscCodec
 except ImportError:
-    # For newer versions of zarr
-    try:
-        from zarr.codecs._blosc import BloscCodec
-    except ImportError:
-        # Fallback for older versions or different structure
-        from zarr import Blosc as BloscCodec
-from dask.distributed import LocalCluster, Client
-import numpy as np
-from datetime import datetime
-from pathlib import Path
+    from zarr.codecs._blosc import BloscCodec
 
-from pyproj import Transformer
-from TopoPyScale import meteo_util as mu
+from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
-import pandas as pd
-import xarray as xr
-import numpy as np 
-import dask.array as da
+from TopoPyScale import surface_effect as se
+from TopoPyScale import solar_geom as sg
+from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
+import logging
 
-import pdb
-import time
+logger = logging.getLogger(__name__)
 
-# Surface variables in the combined (PLEV + SURF) zarr dataset: the 2 m specific humidity and mixing ratio get
-# their own names, otherwise mu.dewT_2_q_magnus() overwrites the pressure-level specific humidity 'q'
-# (used for the vertical interpolation) with the surface value.
-var_era_surf_zarr = dict(mu.var_era_surf, spec_h='q_surf', mix_ratio='w_surf')
+PLEV_VARS = ['z', 't', 'q', 'u', 'v']
+SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
+SOLAR_VARS = ['mu0', 'SWtoa', 'zenith', 'azimuth', 'elevation', 'sunset']
+ACC_VARS = ['tp', 'ssrd', 'strd', 'fdir']   # accumulated over the hours ending at the time stamp
+DIRECT_DIFFUSE = ['empirical', 'era5']
 
 
-varout_default = ['t',
-         'u',
-         'v',
-         'q',
-         'p',
-         'tp',
-         'wd',
-         'ws',
-         'w',
-         'LW',
-         'SW_diffuse',
-         'SW_direct',
-         'SW']
+def accumulation(era_times, era_attrs, tstep_h):
+    """
+    How the accumulated fields of an ERA5 store cover the time steps of the downscaling.
 
+    A store holds at each time stamp the accumulation over the accumulation_hours hours ending at the stamp (store
+    attribute; 1 h for ERA5 files and for stores written before it was recorded). When the store is finer than the
+    time step and its accumulations cover its own steps (an hourly store downscaled at 3 h), the k values of each
+    window are summed.
+
+    Args:
+        era_times (DatetimeIndex): time axis of the store
+        era_attrs (dict): attributes of the store
+        tstep_h (int): time step of the downscaling [h]
+
+    Returns:
+        k (int): number of stored values summed per time step, acc_hours (int): hours accumulated per time step
+    """
+    t = pd.DatetimeIndex(era_times)
+    step = int(round(np.median(np.diff(t.values)) / np.timedelta64(1, 'h'))) if t.size > 1 else tstep_h
+    hours = int(era_attrs.get('accumulation_hours', 1))
+    if step < tstep_h and hours == step and tstep_h % step == 0:
+        return tstep_h // step, tstep_h
+    return 1, hours
+
+varout_default = ['t', 'u', 'v', 'q', 'p', 'tp', 'precip_lapse_rate', 'wd', 'ws', 'w', 'vp', 'cse',
+                  'LW', 'SW', 'SW_direct', 'SW_diffuse', 'cos_illumination']
+
+VAR_ATTRS = {
+    't': {'units': 'K', 'long_name': 'Temperature', 'standard_name': 'air_temperature'},
+    'q': {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'},
+    'u': {'units': 'm s**-1', 'long_name': 'U component of wind', 'standard_name': 'eastward_wind'},
+    'v': {'units': 'm s**-1', 'long_name': 'V component of wind', 'standard_name': 'northward_wind'},
+    'p': {'units': 'Pa', 'long_name': 'Surface air pressure', 'standard_name': 'surface_air_pressure'},
+    'ws': {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'},
+    'wd': {'units': 'rad', 'long_name': 'Wind direction (from), clockwise from north',
+           'standard_name': 'wind_from_direction'},
+    'precip_lapse_rate': {'units': '1', 'long_name': 'Precipitation elevation adjustment factor (already applied to tp)'},
+    'w': {'units': 'kg kg**-1', 'long_name': 'Mixing ratio', 'standard_name': 'humidity_mixing_ratio'},
+    'vp': {'units': 'Pa', 'long_name': 'Vapor pressure', 'standard_name': 'water_vapor_partial_pressure_in_air'},
+    'cse': {'units': '1', 'long_name': 'Clear sky emissivity'},
+    'LW': {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
+           'standard_name': 'surface_downwelling_longwave_flux_in_air'},
+    'SW': {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
+           'standard_name': 'surface_downwelling_shortwave_flux_in_air'},
+    'SW_direct': {'units': 'W m**-2', 'long_name': 'Surface direct solar radiation downwards'},
+    'SW_diffuse': {'units': 'W m**-2', 'long_name': 'Surface diffuse solar radiation downwards (sky and terrain)'},
+    'SW_terrain': {'units': 'W m**-2', 'long_name': 'Solar radiation reflected by the surrounding terrain (part of '
+                                                    'SW_diffuse)'},
+    'cos_illumination': {'units': '1', 'long_name': 'Cosine of the solar illumination angle on the slope'},
+    't_pl': {'units': 'K', 'long_name': 'Pressure-level temperature before the surface-effect correction'},
+    'dT_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on temperature: t2m - T_pl at the ERA5 surface'},
+    'dTd_surf': {'units': 'K', 'long_name': 'ERA5 surface effect on dew point: d2m - Td_pl at the ERA5 surface'},
+}
+SURFACE_DIAGNOSTICS = ['t_pl', 'dT_surf', 'dTd_surf']
+
+
+def tp_attrs(tstep_h):
+    return {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
+            'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
+            'standard_name': 'precipitation_amount'}
 
 
 class ClimateDownscaler:
-    def __init__(self, 
+    """
+    Downscale an ERA5 zarr store to a list of points.
+
+    Args:
+        era5_zarr_path (str): path to the ERA5 zarr store (see era5_store and fetch_era5.netcdf_to_zarr). z_surf may
+            be static (latitude, longitude) or given at every time step
+        output_path (str): directory of the output store
+        df_centroids (dataframe): points with point_name, x, y, lat, lon, elevation, slope, aspect, svf
+        da_horizon (dataarray): horizon angles [rad] of the points (azimuth, point_name), from
+            topo_param.compute_horizon_points, or of the DEM grid (azimuth, y, x), taken at the nearest pixel
+        ds_solar (dataset): precomputed solar geometry (point_name, time), from solar_geom.get_solar_geom. None
+            (recommended): the solar geometry of each block of points and time steps is computed when the block is
+            downscaled, from the coordinates of the points, without holding it for the whole period in memory
+        target_EPSG (int): EPSG code of x, y
+        start_date, end_date (str): period to downscale (end_date included)
+        tstep (str): '1h', '3h' or '6h'
+        varout (list): variables to store, default varout_default
+        interp_method (str): 'idw' or 'linear'
+        lw_terrain_flag (bool): add the longwave emitted by the surrounding terrain
+        precip_lapse_rate_flag (bool): apply the precipitation elevation factor
+        surface_effect (dict): surface-effect correction, from surface_effect.setup() (None: off). Its diagnostics
+            t_pl, dT_surf and dTd_surf are added to the outputs when 'diagnostics' is true
+        store_name (str): name of the output zarr store, default 'down.zarr'
+        precip_lapse_rate_max_factor (float): bound of the precipitation elevation factor
+        point_block (int): number of points processed together, also the shard size of the output store along points
+        time_block (int): number of time steps processed together, also the chunk size of the output store along time.
+            Default: one year
+        max_box_mb (float): the ERA5 nodes around all points are read once per time block if they fit in this
+            memory (MB), otherwise once per point block
+        shading_substeps (int): sub-steps of the radiation accumulation window at which terrain shading is tested;
+            the direct beam is scaled by the sunlit fraction of the window (1: one test at the centre, all or
+            nothing). Default: solar_substeps (or the solar_substeps of ds_solar)
+        accumulation_window (str): window over which the radiation fluxes are accumulated, ending at the time stamp.
+            Default: the hours the accumulated fields cover per time step (see accumulation(): the time step for
+            stores of window sums or hourly stores, 1 h for stores sampling the hourly ERA5 accumulations). Used when
+            ds_solar is None
+        solar_substeps (int): sub-steps of the window averaged for the top-of-atmosphere irradiance. Default 6
+        solar_method (str): pvlib solar position method, default 'nrel_numpy' (vectorized)
+        solar_constant (float): total solar irradiance at 1 AU [W m-2]
+        direct_diffuse (str): direct/diffuse split of the ERA5 shortwave: 'empirical' (default, from the clearness
+            index, Ruiz-Arias et al. 2010) or 'era5' (the direct radiation fdir of the store)
+        lw_terrain_temperature: temperature of the terrain emitting longwave to the point (lw_terrain_flag): 'air'
+            (default, the air temperature at the point), 'fixed' (273.15 K), a value [K], or a DataArray
+            (point_name, time) [K], e.g. surface temperatures of a snow model
+        diffuse_model (str): 'isotropic' (default) or 'hay_davies' (circumsolar part from the sun direction)
+        terrain_albedo: albedo of the surrounding terrain reflecting shortwave to the point: 0 (default, off), a
+            value, or a DataArray (point_name, time), e.g. snow albedo of a snow model. Adds the output SW_terrain
+        wind (dict): wind options from wind.setup() (None: pressure-level wind). Blending needs u10 and v10 in the
+            ERA5 store
+    """
+
+    def __init__(self,
                  era5_zarr_path,
                  output_path,
                  df_centroids,
@@ -72,453 +168,383 @@ class ClimateDownscaler:
                  start_date,
                  end_date,
                  tstep,
-                 varout=varout_default,
+                 varout=None,
                  interp_method='idw',
                  lw_terrain_flag=True,
                  precip_lapse_rate_flag=False,
-                 file_pattern='down_pt*.nc',
-                 store_name=None):
-        """
-        Initialize the parallel processor for zarr datasets.
-        
-        Args:
-            input_zarr_path (str): Path to the input zarr dataset
-            output_path (str): Path to store the computed results
-            array_path (str): Path to the specific array within the zarr group (if dataset is a group)
-        """
-        self.output_path = Path(output_path)
-        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+                 store_name='down.zarr',
+                 precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR,
+                 point_block=100,
+                 time_block=None,
+                 max_box_mb=2000,
+                 surface_effect=None,
+                 shading_substeps=None,
+                 accumulation_window=None,
+                 solar_substeps=6,
+                 solar_method='nrel_numpy',
+                 solar_constant=sg.S0_DEFAULT,
+                 direct_diffuse='empirical',
+                 lw_terrain_temperature='air',
+                 diffuse_model='isotropic',
+                 terrain_albedo=0.,
+                 wind=None):
+
+        store_name = store_name or 'down.zarr'
+        if not str(store_name).endswith('.zarr'):
+            raise ValueError('store_name must end with .zarr')
 
         self.ERA = xr.open_zarr(str(era5_zarr_path))
-        self.df_centroids = df_centroids
-        self.ds_solar = ds_solar
-        self.da_horizon = da_horizon
-        self.varout = varout
-
-        self.start_time = time.time()
-        self.n_digits = len(str(self.df_centroids.index.max()))
-        self.ds_solar = ds_solar
-        self.da_horizon = da_horizon
-        self.start_date = start_date
-        self.end_date = end_date
-        self.tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep, inclusive='left')
+        self.direct_diffuse = direct_diffuse or 'empirical'
+        if self.direct_diffuse not in DIRECT_DIFFUSE:
+            raise ValueError(f'direct_diffuse {direct_diffuse} not supported, use {" or ".join(DIRECT_DIFFUSE)}')
+        self.wind = wind
+        self.surf_vars = SURF_VARS + (['fdir'] if self.direct_diffuse == 'era5' else []) \
+            + (['u10', 'v10'] if wind is not None and wind.get('blend') is not None else [])
+        missing = [v for v in PLEV_VARS + self.surf_vars if v not in self.ERA]
+        if missing:
+            hint = ''
+            if 'fdir' in missing:
+                hint += (' (direct_diffuse: era5 needs the direct solar radiation: run get_era5() with '
+                         'toposcale.direct_diffuse: era5 to add it)')
+            if 'u10' in missing or 'v10' in missing:
+                hint += (' (wind_downscaling.surface_blend needs the ERA5 10 m wind: run get_era5() with the option '
+                         'set to add it)')
+            raise ValueError(f'Variables {missing} missing from the ERA5 store {era5_zarr_path}{hint}')
+        self.ERA = self.ERA.sortby('level')  # level=-1 must be the lowest in altitude
+        self.level_hpa = self.ERA.level.values.astype(float)
 
         tstep_dict = {'1h': 1, '3h': 3, '6h': 6}
-        #n_digits = len(str(self.df_centroids.cluster_labels.max()))
-        self.meta = {'interp_method': interp_method,
-                                  'lw_terrain_flag': lw_terrain_flag,
-                                  'tstep': tstep_dict.get(tstep),
-                                  'n_digits': self.n_digits,
-                                  'file_pattern': file_pattern,
-                                  'target_epsg':target_EPSG,
-                                  'precip_lapse_rate_flag':precip_lapse_rate_flag,
-                                  'output_directory':output_path,
-                                  'lw_terrain_flag':lw_terrain_flag}
+        self.tstep_h = tstep_dict.get(tstep)
+        if self.tstep_h is None:
+            raise ValueError(f'tstep {tstep} not supported, use 1h, 3h or 6h')
+        self.tvec = pd.date_range(start_date, pd.to_datetime(end_date) + pd.to_timedelta('1D'), freq=tstep,
+                                  inclusive='left')
+        era_times = pd.DatetimeIndex(self.ERA.time.values)
+        self.era_time_index = self._time_index(era_times, 'ERA5 store')
+        self.acc_sum, self.acc_hours = accumulation(era_times, self.ERA.attrs, self.tstep_h)
+        if self.acc_sum > 1:
+            # indices of the stored values of each window, -1 before the start of the store
+            offsets = pd.to_timedelta(np.arange(self.acc_sum - 1, -1, -1) * (self.tstep_h // self.acc_sum), unit='h')
+            self.acc_index = era_times.get_indexer((self.tvec.values[:, None] - offsets.values[None, :]).ravel()) \
+                .reshape(self.tvec.size, self.acc_sum)
+            if (self.acc_index < 0).any():
+                logger.warning(f'The first accumulation window starts before the ERA5 store: its precipitation and '
+                               f'radiation are scaled from the {int((self.acc_index[0] >= 0).sum())} of '
+                               f'{self.acc_sum} values available')
+            logger.info(f'---> Accumulated fields (tp, ssrd, strd): sums of {self.acc_sum} values of the store per '
+                        f'{self.tstep_h} h time step')
+        elif self.acc_hours < self.tstep_h:
+            logger.warning(f'The accumulated fields of the ERA5 store cover {self.acc_hours} h of each {self.tstep_h} h '
+                           f'time step: precipitation is the last {self.acc_hours} h scaled by '
+                           f'{self.tstep_h / self.acc_hours:g}, and radiation the mean of the last {self.acc_hours} h. '
+                           f'Fetch the store again (window sums) or downscale an hourly store')
+        if accumulation_window is None:
+            accumulation_window = f'{self.acc_hours}h'
+        elif pd.Timedelta(accumulation_window) != pd.Timedelta(f'{self.acc_hours}h'):
+            logger.warning(f'accumulation_window {accumulation_window} differs from the {self.acc_hours} h the '
+                           f'accumulated fields of the ERA5 store cover per time step')
 
-        
-        # Logic to setup output name
-        # Create output zarr store if specified output to be zarr store
-        if (store_name is not None):
-            if store_name[-5:] == '.zarr':
-                self.output_format = 'zarr'
-                self.store_name = store_name
-                self.setup_output_store()
+        self.df = df_centroids.reset_index(drop=True).copy()
+        self.df['point_name'] = self.df.point_name.astype(str)
+        self.target_EPSG = target_EPSG
+        transformer = Transformer.from_crs('epsg:4326', f'epsg:{target_EPSG}', always_xy=True)
+        self.ilat, self.ilon, self.weights = core.neighbours(self.df, self.ERA.latitude.values,
+                                                              self.ERA.longitude.values, transformer, interp_method)
+        self.points = {k: self.df[k].values.astype(float) for k in ['elevation', 'slope', 'aspect', 'svf']}
+
+        # horizon profile of each point, sorted by azimuth
+        hp = tu.horizon_at_points(da_horizon, self.df).sortby('azimuth')
+        self.horizon_azimuth = hp.azimuth.values
+        self.horizon_profiles = np.asarray(hp.transpose('point', 'azimuth').values, dtype=float)
+
+        self.lon, self.lat, _ = sg.point_coordinates(self.df, target_EPSG)
+        self.points['lat'] = self.lat   # season of the precipitation coefficients in each hemisphere
+        self.ds_solar = None
+        if ds_solar is None:
+            # solar geometry computed block by block: only its time terms are kept for the whole period
+            self.solar_terms = sg.window_terms(self.tvec, accumulation_window, solar_substeps)
+            self.solar_method = solar_method or 'nrel_numpy'
+            self.solar_constant = float(solar_constant or sg.S0_DEFAULT)
+            window = self.solar_terms['window']
+            self.solar_attrs = {'accumulation_window': str(accumulation_window),
+                                'solar_geometry_time_offset': f'-{window / 2}',
+                                'solar_substeps': self.solar_terms['n_sub'],
+                                'solar_constant': self.solar_constant,
+                                'solar_position_method': self.solar_method}
+            default_substeps = solar_substeps
+        else:
+            sol = ds_solar.assign_coords(point_name=tu.as_str(ds_solar.point_name.values))
+            absent = sorted(set(self.df.point_name) - set(sol.point_name.values))
+            if absent:
+                raise ValueError(f'Points {absent[:5]} missing from ds_solar')
+            self.ds_solar = sol
+            self.solar_point_index = pd.Index(sol.point_name.values).get_indexer(self.df.point_name)
+            self.solar_time_index = self._time_index(pd.DatetimeIndex(sol.time.values), 'ds_solar')
+            self._solar_lock = threading.Lock()  # HDF5 files are not safe to read from several threads
+            if 'accumulation_window' in sol.attrs:
+                window = pd.Timedelta(sol.attrs['accumulation_window'])
+            elif 'solar_geometry_time_offset' in sol.attrs:
+                window = 2 * pd.Timedelta(str(sol.attrs['solar_geometry_time_offset']).lstrip('-'))
             else:
-                raise ValueError("Store_name must be xxx.zarr")
+                window = pd.Timedelta(0)
+            self.solar_attrs = {k: sol.attrs[k] for k in ['accumulation_window', 'solar_geometry_time_offset',
+                                                          'solar_substeps', 'solar_constant', 'solar_position_method']
+                                if k in sol.attrs}
+            self.solar_attrs.setdefault('solar_geometry_time_offset', 'unknown')
+            default_substeps = sol.attrs.get('solar_substeps', 6)
+        self._setup_shading(window, default_substeps if shading_substeps is None else shading_substeps)
 
-            if file_pattern is not None:
-                raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
+        self.lw_terrain_flag = lw_terrain_flag
+        if diffuse_model not in core.DIFFUSE_MODELS:
+            raise ValueError(f'diffuse_model {diffuse_model} not supported, use {" or ".join(core.DIFFUSE_MODELS)}')
+        if isinstance(lw_terrain_temperature, str) and lw_terrain_temperature not in ('air', 'fixed'):
+            raise ValueError(f"lw_terrain_temperature {lw_terrain_temperature} not supported: 'air', 'fixed', a "
+                             f"temperature [K] or a DataArray (point_name, time)")
+        self.radiation = {'lw_terrain_temperature': self._field(lw_terrain_temperature, 'lw_terrain_temperature'),
+                          'diffuse_model': diffuse_model,
+                          'albedo': self._field(0. if terrain_albedo is None else terrain_albedo, 'terrain_albedo')}
+        self.precip_lapse_rate_flag = precip_lapse_rate_flag
+        self.precip_lapse_rate_max_factor = precip_lapse_rate_max_factor or PRECIP_LAPSE_MAX_FACTOR
+        self.varout = list(varout) if varout not in (None, 'all') else list(varout_default)
+        self.surface = None if surface_effect is None else dict(surface_effect)
+        if self.surface is not None and self.surface.get('beta_coef'):
+            self.surface['beta'] = se.beta_t(self.tvec, **self.surface['beta_coef'])
+        if surface_effect is not None and surface_effect.get('diagnostics'):
+            self.varout += [v for v in SURFACE_DIAGNOSTICS if v not in self.varout]
+        albedo = self.radiation['albedo']
+        if (isinstance(albedo, xr.DataArray) or albedo > 0) and 'SW_terrain' not in self.varout:
+            self.varout.append('SW_terrain')
+        self.point_block = int(point_block)
+        self.time_block = int(time_block) if time_block else int(round(365 * 24 / self.tstep_h))
+        self.time_block = min(self.time_block, self.tvec.size)
+        self.output_path = Path(output_path)
+        self.store = self.output_path / store_name
 
-        elif file_pattern is not None:
-            if file_pattern[-4:] == '*.nc':
-                self.output_format = 'netcdf'
-            else:
-                raise ValueError("file_pattern must finish with *.nc")
+        self.max_box_mb = max_box_mb
+        # contiguous blocks of points: each block fills whole shards of the output store
+        npts = len(self.df)
+        self.point_block = min(self.point_block, npts)
+        self.point_blocks = [(s, min(s + self.point_block, npts)) for s in range(0, npts, self.point_block)]
+        self.time_blocks = [(s, min(s + self.time_block, self.tvec.size))
+                            for s in range(0, self.tvec.size, self.time_block)]
 
-            if store_name is not None:
-                raise ValueError("It is only possible to save results to netcdf or a zarr store, not both simultaneously")
+    def _field(self, value, name):
+        """A scalar option, or a DataArray (point_name, time) aligned on the points and time steps."""
+        if not isinstance(value, xr.DataArray):
+            return value
+        da_ = value.assign_coords(point_name=tu.as_str(value.point_name.values))
+        missing = sorted(set(self.df.point_name) - set(da_.point_name.values))
+        if missing:
+            raise ValueError(f'{name}: points {missing[:5]} missing')
+        da_ = da_.sel(point_name=self.df.point_name.values)
+        self._time_index(pd.DatetimeIndex(da_.time.values), name)
+        return da_.sel(time=self.tvec).transpose('time', 'point_name')
 
+    def _wind(self, p0, p1):
+        """Wind options of points p0:p1."""
+        if self.wind is None:
+            return None
+        return {k: (v[p0:p1] if k in ('blend', 'curvature') and v is not None else v) for k, v in self.wind.items()}
 
+    def _radiation(self, p0, p1, t0, t1):
+        """Radiation options of points p0:p1 and time steps t0:t1."""
+        return {k: (np.asarray(v[t0:t1, p0:p1].values, dtype=float) if isinstance(v, xr.DataArray) else v)
+                for k, v in self.radiation.items()}
+
+    def _time_index(self, available, name):
+        idx = available.get_indexer(self.tvec)
+        if (idx < 0).any():
+            miss = self.tvec[idx < 0]
+            raise ValueError(f'{miss.size} time steps missing from the {name} (first: {miss[0]}). '
+                             f'Available: {available.min()} to {available.max()}')
+        return idx
+
+    # -----------------------------------------------------------------------------------------------------------------
     def setup_output_store(self):
-        """Setup the output Zarr store with proper structure"""
-
-        # Create output directory if it doesn't exist
-        Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
-        
-        # Create dummy dataset
-        shape=(self.df_centroids.shape[0],len(self.tvec))
-        dv = {}
-        for var in self.varout:
-            dv.update({var:(('point_ind', 'time'), da.zeros(shape))})
-        ds = xr.Dataset(
-            data_vars = dv,
-            coords={
-                'time':self.tvec,
-                'point_ind':self.df_centroids.point_ind.values,
-                'reference_time':self.tvec[0]
-            })
-
-        # Store dataset to Zarr
+        """Create the output store: coordinates, attributes and empty variables chunked (1 point, time_block)."""
+        self.output_path.mkdir(parents=True, exist_ok=True)
+        npts, nt = len(self.df), self.tvec.size
+        coords = {'point_name': self.df.point_name.values.astype(str), 'time': self.tvec}
+        for c in ['point_ind', 'x', 'y', 'lat', 'lon', 'elevation', 'slope', 'aspect', 'svf']:
+            if c in self.df:
+                coords[c] = ('point_name', self.df[c].values)
+        data = {v: (('point_name', 'time'), da.zeros((npts, nt), dtype='float32',
+                                                      chunks=(self.point_block, self.time_block)))
+                for v in self.varout}
+        ds = xr.Dataset(data, coords=coords)
+        for v in self.varout:
+            ds[v].attrs = tp_attrs(self.tstep_h) if v == 'tp' else VAR_ATTRS.get(v, {})
+        ver = tu.get_versionning()
+        ds.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
+                    'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
+                    'package_version': ver.get('package_version'), 'git_commit': ver.get('git_commit'),
+                    'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
+                    'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'accumulation_hours': int(self.acc_hours),
+                    'direct_diffuse': self.direct_diffuse,
+                    'diffuse_model': self.radiation['diffuse_model'],
+                    'wind_surface_blend': ('none' if self.wind is None or self.wind.get('blend') is None
+                                           else f'{np.min(self.wind["blend"]):.2f} to {np.max(self.wind["blend"]):.2f}'),
+                    'wind_terrain': 'none' if self.wind is None else self.wind.get('terrain', 'none'),
+                    'lw_terrain_temperature': (str(self.radiation['lw_terrain_temperature'])
+                                               if not isinstance(self.radiation['lw_terrain_temperature'],
+                                                                 xr.DataArray) else 'given (point_name, time)'),
+                    'terrain_albedo': (float(self.radiation['albedo'])
+                                       if not isinstance(self.radiation['albedo'], xr.DataArray)
+                                       else 'given (point_name, time)'),
+                    **{k: (int(v) if isinstance(v, (np.integer,)) else v) for k, v in self.solar_attrs.items()}}
         comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
-        encoder = dict(zip(self.varout, [{'compressors': comp}]*len(self.varout)))
-        ds = ds.chunk({'time':self.ERA.chunks.get('time')[0], 'point_ind':1})
-        ds.to_zarr(self.output_path / self.store_name, mode='w', encoding=encoder, zarr_format=3)
+        # chunks of up to 10 points x time block, grouped in shards of point_block points: each block writes whole
+        # shards (few files, few writes) and reading the time series of one point only reads a small chunk
+        chunk_p = max(d for d in range(1, min(10, self.point_block) + 1) if self.point_block % d == 0)
+        encoding = {v: {'compressors': comp, 'chunks': (chunk_p, self.time_block),
+                        'shards': (self.point_block, self.time_block)} for v in self.varout}
+        ds.to_zarr(self.store, mode='w', compute=False, zarr_format=3, encoding=encoding)
 
+    def _setup_shading(self, window, n_substeps):
+        """Sun positions of the shading sub-steps of the accumulation window: time terms for every time step."""
+        self.shading_substeps = int(n_substeps or 1) if window > pd.Timedelta(0) else 1
+        if self.shading_substeps < 2:
+            return
+        if self.ds_solar is None and self.solar_terms['n_sub'] == self.shading_substeps:
+            self.shading_terms = {k: self.solar_terms['sub'][k] for k in ['v', 'alpha', 'delta']}
+            return
+        offsets = sg.substep_offsets(window, self.shading_substeps)
+        t = self.tvec.tz_localize('UTC')
+        t_sub = pd.DatetimeIndex((t.values[:, None] + offsets.values[None, :]).ravel()).tz_localize('UTC')
+        terms = sg.spa_time_terms(t_sub)
+        self.shading_terms = {k: np.asarray(terms[k]).reshape(t.size, self.shading_substeps)
+                              for k in ['v', 'alpha', 'delta']}
 
-    def create_subset_indices(self, row):
-        """Create slice objects for subsetting."""
-
-        ind_lat = np.abs(self.ERA.latitude.values - row.lat).argmin()
-        ind_lon = np.abs(self.ERA.longitude.values - row.lon).argmin()
-
-        ilatitude = np.array([ind_lat - 1, ind_lat, ind_lat + 1]).astype(int)
-        ilongitude = np.array([ind_lon - 1, ind_lon, ind_lon + 1]).astype(int)
-                
-        return (
-            {'centroid': row,
-            'point_id':row.point_ind,
-            'point_name':row.point_name,
-            'latitude':ilatitude,
-             'longitude':ilongitude,
-             'tvec':self.tvec})
-
-
-    def downscale_atmo(self, row, subset, meta, ds_solar, da_horizon):
+    def _shade(self, p0, p1, t0, t1, solar):
         """
-        Downscaling method following the toposcale method introduced by J. Fiddes et al (2012)
+        Shaded fraction of the direct beam, (time, point): share of the accumulation window during which the sun is
+        behind the local horizon, each sub-step weighted by the direct beam it brings to the slope. Only terrain
+        shading: sub-steps with the sun below the astronomical horizon do not count.
         """
+        prof = self.horizon_profiles[p0:p1]
+        mid = core.horizon_at_sun(prof, self.horizon_azimuth, solar['azimuth']) > solar['elevation']
+        if self.shading_substeps < 2:
+            return mid
+        slope, aspect = self.points['slope'][p0:p1], self.points['aspect'][p0:p1]
+        lat, lon = self.lat[p0:p1], self.lon[p0:p1]
+        wsum = np.zeros(mid.shape)
+        wlit = np.zeros(mid.shape)
+        for k in range(self.shading_substeps):
+            terms = {v: a[t0:t1, k] for v, a in self.shading_terms.items()}
+            elev, az = sg.sun_geocentric(terms, lat, lon)
+            cos_i = np.sin(elev) * np.cos(slope) + np.cos(elev) * np.sin(slope) * np.cos(az - aspect)
+            w = np.where(elev > 0, np.maximum(cos_i, 0.), 0.)
+            wsum += w
+            wlit += w * (elev > core.horizon_at_sun(prof, self.horizon_azimuth, az))
+        with np.errstate(invalid='ignore', divide='ignore'):
+            return np.where(wsum > 0, 1. - wlit / wsum, mid.astype(float))
 
-        # Physical constants
-        g = 9.81  # Acceleration of gravity [ms^-1]
-        R = 287.05  # Gas constant for dry air [JK^-1kg^-1]
+    def _read_solar(self, p0, p1, t0, t1):
+        """Solar geometry of points p0:p1 for time steps t0:t1, (time, point) arrays."""
+        if self.ds_solar is None:
+            return sg.solar_block(self.solar_terms, self.lon[p0:p1], self.lat[p0:p1], self.points['elevation'][p0:p1],
+                                  t0, t1, method=self.solar_method, solar_constant=self.solar_constant)
+        tsl = self.solar_time_index[t0:t1]
+        with self._solar_lock:
+            sol = self.ds_solar[SOLAR_VARS].isel(point_name=self.solar_point_index[p0:p1], time=tsl).load()
+        out = {v: np.asarray(sol[v].transpose('time', 'point_name').values) for v in SOLAR_VARS}
+        out['sunset'] = out['sunset'].astype(bool)
+        for v in SOLAR_VARS[:-1]:
+            out[v] = out[v].astype(float)
+        return out
 
-        pt_id = row.point_ind
-        print(f'Downscaling t,q,p,tp,ws, wd for point: {pt_id}')
+    def _box(self, p0, p1):
+        """Slices of the ERA5 nodes needed by points p0:p1."""
+        ilat, ilon = self.ilat[p0:p1], self.ilon[p0:p1]
+        return slice(ilat.min(), ilat.max() + 1), slice(ilon.min(), ilon.max() + 1)
 
-        # ====== Horizontal interpolation ====================
-        interp_method = meta.get('interp_method')
+    def _read_era(self, t0, t1, box):
+        """Read the ERA5 variables for time steps t0:t1 on a box of nodes, as float64 numpy arrays."""
+        tidx = self.era_time_index[t0:t1]
+        tsel = slice(tidx[0], tidx[-1] + 1) if np.all(np.diff(tidx) == 1) else tidx
+        sub = self.ERA[PLEV_VARS + self.surf_vars].isel(time=tsel, latitude=box[0], longitude=box[1])
+        era = {v: np.asarray(sub[v].transpose('time', 'level', 'latitude', 'longitude').values, dtype=float)
+               for v in PLEV_VARS}
+        nt = sub.sizes['time']
+        for v in self.surf_vars:
+            if v in ACC_VARS and self.acc_sum > 1:
+                era[v] = self._read_sums(v, t0, t1, box)
+            elif 'time' in sub[v].dims:
+                era[v] = np.asarray(sub[v].transpose('time', 'latitude', 'longitude').values, dtype=float)
+            else:   # static field (z_surf of the stores written by era5_store)
+                field = np.asarray(sub[v].transpose('latitude', 'longitude').values, dtype=float)
+                era[v] = np.broadcast_to(field, (nt,) + field.shape)
+        return era, box
 
-        # convert gridcells coordinates from WGS84 to DEM projection
-        lons, lats = np.meshgrid(subset.longitude.values, subset.latitude.values)
-        trans = Transformer.from_crs("epsg:4326", "epsg:" + str(meta.get('target_epsg')), always_xy=True)
-        Xs, Ys = trans.transform(lons.flatten(), lats.flatten())
-        Xs = Xs.reshape(lons.shape)
-        Ys = Ys.reshape(lons.shape)
+    def _read_sums(self, v, t0, t1, box):
+        """Sums of the acc_sum stored values of each window of time steps t0:t1 (partial windows rescaled)."""
+        idx = self.acc_index[t0:t1]
+        valid = idx >= 0
+        lo, hi = int(idx[valid].min()), int(idx.max()) + 1
+        arr = np.asarray(self.ERA[v].isel(time=slice(lo, hi), latitude=box[0], longitude=box[1])
+                         .transpose('time', 'latitude', 'longitude').values, dtype=float)
+        vals = arr[np.where(valid, idx - lo, 0)] * valid[:, :, None, None]
+        return vals.sum(axis=1) * (self.acc_sum / valid.sum(axis=1))[:, None, None]
 
-        # ========= Converting z from [m**2 s**-2] to [m] asl =======
-        subset.z.values = subset.z.values / g
-        subset.z.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of plevel'}
+    def _box_mb(self, box, nt):
+        cells = (box[0].stop - box[0].start) * (box[1].stop - box[1].start)
+        n_acc = len([v for v in self.surf_vars if v in ACC_VARS])
+        n_fields = len(PLEV_VARS) * self.level_hpa.size + len(self.surf_vars) + n_acc * (self.acc_sum - 1)
+        return nt * cells * n_fields * 8 / 1e6
 
-        subset.z_surf.values = subset.z_surf.values / g  # convert geopotential height to elevation (in m), normalizing by g
-        subset.z_surf.attrs = {'units': 'm', 'standard_name': 'Elevation', 'Long_name': 'Elevation of ERA5 surface'}
+    def process_block(self, p0, p1, t0, t1, era=None):
+        """
+        Downscale points p0:p1 (positions in df_centroids) for time steps t0:t1 and write them to the store.
 
-        # ========== Horizontal interpolation ==================
-        dist = np.sqrt((row.x - Xs) ** 2 + (row.y - Ys) ** 2)
-        if interp_method == 'idw':
-            idw = 1 / (dist ** 2)
-            weights = idw / np.sum(idw)  # normalize idw to sum(idw) = 1
-        elif interp_method == 'linear':
-            weights = dist / np.sum(dist)
-        else:
-            sys.exit('ERROR: interpolation method not available')
+        Args:
+            era (tuple): optional (arrays, box) already read by _read_era() on a box containing the points
+        """
+        if era is None:
+            era = self._read_era(t0, t1, self._box(p0, p1))
+        fields, box = era
+        W = core.weight_matrix(self.ilat[p0:p1] - box[0].start, self.ilon[p0:p1] - box[1].start,
+                               self.weights[p0:p1], box[0].stop - box[0].start, box[1].stop - box[1].start)
+        plev = {v: core.apply_weights(fields[v], W) for v in PLEV_VARS}
+        surf = {v: core.apply_weights(fields[v], W) for v in self.surf_vars}
+        solar = self._read_solar(p0, p1, t0, t1)
+        shade = self._shade(p0, p1, t0, t1, solar)
+        points = {k: v[p0:p1] for k, v in self.points.items()}
+        surface = None
+        if self.surface is not None:
+            beta = self.surface.get('beta', 0.)
+            surface = dict(self.surface, beta=beta[t0:t1] if np.ndim(beta) else beta,
+                           weight=None if self.surface.get('weight') is None else self.surface['weight'][p0:p1])
+        out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
+                                   self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
+                                   self.precip_lapse_rate_max_factor, surface, acc_hours=self.acc_hours,
+                                   radiation=self._radiation(p0, p1, t0, t1), wind=self._wind(p0, p1))
+        group = zarr.open_group(str(self.store), mode='r+')
+        for v in self.varout:
+            group[v][p0:p1, t0:t1] = out[v].T.astype('float32')
+        return (p1 - p0) * (t1 - t0)
 
-        # create a dataArray of weights to then propagate through the dataset
-        da_idw = xr.DataArray(data=weights,
-                                  coords={
-                                      "latitude": subset.latitude.values,
-                                      "longitude": subset.longitude.values,
-                                  },
-                                  dims=["latitude", "longitude"]
-                                  )
-        # convert to float64 consequence of CDS-BETA change to dtype in netcdf download
-        #subset = subset.astype('float64')
-        #da_idw = da_idw.astype('float64')
-        dw = xr.Dataset.weighted(subset, da_idw)
-        subset_interp = dw.sum(['longitude', 'latitude'],
-                                 keep_attrs=True)  # compute horizontal inverse weighted horizontal interpolation
+    def downscale(self, n_core=1):
+        """
+        Downscale all points and write them to the output store.
 
-        # ============ Extract specific humidity (q) for both dataset ============
-        subset_interp = mu.dewT_2_q_magnus(subset_interp, var_era_surf_zarr)
+        Args:
+            n_core (int): number of threads processing point blocks in parallel. Blocks write disjoint shards.
 
-
-        #subset_interp['rh'] = mu.q_2_rh(subset_interp.t, subset_interp.tp, subset_interp.q)
-        subset_interp = mu.t_rh_2_dewT(subset_interp, mu.var_era_plevel)
-
-        subset_interp = subset_interp.persist()
-
-        down_pt = xr.Dataset(coords={
-                'time': subset_interp.time,
-                'point_ind': pt_id})
-
-        if (row.elevation < subset_interp.z.isel(level=-1)).sum():
-            pt_elev_diff = np.round(np.min(row.elevation - subset_interp.z.isel(level=-1).values), 0)
-            print(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {subset_interp.isel(level=-1).level.data} hPa geopotential\n=> "
-                      "Values sampled from Psurf and lowest Plevel. No vertical interpolation")
-            
-            ind_z_top = (subset_interp.where(subset_interp.z > row.elevation).z - row.elevation).argmin('level')
-            top = subset_interp.isel(level=ind_z_top)
-
-            down_pt['t'] = top['t']
-            down_pt['u'] = top.u
-            down_pt['v'] = top.v
-            down_pt['q'] = top.q
-            down_pt['p'] = top.level * (10 ** 2) * np.exp(
-                    -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
-
-        else:
-            # ========== Vertical interpolation at the DEM surface z  ===============
-            ind_z_bot = (subset_interp.where(subset_interp.z < row.elevation).z - row.elevation).argmax('level')
-
-            # In case upper pressure level elevation is not high enough, stop process and print error
-            try:
-                ind_z_top = (subset_interp.where(subset_interp.z > row.elevation).z - row.elevation).argmin('level')
-            except:
-                raise ValueError(
-                    f'ERROR: Upper pressure level {subset_interp.level.min().values} hPa geopotential is lower than cluster mean elevation {row.elevation} {subset_interp.z}')
-                   
-
-            top = subset_interp.isel(level=ind_z_top)
-            bot = subset_interp.isel(level=ind_z_bot)
-
-            # Preparing interpolation weights for linear interpolation =======================
-            dist = np.array([np.abs(bot.z - row.elevation).values, np.abs(top.z - row.elevation).values])
-            weights = dist / np.sum(dist, axis=0)  # [x] removed idw interp for vertical - Aug 20 2025
-
-            # ============ Creating a dataset containing the downscaled timeseries ========================
-            down_pt['t'] = bot.t * weights[1] + top.t * weights[0]
-            down_pt['u'] = bot.u * weights[1] + top.u * weights[0]
-            down_pt['v'] = bot.v * weights[1] + top.v * weights[0]
-            down_pt['q'] = bot.q * weights[1] + top.q * weights[0]
-            down_pt['p'] = top.level * (10 ** 2) * np.exp(
-                    -(row.elevation - top.z) / (0.5 * (top.t + down_pt.t) * R / g))  # Pressure in bar
-
-            # ======= logic  to compute ws, wd without loading data in memory, and maintaining the power of dask
-        down_pt['month'] = ('time', down_pt.time.dt.month.data)
-        print("precip lapse rate = " + str(meta.get('precip_lapse_rate_flag')))
-        if meta.get('precip_lapse_rate_flag'):
-            monthly_coeffs = xr.Dataset(
-                    {
-                        'coef': (['month'], [0.35, 0.35, 0.35, 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.25, 0.3, 0.35])
-                    },
-                    coords={'month': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
-                )
-            down_pt['precip_lapse_rate'] = (1 + monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
-                        row.elevation - subset_interp.z_surf) * 1e-3) / \
-                (1 - monthly_coeffs.coef.sel(month=down_pt.month.values).data * (
-                                                       row.elevation - subset_interp.z_surf) * 1e-3)
-        else:
-            down_pt['precip_lapse_rate'] = down_pt.t * 0 + 1
-        
-        print(f"Downscaling SW, LW for point: {pt_id}")
-        # ERA5 tp is the 1-hour accumulation ending at the time stamp: scale it to mm per time step
-        # (same convention as topo_scale.py; for 1h data this is mm/hr)
-        down_pt['tp'] = down_pt.precip_lapse_rate * subset_interp.tp * 1 * meta.get('tstep') * 10 ** 3
-        down_pt['theta'] = np.arctan2(-down_pt.u, -down_pt.v)
-        down_pt['theta_neg'] = (down_pt.theta < 0) * (down_pt.theta + 2 * np.pi)
-        down_pt['theta_pos'] = (down_pt.theta >= 0) * down_pt.theta
-        down_pt = down_pt.drop_vars('theta')
-        down_pt['wd'] = (down_pt.theta_pos + down_pt.theta_neg)  # direction in Rad
-        down_pt['ws'] = np.sqrt(down_pt.u ** 2 + down_pt.v ** 2)
-        down_pt = down_pt.drop_vars(['theta_pos', 'theta_neg', 'month'])
-
-
-        #============================================================
-        #           Radiation corrections
-        #============================================================
-        # ======== Longwave downward radiation ===============
-        x1, x2 = 0.43, 5.7
-        sbc = 5.67e-8
-
-        down_pt = mu.mixing_ratio(down_pt, mu.var_era_plevel)
-        down_pt = mu.vapor_pressure(down_pt, mu.var_era_plevel)
-        subset_interp = mu.mixing_ratio(subset_interp, var_era_surf_zarr)
-        subset_interp = mu.vapor_pressure(subset_interp, var_era_surf_zarr)
-
-        # ========= Compute clear sky emissivity ===============
-        down_pt['cse'] = 0.23 + x1 * (down_pt.vp / down_pt.t) ** (1 / x2)
-        subset_interp['cse'] = 0.23 + x1 * (subset_interp.vp / subset_interp.t2m) ** (1 / x2)
-        # Calculate the "cloud" emissivity, UNIT OF STRD (Jjoel_testJun2023/m2)
-
-        # ERA5 ssrd/strd are 1-hour accumulations (J m-2) whatever the sampling timestep (1h, 3h, 6h):
-        # convert to W m-2 with 3600 s (same convention as topo_scale.py)
-        tstep_seconds = 3600
-
-        subset_interp['cle'] = (subset_interp.strd / tstep_seconds) / (sbc * subset_interp.t2m ** 4) - \
-                             subset_interp['cse']
-        # Use the former cloud emissivity to compute the all sky emissivity at subgrid.
-        subset_interp['aef'] = down_pt['cse'] + subset_interp['cle']
-        if meta.get('lw_terrain_flag'):
-            down_pt['LW'] = row.svf * subset_interp['aef'] * sbc * down_pt.t ** 4 + \
-                            0.5 * (1 + np.cos(row.slope)) * (1 - row.svf) * 0.99 * 5.67e-8 * (273.15 ** 4)
-        else:
-            down_pt['LW'] = row.svf * subset_interp['aef'] * sbc * down_pt.t ** 4
-
-        kt = subset_interp.ssrd * 0
-        sunset = ds_solar.sunset.astype(bool).compute()
-        mu0 = ds_solar.mu0
-        SWtoa = ds_solar.SWtoa
-
-        kt[~sunset] = (subset_interp.ssrd[~sunset] / tstep_seconds) / SWtoa[~sunset]  # clearness index
-        
-        kt[(kt < 0).values] = 0
-        kt[(kt > 1).values] = 1
-        kd = 0.952 - 1.041 * np.exp(-1 * np.exp(2.3 - 4.702 * kt))  # Diffuse index
-
-        subset_interp['SW'] = subset_interp.ssrd / tstep_seconds
-        subset_interp['SW'][(subset_interp['SW'] < 0).values] = 0
-        subset_interp['SW_diffuse'] = kd * subset_interp.SW
-        down_pt['SW_diffuse'] = row.svf * subset_interp.SW_diffuse
-
-        subset_interp['SW_direct'] = subset_interp.SW - subset_interp.SW_diffuse
-        # ERA5 ssrd is an accumulation over the previous hour while SWtoa is evaluated at the time stamp, so around
-        # sunrise/sunset SW_direct can exceed SWtoa. This gives a negative ka and, once scaled by
-        # cos_illumination / mu0 on steep slopes, SW_direct spikes above the solar constant. Cap it at SWtoa.
-        subset_interp['SW_direct'] = subset_interp['SW_direct'].clip(max=SWtoa)
-        # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
-        ka = subset_interp.ssrd * 0
-        # pdb.set_trace()
-        ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / subset_interp.SW_direct[~sunset])
-        # Illumination angle
-        down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
-                                          np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
-        down_pt['cos_illumination'] = down_pt.cos_illumination_tmp * (
-                down_pt.cos_illumination_tmp > 0)  # remove selfdowing ccuring when |Solar.azi - aspect| > 90
-        down_pt = down_pt.drop_vars(['cos_illumination_tmp'])
-        illumination_mask = down_pt['cos_illumination'] < 0
-        illumination_mask = illumination_mask.compute()
-        down_pt['cos_illumination'][illumination_mask] = 0
-
-        # Binary shadow masks.
-        horizon = da_horizon.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth), method='nearest')
-        shade = (horizon > ds_solar.elevation)
-        down_pt['SW_direct_tmp'] = down_pt.t * 0
-        down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
-            -ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
-        down_pt['SW_direct'] = down_pt.t * 0
-        down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
-                down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
-        down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
-        
-        # currently drop azimuth and level as they are coords. Could be passed to variables instead.
-        # round(5) required to sufficiently represent specific humidty, q (eg typical value 0.00078)
-        # keep precip_lapse_rate (as in topo_scale.py): it allows recovering precipitation without the lapse rate
-        down_pt = down_pt.drop_vars(['level'], errors='ignore')
-        # adding metadata
-        down_pt.t.attrs = {'units': 'K', 'long_name': 'Temperature', 'standard_name': 'air_temperature'}
-        down_pt.q.attrs = {'units': 'kg kg**-1', 'long_name': 'Specific humidity', 'standard_name': 'specific_humidity'}
-        down_pt.u.attrs = {'units': 'm s**-1', 'long_name': 'U component of wind', 'standard_name': 'eastward_wind'}
-        down_pt.v.attrs = {'units': 'm s**-1', 'long_name': 'V component of wind', 'standard_name': 'northward wind'}
-        down_pt.p.attrs = {'units': 'bar', 'long_name': 'Pression atmospheric', 'standard_name': 'pression_atmospheric'}
-
-        down_pt.ws.attrs = {'units': 'm s**-1', 'long_name': 'Wind speed', 'standard_name': 'wind_speed'}
-        down_pt.wd.attrs = {'units': 'deg', 'long_name': 'Wind direction', 'standard_name': 'wind_direction'}
-        tstep_h = meta.get('tstep')
-        down_pt.tp.attrs = {'units': 'mm hr**-1' if tstep_h == 1 else f'mm ({tstep_h} hr)**-1',
-                            'long_name': f'Precipitation over the {tstep_h} h time step ending at the time stamp',
-                            'standard_name': 'precipitation'}
-        down_pt.precip_lapse_rate.attrs = {'units': '1',
-                                           'long_name': 'Precipitation elevation adjustment factor (already applied to tp)',
-                                           'standard_name': 'precipitation_lapse_rate_factor'}
-
-        down_pt.LW.attrs = {'units': 'W m**-2', 'long_name': 'Surface longwave radiation downwards',
-                            'standard_name': 'longwave_radiation_downward'}
-        down_pt.cse.attrs = {'units': 'xxx', 'standard_name': 'Clear sky emissivity'}
-        down_pt = down_pt.drop_vars(['SW_direct_tmp'])
-        down_pt.SW.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar radiation downwards',
-                            'standard_name': 'shortwave_radiation_downward'}
-        down_pt.SW_diffuse.attrs = {'units': 'W m**-2', 'long_name': 'Surface solar diffuse radiation downwards',
-                                    'standard_name': 'shortwave_diffuse_radiation_downward'}
-        return down_pt
-
-
-    def process_and_store_subset(self, subset_indices):
-
-        try:
-            # Get the subset
-            subset = self.ERA.sel(time=subset_indices.get('tvec')).isel(latitude=subset_indices.get('latitude'), 
-                                longitude=subset_indices.get('longitude'))
-            result = self.downscale_atmo(row=subset_indices.get('centroid'), 
-                                        subset=subset, 
-                                        meta=self.meta, 
-                                        ds_solar=self.ds_solar.sel(point_name=subset_indices.get('point_name')), 
-                                        da_horizon=self.da_horizon)
-            ver_dict = tu.get_versionning()
-            result.attrs = {'title': 'Downscaled timeseries with TopoPyScale',
-                             'created with': 'TopoPyScale, see more at https://topopyscale.readthedocs.io',
-                              'package_version':ver_dict.get('package_version'),
-                              'git_commit': ver_dict.get('git_commit'),
-                             'url_TopoPyScale': 'https://github.com/ArcticSnow/TopoPyScale',
-                             'date_created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            if self.output_format.lower() == 'netcdf':
-                # same layout as topo_scale.py: point_name kept as coordinate and used in the file name, so that
-                # tu.read_downscaled() returns points indexed by point_name (integer ids sorted as strings would
-                # otherwise scramble the point order)
-                result = result.drop_vars(['reference_time'], errors='ignore')
-                result = result.assign_coords(point_name=str(subset_indices.get('point_name')))
-                comp = dict(zlib=True, complevel=5)
-                encoding = {var: comp for var in result.data_vars}
-                result.to_netcdf(self.output_path / self.meta.get('file_pattern').replace("*", str(subset_indices.get('point_name'))),
-                          engine='h5netcdf', encoding=encoding, mode='a')
-
-            elif self.output_format.lower() == 'zarr':
-                result = result.drop_vars(['point_name', 'reference_time'], errors='ignore')
-                vars = list(result.keys())
-                comp = BloscCodec(cname='lz4', clevel=5, shuffle='bitshuffle', blocksize=0)
-                encoder = dict(zip(vars, [{'compressors': comp}]*len(vars)))
-                result = result.expand_dims(dim='point_ind', axis=0)
-                result = result.chunk({'time':self.ERA.chunks.get('time')[0], 'point_ind':1})
-                #if not (self.output_path / self.store_name).exists():
-                #    result.to_zarr(self.output_path / self.store_name, mode='w', encoding=encoder, zarr_format=3)
-
-                #else:
-                result[self.varout].to_zarr(self.output_path / self.store_name, mode='a', zarr_format=3, region='auto')
-            else:
-                raise ValueError('Only netcdf or zarr available')
-            print(f"---> Point {subset_indices.get('point_id')} stored to {self.output_format.lower()}")
-
-            
-        except Exception as e:
-            raise ValueError("Error processing subset")
-
-    def multicore_parallel_process_multiple_subsets(self, n_core=4):
-        start_time = time.time()
-        indices_list = []
-        for _, row in self.df_centroids.iterrows():
-            indices_list.append(self.create_subset_indices(row))
-
-        fun_param = zip(indices_list)  # construct here the tuple that goes into the pooling for arguments
-        tu.multicore_pooling(self.process_and_store_subset, fun_param, n_core)
-        elapsed = np.round(time.time() - start_time, 0)
-        print(f'---> Downscaling finished in {elapsed}s  -- or -- {elapsed/self.df_centroids.shape[0]} s/pts')
-
-
-    def dask_parallel_process_multiple_subsets(self, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
-        """Process multiple subsets in parallel and store results to disk."""
-        
-        start_time = time.time()
-        cluster = LocalCluster(processes=True, **dask_worker)
-
-        with Client(cluster) as client:
-            print(f"Dask client started with {len(client.scheduler_info()['workers'])} workers")
-            
-            futures = []
-            for _, row in self.df_centroids.iterrows():
-                indices = self.create_subset_indices(row)
-                future = client.submit(
-                    self.process_and_store_subset,
-                    indices
-                )
-                futures.append(future)
-            
-            print('---> Downscaling finished in {}s'.format(np.round(time.time() - start_time), 1))
-            return client.gather(futures)
-        
-
-    def downscale_parallel(self, parallel_method='multicore', n_core=4, dask_worker={'n_workers':4, 'threads_per_worker':1, 'memory_target_fraction':0.95, 'memory_limit':'1.5GB'}):
-        
-        if parallel_method == 'multicore':
-            self.multicore_parallel_process_multiple_subsets(n_core)
-        elif parallel_method == 'dask':
-            self.dask_parallel_process_multiple_subsets(dask_worker)
-        else:
-            raise ValueError('Method not available')
+        Returns:
+            dataset: the output store opened with xarray
+        """
+        start = time.time()
+        self.setup_output_store()
+        logger.info(f'---> Downscaling {len(self.df)} points x {self.tvec.size} time steps '
+              f'({len(self.point_blocks)} point blocks x {len(self.time_blocks)} time blocks)')
+        full_box = self._box(0, len(self.df))
+        with zarr.config.set({'array.write_empty_chunks': True}), \
+                ThreadPoolExecutor(max_workers=max(1, int(n_core or 1))) as pool:
+            for t0, t1 in self.time_blocks:
+                era = self._read_era(t0, t1, full_box) if self._box_mb(full_box, t1 - t0) <= self.max_box_mb \
+                    else None
+                list(pool.map(lambda pb: self.process_block(pb[0], pb[1], t0, t1, era), self.point_blocks))
+        elapsed = time.time() - start
+        logger.info(f'---> Downscaling finished in {elapsed:.1f} s ({elapsed / len(self.df):.3f} s per point)')
+        return tu.open_downscaled_store(self.store)

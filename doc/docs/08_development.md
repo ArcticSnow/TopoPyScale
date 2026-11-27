@@ -26,6 +26,17 @@ We keep track of all issues, bugs and ideas in the Github Issue [page](https://g
 More elaborated discussion are taking place in the Github Discussion [page](https://github.com/ArcticSnow/TopoPyScale/discussions). This works like a forum.
 
 
+## Tests
+
+`tests/` runs the downscaling on synthetic ERA5 fields with a known answer, checks the horizons and sky view factor on synthetic DEMs, and checks the exports. Run it before submitting changes:
+
+```bash
+pip install pytest
+pytest tests -q
+```
+
+See [Physics Checks](09_physics_checks.md) for what the tests cover and for the `known_violation` marker.
+
 ## Documentation
 ### Function and Class Docstrings
 

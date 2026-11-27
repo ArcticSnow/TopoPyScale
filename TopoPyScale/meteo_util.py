@@ -1,6 +1,5 @@
 import numpy as np
 from numpy.random import default_rng
-import pdb
 
 var_era_plevel = {
     'temp': 't',
@@ -65,7 +64,7 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
     Args:
         precip (array): 1D array, precipitation in mm/hr
         temp (arrray): 1D array, air temperature in K
-        rh (array): 1D array, relative humidity in %
+        rh (array): 1D array, relative humidity in % (0-100), e.g. 100 * q_2_rh(...)
         sp (array): 1D array, surface pressure in Pa
         method (str): 'continuous', 'Jennings2018_bivariate', 'Jennings2018_trivariate'.
         tair_low_thresh (float): lower temperature threshold under which all precip is snow. degree K
@@ -84,9 +83,10 @@ def partition_snow(precip, temp, rh=None, sp=None, method='continuous', tair_low
             return rng.choice([0,1], 1, p=[1-p, p])
 
     if method.lower() == 'continuous':
+        # snow fraction: 1 below tair_low_thresh, 0 above tair_high_thresh, decreasing linearly in between
         snow = precip * ((temp <= tair_low_thresh) +
                          ((temp > tair_low_thresh) & (temp <= tair_high_thresh)) *
-                         (temp - tair_low_thresh) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
+                         (tair_high_thresh - temp) / np.max([1e-12, tair_high_thresh - tair_low_thresh]))
 
     elif method.lower() == 'jennings2018_bivariate':
         if rh is None:
