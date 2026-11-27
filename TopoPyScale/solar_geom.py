@@ -14,6 +14,9 @@ import pandas as pd
 import pvlib
 import xarray as xr
 from pyproj import Transformer
+import logging
+
+logger = logging.getLogger(__name__)
 
 S0_DEFAULT = 1361.  # nominal total solar irradiance at 1 AU [W m-2] (IAU 2015 Resolution B3)
 
@@ -177,7 +180,7 @@ def get_solar_geom(df_position,
     Returns:
         dataset: zenith, azimuth, elevation [rad], mu0, SWtoa [W m-2], sunset (point_name, time)
     """
-    print('\n---> Computing solar geometry')
+    logger.info('\n---> Computing solar geometry')
     df = df_position.copy()
     if {'longitude', 'latitude'} <= set(df.columns):
         lon, lat = df.longitude.values, df.latitude.values
@@ -254,5 +257,5 @@ def get_solar_geom(df_position,
     encoding = {v: {'zlib': True, 'complevel': 4, 'dtype': 'float32'}
                 for v in ['zenith', 'azimuth', 'elevation', 'mu0', 'SWtoa']}
     ds.to_netcdf(fout, engine='h5netcdf', encoding=encoding)
-    print(f'---> File {fout} saved')
+    logger.info(f'---> File {fout} saved')
     return ds

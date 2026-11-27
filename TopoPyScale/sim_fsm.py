@@ -23,6 +23,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import datetime as dt
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_export as te
+import logging
+
+logger = logging.getLogger(__name__)
 
 def infer_met_timestep(metfile, default=3600):
     """
@@ -43,7 +46,7 @@ def infer_met_timestep(metfile, default=3600):
             raise ValueError
         return float(tstep)
     except Exception:
-        print(f'WARNING: cannot infer the time step of {metfile}, assuming {default} s')
+        logger.warning(f'cannot infer the time step of {metfile}, assuming {default} s')
         return float(default)
 
 
@@ -122,7 +125,7 @@ def txt2ds(fname):
     '''
     df = read_pt_fsm(fname)
     point_id = int( re.findall(r'\d+', fname.split('/')[-1])[-1])
-    print(f'---> Reading FSM data for point_id = {point_id}')
+    logger.info(f'---> Reading FSM data for point_id = {point_id}')
 
     ds = xr.Dataset({
         "albedo": (['time'], df.albedo.values),
@@ -170,7 +173,7 @@ def to_netcdf(fname_fsm_sim, complevel=9):
                 'date_created':dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
     fout = f"{fname_fsm_sim[:-4]}.nc"
     te.to_netcdf(ds, fout, complevel=complevel)
-    print(f"File {fout} saved")
+    logger.info(f"File {fout} saved")
 
 
 def to_netcdf_parallel(fsm_sims='./fsm_sims/sim_FSM*.txt',
@@ -189,22 +192,22 @@ def to_netcdf_parallel(fsm_sims='./fsm_sims/sim_FSM*.txt',
     Returns:
         NULL (FSM simulation file written to disk)
     '''
-    print('---> Run FSM simulation in parallel')
+    logger.info('---> Run FSM simulation in parallel')
     # 1. create all nlsit_files
     if isinstance(fsm_sims, str):
         flist = glob.glob(fsm_sims)
     elif isinstance(fsm_sims, list):
         flist = fsm_sims
     else:
-        print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
+        logger.error('fsm_input must either be a list of file path or a string of file pattern')
         return
 
     fun_param = zip(flist, [complevel]*len(flist))
     tu.multicore_pooling(to_netcdf, fun_param, n_core)
-    print('---> All FSM simulations stored as netcdf')
+    logger.info('---> All FSM simulations stored as netcdf')
 
     if delete_txt_files:
-        print('---> Removing FSM simulation .txt file')
+        logger.info('---> Removing FSM simulation .txt file')
         for file in flist:
             os.remove(file)
 
@@ -266,7 +269,7 @@ def _run_fsm(fsm_exec, nlstfile):
         NULL (FSM simulation file written to disk)
     '''
     os.system(fsm_exec + ' < ' + nlstfile)
-    print('Simulation done: ' + nlstfile)
+    logger.info('Simulation done: ' + nlstfile)
 
 def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
                      fsm_nconfig=31,
@@ -292,36 +295,36 @@ def fsm_sim_parallel(fsm_input='outputs/FSM_pt*.txt',
     Returns:
         NULL (FSM simulation file written to disk)
     '''
-    print('---> Run FSM simulation in parallel')
+    logger.info('---> Run FSM simulation in parallel')
     # 1. create all nlsit_files
     if isinstance(fsm_input, str):
         met_flist = sorted(glob.glob(fsm_input))
     elif isinstance(fsm_input, list):
         met_flist = fsm_input
     else:
-        print('ERROR: fsm_input must either be a list of file path or a string of file pattern')
+        logger.error('fsm_input must either be a list of file path or a string of file pattern')
         return
     if not met_flist:
-        print(f'ERROR: no FSM forcing file found for {fsm_input}')
+        logger.error(f'no FSM forcing file found for {fsm_input}')
         return
     if fsm_dt is None:
         fsm_dt = infer_met_timestep(met_flist[0])
-    print(f'---> FSM time step {fsm_dt:.0f} s, outputs averaged over {fsm_nave} time steps')
+    logger.info(f'---> FSM time step {fsm_dt:.0f} s, outputs averaged over {fsm_nave} time steps')
 
     fun_param = zip([fsm_nconfig]*len(met_flist), met_flist, [fsm_nave]*len(met_flist), [fsm_dt]*len(met_flist))
     tu.multithread_pooling(fsm_nlst, fun_param, n_thread)
-    print('nlst files ready')
+    logger.info('nlst files ready')
 
     # 2. execute FSM, n_core executables at a time. Threads are enough (each one waits for its FSM process) and,
     # unlike a process pool, do not re-import the main script nor fork a process holding locks (e.g. in Jupyter)
     nlst_flist = sorted(glob.glob('fsm_sims/nlst_*.txt'))
     fun_param = zip([fsm_exec]*len(nlst_flist), nlst_flist)
     tu.multithread_pooling(_run_fsm, fun_param, n_core)
-    print('---> FSM simulations finished.')
+    logger.info('---> FSM simulations finished.')
 
     # 3. remove nlist files
     if delete_nlst_files:
-        print('---> Removing FSM simulation config file')
+        logger.info('---> Removing FSM simulation config file')
         for file in nlst_flist:
             os.remove(file)
 
@@ -341,9 +344,9 @@ def fsm_sim(nlstfile, fsm_exec, delete_nlst_files=True):
 
     os.system(fsm_exec + ' < ' + nlstfile)
     if delete_nlst_files:
-        print('---> Removing FSM simulation config file')
+        logger.info('---> Removing FSM simulation config file')
         os.remove(nlstfile)
-    print('Simulation done: ' + nlstfile)
+    logger.info('Simulation done: ' + nlstfile)
 
 
 
@@ -375,7 +378,7 @@ def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
     a = glob.glob(fsm_path+"/sim_*")
 
     if len(a) == 0:
-        sys.exit("ERROR: " +fsm_path + " does not exist or is empty")
+        raise FileNotFoundError(f'{fsm_path} does not exist or holds no sim_* file')
 
     def natural_sort(l):
         def convert(text): return int(text) if text.isdigit() else text.lower()
@@ -392,7 +395,7 @@ def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
-        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
+        logger.info("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
 
     file_list = natural_sort(a)
 
@@ -426,7 +429,7 @@ def agg_by_var_fsm(var='snd', fsm_path="./outputs/fsm_sims", n_workers=8):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
-    print(f'Variable {var} extracted')
+    logger.info(f'Variable {var} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
@@ -471,7 +474,7 @@ def agg_by_var_fsm_ensemble( var='snd', W=1):
     if var.lower() in ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']:
         ncol = int(fsm_columns.get(var))
     else:
-        print("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
+        logger.info("indicate ncol or var within ['alb', 'rof', 'snd', 'swe', 'gst', 'gt50']")
 
 
     def natural_sort(l):
@@ -517,7 +520,7 @@ def agg_by_var_fsm_ensemble( var='snd', W=1):
     df.insert(0, 'Datetime', mydates)
     df = df.set_index("Datetime")
 
-    print(f'Variable {var} extracted')
+    logger.info(f'Variable {var} extracted')
     return df
     # df.to_csv('./fsm_sims/'+ varname +'.csv', index=False, header=True)
 
@@ -638,6 +641,23 @@ def topo_map_headless(df_mean,  mydtype, outname="outputmap.tif"):
         dst.write(array.astype(profile["dtype"] ))
 
 
+def _landform_file(new_res=None, input_file="outputs/landform.tif", output_file="outputs/landform_newres.tif"):
+    """Landform raster at its resolution, or resampled (nearest) to new_res and written to output_file."""
+    if new_res is None:
+        return input_file
+    with rasterio.open(input_file) as src:
+        new_width = int(src.width * src.res[0] / new_res)
+        new_height = int(src.height * src.res[1] / new_res)
+        data = src.read(out_shape=(src.count, new_height, new_width), resampling=Resampling.nearest)
+        profile = src.profile.copy()
+        profile.update({'height': new_height, 'width': new_width,
+                        'transform': src.transform * src.transform.scale(src.width / new_width,
+                                                                         src.height / new_height)})
+    with rasterio.open(output_file, 'w', **profile) as dst:
+        dst.write(data)
+    return output_file
+
+
 def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     """
     Function to map forcing to toposub clusters generating gridded forcings
@@ -669,41 +689,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     for i in range(0, nclust):
         lookup2D[:, i] = ds_var[i, :]
     
-    inputFile = "outputs/landform.tif"
-    outputFile = "outputs/landform_newres.tif"
-    if new_res is not None:
-        xres = new_res
-        yres = new_res
-
-        with rasterio.open(inputFile) as dataset:
-            # resample data to target shape
-            data = dataset.read(
-                out_shape=(
-                    dataset.count,
-                    yres,
-                    xres,
-                    int(dataset.width * upscale_factor)
-                ),
-                resampling=Resampling.nearest
-            )
-
-            # scale image transform
-            transform = dataset.transform * dataset.transform.scale(
-                (dataset.width / data.shape[-1]),
-                (dataset.height / data.shape[-2])
-            )
-            with rasterio.open(outputFile, 'w', 
-                                driver=GTiff, 
-                                height=data.shape[-2],
-                                width=data.shape[-1],
-                                count=1,
-                                dtype=data.dtype,
-                                crs=dataset.crs,
-                                transform=transform) as rt:
-                rt.write(data,1)
-
-    else:
-        landformfile = "outputs/landform.tif"
+    landformfile = _landform_file(new_res)
 
 
     with rasterio.open(landformfile) as src:
@@ -733,7 +719,7 @@ def topo_map_forcing(ds_var, n_decimals=2, dtype='float32', new_res=None):
     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
     try:
         grid_stack = np.round(array2.squeeze().transpose(2, 0, 1) , n_decimals)# transpose to Time x Y x X
-    except: # the case where we gen annual grids (no time dimension)
+    except ValueError:  # the case where we gen annual grids (no time dimension)
         grid_stack = np.round(array2.squeeze(), n_decimals)  # transpose to Time x Y x X
     return grid_stack, lats, lons
 
@@ -782,48 +768,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     for i in range(0, nclust):
         lookup2D[:, i] = ds_var[i]
 
-    inputFile = "outputs/landform.tif"
-    outputFile = "outputs/landform_newres.tif"
-
-    # check if new_res is declared - if so resample landform and therefore output
-    if new_res is not None:
-        # Use rasterio instead of GDAL for resampling
-        with rasterio.open(inputFile) as src:
-            # Calculate the scaling factor
-            scale_factor_x = src.res[0] / new_res
-            scale_factor_y = src.res[1] / new_res
-            
-            # Calculate new dimensions
-            new_width = int(src.width * scale_factor_x)
-            new_height = int(src.height * scale_factor_y)
-            
-            # Read and resample the data
-            data = src.read(
-                out_shape=(src.count, new_height, new_width),
-                resampling=Resampling.nearest
-            )
-            
-            # Calculate new transform
-            new_transform = src.transform * src.transform.scale(
-                (src.width / new_width),
-                (src.height / new_height)
-            )
-            
-            # Update profile for output
-            profile = src.profile.copy()
-            profile.update({
-                'height': new_height,
-                'width': new_width,
-                'transform': new_transform
-            })
-        
-        # Write resampled file
-        with rasterio.open(outputFile, 'w', **profile) as dst:
-            dst.write(data)
-        
-        landformfile = "outputs/landform_newres.tif"
-    else:
-        landformfile = "outputs/landform.tif"
+    landformfile = _landform_file(new_res)
 
     with rasterio.open(landformfile) as src:
 
@@ -852,7 +797,7 @@ def topo_map_sim(ds_var, n_decimals=2, dtype='float32', new_res=None):
     array2 = lookup2D.transpose()[array]  # Reclassify in a single operation using broadcasting
     try:
         grid_stack = np.round(array2.squeeze().transpose(2, 0, 1), n_decimals)  # transpose to Time x Y x X
-    except:  # the case where we gen annual grids (no time dimension)
+    except ValueError:  # the case where we gen annual grids (no time dimension)
         grid_stack = np.round(array2.squeeze(), n_decimals)  # transpose to Time x Y x X
     return grid_stack, lats, lons
 
@@ -891,7 +836,7 @@ def topo_map_sim_memsafe(ds_var, n_decimals=2, dtype='float32', new_res=None):
 
     # Memory-efficient loop over clusters
     for clust_id in range(N):
-        print(clust_id)
+        logger.info(clust_id)
         mask = (array == clust_id)  # 2D boolean
         if not np.any(mask):
             continue  # skip if cluster not in landform
@@ -937,7 +882,7 @@ def write_ncdf(wdir, grid_stack, var, units,epsg,res,  mytime, lats, lons, mydty
 
              },
          )
-    except:
+    except ValueError:  # annual grids, without the time dimension
         ds = xr.Dataset(
             {var: (("northing", "easting"), grid_stack)},
             coords={
@@ -1149,7 +1094,7 @@ def concat_fsm(mydir):
 
     # find all the differnt files we have (1 per cluster)
     file_paths = glob.glob(mydir +"fsm_clim/sim_2000/fsm_sims/*")
-    nclust = len(files)
+    nclust = len(file_paths)
 
 
     def get_file_names(file_paths):
@@ -1208,17 +1153,17 @@ def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
         else:
             raise ValueError("No suitable data variable found in NetCDF file")
     
-    print(f"Extracting variable: {variable}")
-    print(f"Available times: {ds.Time.values[0]} to {ds.Time.values[-1]}")
+    logger.info(f"Extracting variable: {variable}")
+    logger.info(f"Available times: {ds.Time.values[0]} to {ds.Time.values[-1]}")
     
     # Select the specific date
     try:
         data_slice = ds[variable].sel(Time=target_date, method='nearest')
         actual_date = ds.Time.sel(Time=target_date, method='nearest').values
-        print(f"Selected date: {actual_date}")
+        logger.info(f"Selected date: {actual_date}")
     except KeyError:
-        print(f"Date {target_date} not found. Available dates:")
-        print(ds.Time.values)
+        logger.info(f"Date {target_date} not found. Available dates:")
+        logger.info(ds.Time.values)
         return
     
     # Get spatial coordinates
@@ -1258,7 +1203,7 @@ def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
     elif hasattr(ds, 'crs'):
         crs = ds.crs
     else:
-        print("Warning: No CRS information found, assuming EPSG:4326")
+        logger.warning("No CRS information found, assuming EPSG:4326")
         crs = "EPSG:4326"
     
     # Determine data type
@@ -1292,8 +1237,8 @@ def netcdf_day_to_geotiff(netcdf_file, target_date, output_tiff, variable=None):
             dst.update_tags(long_name=ds[variable].long_name)
         dst.update_tags(date=str(actual_date), source_file=netcdf_file)
     
-    print(f"GeoTIFF written to: {output_tiff}")
-    print(f"Data range: {data.min():.2f} to {data.max():.2f}")
+    logger.info(f"GeoTIFF written to: {output_tiff}")
+    logger.info(f"Data range: {data.min():.2f} to {data.max():.2f}")
     
     ds.close()
 
@@ -1327,8 +1272,8 @@ def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=No
         else:
             raise ValueError("No suitable data variable found in NetCDF file")
     
-    print(f"Extracting variable: {variable}")
-    print(f"Target location: lon={target_lon}, lat={target_lat}")
+    logger.info(f"Extracting variable: {variable}")
+    logger.info(f"Target location: lon={target_lon}, lat={target_lat}")
     
     # Get spatial coordinates
     if 'northing' in ds.coords and 'easting' in ds.coords:
@@ -1351,16 +1296,16 @@ def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=No
         actual_lon = ds[lon_coord].sel({lon_coord: target_lon}, method='nearest').values
         actual_lat = ds[lat_coord].sel({lat_coord: target_lat}, method='nearest').values
         
-        print(f"Actual location: lon={actual_lon:.6f}, lat={actual_lat:.6f}")
+        logger.info(f"Actual location: lon={actual_lon:.6f}, lat={actual_lat:.6f}")
         
         # Calculate distance from target
         distance = np.sqrt((actual_lon - target_lon)**2 + (actual_lat - target_lat)**2)
-        print(f"Distance from target: {distance:.6f} degrees")
+        logger.info(f"Distance from target: {distance:.6f} degrees")
         
     except KeyError as e:
-        print(f"Error selecting coordinates: {e}")
-        print(f"Available {lon_coord} range: {ds[lon_coord].min().values:.6f} to {ds[lon_coord].max().values:.6f}")
-        print(f"Available {lat_coord} range: {ds[lat_coord].min().values:.6f} to {ds[lat_coord].max().values:.6f}")
+        logger.error(f"Error selecting coordinates: {e}")
+        logger.info(f"Available {lon_coord} range: {ds[lon_coord].min().values:.6f} to {ds[lon_coord].max().values:.6f}")
+        logger.info(f"Available {lat_coord} range: {ds[lat_coord].min().values:.6f} to {ds[lat_coord].max().values:.6f}")
         ds.close()
         return None
     
@@ -1392,14 +1337,14 @@ def netcdf_lonlat_to_timeseries(netcdf_file, target_lon, target_lat, variable=No
     if hasattr(ds[variable], 'long_name'):
         df.attrs['long_name'] = ds[variable].long_name
     
-    print(f"Extracted {len(df)} time steps")
-    print(f"Date range: {df.index[0]} to {df.index[-1]}")
-    print(f"Data range: {df[variable].min():.2f} to {df[variable].max():.2f}")
+    logger.info(f"Extracted {len(df)} time steps")
+    logger.info(f"Date range: {df.index[0]} to {df.index[-1]}")
+    logger.info(f"Data range: {df[variable].min():.2f} to {df[variable].max():.2f}")
     
     # Save to CSV if requested
     if output_csv:
         df.to_csv(output_csv)
-        print(f"Time series saved to: {output_csv}")
+        logger.info(f"Time series saved to: {output_csv}")
     
     ds.close()
     return df

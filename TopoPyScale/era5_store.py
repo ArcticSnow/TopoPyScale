@@ -38,6 +38,9 @@ try:
     from zarr.codecs import BloscCodec
 except ImportError:
     from zarr.codecs._blosc import BloscCodec
+import logging
+
+logger = logging.getLogger(__name__)
 
 GRID = 0.25
 STREAMS = ('plev', 'surf')
@@ -203,7 +206,7 @@ def retry(fun, retries=3, wait=60., fatal=None, label=''):
             if attempt == retries or (fatal is not None and fatal(e)):
                 raise
             delay = wait * 2 ** attempt
-            print(f'     {label}: {_first_line(e)}. Retrying in {delay:.0f} s')
+            logger.info(f'     {label}: {_first_line(e)}. Retrying in {delay:.0f} s')
             time.sleep(delay)
 
 
@@ -358,7 +361,7 @@ class Era5Store:
         base.time.encoding.update(units='hours since 1900-01-01', dtype='int64')
         encoding = {v: {'chunks': (self.time_chunk,)} for v in flags}
         self._to_zarr(base, mode='w', compute=False, encoding=encoding)
-        print(f'---> {self.path.name} created: {nt} time steps from {self.times[0]} to {self.times[-1]}, '
+        logger.info(f'---> {self.path.name} created: {nt} time steps from {self.times[0]} to {self.times[-1]}, '
               f'{lat.size}x{lon.size} nodes, {levels.size} levels')
 
     def _extend(self):
@@ -379,7 +382,7 @@ class Era5Store:
                 fill = 0 if ds[v].dtype.kind == 'u' else np.nan
                 block[v] = (ds[v].dims, da.full(shape, fill, dtype=ds[v].dtype, chunks=shape))
         self._to_zarr(xr.Dataset(block, coords={'time': new}), mode='a', append_dim='time', compute=False)
-        print(f'---> {self.path.name} extended by {new.size} time steps, to {new[-1]}')
+        logger.info(f'---> {self.path.name} extended by {new.size} time steps, to {new[-1]}')
 
     def _ensure_variables(self, ds):
         """Add the variables of ds missing from the store, empty over the whole time axis."""
@@ -536,7 +539,7 @@ class LegacyFiles:
                 if not out.time.to_index().equals(times):
                     return None
         except (OSError, KeyError, ValueError, RuntimeError) as e:
-            print(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
+            logger.info(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
             return None
         if not (_same(out.latitude.values, lat) and _same(out.longitude.values, lon)):
             return None
@@ -561,10 +564,10 @@ def import_legacy(store, tasks, legacy, area, plev_variables, surf_variables):
                 n += 1
                 continue
             except ValueError as e:
-                print(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
+                logger.info(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
         left.append(task)
     if n:
-        print(f'---> {n} of {len(tasks)} downloads found in earlier netCDF files of {legacy.folder}')
+        logger.info(f'---> {n} of {len(tasks)} downloads found in earlier netCDF files of {legacy.folder}')
     return left
 
 
@@ -594,10 +597,10 @@ def run(store, tasks, fetch, n_workers=1, processes=False):
             try:
                 paths = future.result()
                 store.write(task, open_raw(paths))
-                print(f'     {task.key} written')
+                logger.info(f'     {task.key} written')
             except Exception as e:
                 failed.append((task, e))
-                print(f'     {task.key} FAILED: {_first_line(e)}')
+                logger.error(f'     {task.key} FAILED: {_first_line(e)}')
             finally:
                 for p in paths:
                     Path(p).unlink(missing_ok=True)

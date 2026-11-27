@@ -28,12 +28,15 @@ Functions:
 Usage:
 - Run the script directly for default processing or import as a module and call `main()` with custom parameters.
 """
+import logging
+
+logger = logging.getLogger(__name__)
 def is_valid_netcdf(file_path):
     """Check if a NetCDF file is valid."""
     try:
         xr.open_dataset(file_path).close()
         return True
-    except:
+    except (OSError, ValueError):
         return False
 
 
@@ -86,7 +89,7 @@ def process_month(ds, start, end, output_dir, surface_vars, pressure_vars):
     pressure_file = os.path.join(output_dir, f"PLEV_{start.strftime('%Y%m')}.nc")
 
     if is_valid_netcdf(surface_file) and is_valid_netcdf(pressure_file):
-        print(f"Skipping {start.strftime('%Y-%m')} - Files already exist and are valid.")
+        logger.info(f"Skipping {start.strftime('%Y-%m')} - Files already exist and are valid.")
         return
 
     ds_month = ds.sel(time=slice(start, end))
@@ -143,8 +146,8 @@ def main(start_date, end_date, output_dir, dataset_path):
         remaining_months = total_months - completed_months
         estimated_remaining_time = avg_time_per_month * remaining_months
 
-        print(f"Processed {start.strftime('%Y-%m')} in {elapsed_time:.2f} seconds.")
-        print(f"Completed {completed_months}/{total_months} months. Estimated time remaining: {estimated_remaining_time / 60:.2f} minutes.")
+        logger.info(f"Processed {start.strftime('%Y-%m')} in {elapsed_time:.2f} seconds.")
+        logger.info(f"Completed {completed_months}/{total_months} months. Estimated time remaining: {estimated_remaining_time / 60:.2f} minutes.")
 
     total_time = time.time() - start_time
     return f"Script completed in {total_time / 60:.2f} minutes."
@@ -159,4 +162,4 @@ if __name__ == "__main__":
         dataset_path="s3://spi-pamir-c7-sdsc/era5_data/central_asia.zarr/"
     )
 
-    print(result)
+    logger.info(result)

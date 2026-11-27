@@ -170,7 +170,7 @@ def get_versionning():
     try:
         repo = git.Repo(path=tps.__file__, search_parent_directories=True)
         hash = repo.head.object.hexsha
-    except:
+    except Exception:   # no git, not a repository...
         hash = 'Not available'
     try:
         version = metadata.version('TopoPyScale')

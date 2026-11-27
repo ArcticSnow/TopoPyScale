@@ -32,6 +32,9 @@ import pandas as pd
 import xarray as xr
 import yaml
 from scipy import ndimage
+import logging
+
+logger = logging.getLogger(__name__)
 
 METHODS = ('none', 'redcapp', 'dreamit')
 DEFAULTS = {
@@ -266,11 +269,11 @@ def setup(df, cfg, dem_file, epsg):
                f'(coverage down to {idx.window_coverage.min():.0%}). Provide toposcale.surface_effect.context_dem')
         if not cfg.get('allow_partial_window'):
             raise ValueError(msg + ' or set allow_partial_window: true')
-        print('WARNING: ' + msg)
+        logger.warning(msg)
     for c in INDEX_COLUMNS:
         df[c] = idx[c].values
     df['w_surf'] = weight(method, df, coef)
-    print(f'---> Surface effect {method} ({coef["source"]}): w from {df.w_surf.min():.2f} to {df.w_surf.max():.2f}')
+    logger.info(f'---> Surface effect {method} ({coef["source"]}): w from {df.w_surf.min():.2f} to {df.w_surf.max():.2f}')
     return {'weight': df['w_surf'].values.astype(float),
             'beta_coef': {k: coef[k] for k in ['beta_amp', 't_star', 'beta_bias']} if method == 'dreamit' else None,
             'dewpoint': cfg.get('dewpoint', True) is not False,

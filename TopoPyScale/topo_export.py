@@ -8,7 +8,6 @@ TODO;
 """
 import csv
 import datetime as dt
-import pdb
 import sys, os
 
 import numpy as np
@@ -21,6 +20,9 @@ from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_param as tp
 
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _tstep_seconds(ds):
@@ -109,7 +111,7 @@ def export_points(ds, variables, write, fnames, info=None, extra=None, options=N
     written = 0
     for k in done:
         written += k
-        print(f'---> {written}/{n} {label} written')
+        logger.info(f'---> {written}/{n} {label} written')
     return fnames
 
 
@@ -156,14 +158,16 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9, n_bits=10):
             encod_dict.update({var: {
                 'dtype': ds[var].dtype}})
         else:
+            # packed values span +-2**(n_bits-1): -32768 is free to mark missing values
             encod_dict.update({var: {"zlib": True,
                                      "complevel": complevel,
                                      'dtype': 'int16',
                                      'scale_factor': scale_factor,
-                                     'add_offset': add_offset}})
+                                     'add_offset': add_offset,
+                                     '_FillValue': np.int16(-32768)}})
     ds[variables].to_netcdf(fname, encoding=encod_dict, engine='h5netcdf')
 
-    print(f'---> File {fname} saved')
+    logger.info(f'---> File {fname} saved')
 
 
 # MuSA forcing variables (TopoPyScale names) in the units MuSA expects, so that MuSA's
@@ -379,7 +383,7 @@ def to_musa(ds,
     meta = {'layout': layout, 'dims': dims, 'shape': idx.shape, 'n_cells': int((idx >= 0).sum()),
             'n_files': len(fnames), 'date_ini': times[0].strftime('%Y-%m-%d %H:%M'),
             'date_end': times[-1].strftime('%Y-%m-%d %H:%M'), 'dt': int(tstep)}
-    print(f'---> MuSA forcing saved in {path}: {len(fnames)} daily files, grid {idx.shape} {dims}, '
+    logger.info(f'---> MuSA forcing saved in {path}: {len(fnames)} daily files, grid {idx.shape} {dims}, '
           f'{meta["n_cells"]} cells to simulate, {meta["date_ini"]} to {meta["date_end"]}, dt = {meta["dt"]} s')
     return meta
 
@@ -467,8 +471,7 @@ def to_cryogrid(ds,
     ver_dict = tu.get_versionning()
     if label_map:
         if da_label is None:
-            print('ERROR: no cluster label (da_label) provided')
-            sys.exit()
+            raise ValueError('label_map=True needs the cluster labels (da_label)')
         else:
             da_label.to_netcdf(str(Path(path) / 'cluster_labels_map.nc'))
 
@@ -515,10 +518,11 @@ def to_fsm2(ds_down,
         epsg_ds_param (int): epsg code of ds_parma: example: 2056
 
     """
+    raise NotImplementedError('to_fsm2() is not finished: use to_fsm2oshd() for FSM2 forcing files')
 
-    print(" \n##### WARNING ######\n")
-    print(" Method is not fully implemented")
-    print(" \n#####         ######\n")
+    logger.info(" \n##### WARNING ######\n")
+    logger.info(" Method is not fully implemented")
+    logger.info(" \n#####         ######\n")
 
 
     def write_fsm2_compilation_nc(file_compil_nc='compil_nc.sh',
@@ -598,9 +602,9 @@ cd ..
                                 scaler={ 'hcan':100, 'lai':100, 'svf_for':1}):
         # Function to write namelist file (.nam) for each point where to run FSM.
 
-        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'
+        file_namelist = str(fname_format) + f'_{mode}_' + str(pt_ind).zfill(n_digits) + '.nam'  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
         file_met = str(fname_format) + '_met_' + str(pt_ind).zfill(n_digits) + '.txt'
-        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.nc'
+        file_output = str(fname_format) + f'_outputs_{mode}_' + str(pt_ind).zfill(n_digits) + '.nc'  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
 
         # populate namelist parameters
         max_sd = namelist_param.get('max_sd')
@@ -679,7 +683,7 @@ cd ..
   zT = {z_tair}                 ! Temperature and humidity measurement height
   zU = {z_wind}                 ! Wind speed measurement height
   lat = {latitude}
-  noon = {solar_noon}                     ! Time of solar noon (for SWPART=1)
+  noon = {solar_noon}                     ! Time of solar noon (for SWPART=1)  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
 /
 &veg
   ab0 = 0.2
@@ -692,7 +696,7 @@ cd ..
   Tprf = {soil_temp_init}
 /
 &outputs
-  runid = {path_to_store}
+  runid = {path_to_store}  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
   dump_file = {file_output}
 /
   """
@@ -700,7 +704,7 @@ cd ..
             with open(file_namelist, "w") as nlst_file:
                 nlst_file.write(nlst)
         else:
-            print(f'ERROR: met_file: {file_met} not found')
+            logger.error(f'met_file: {file_met} not found')
             return
 
 
@@ -751,7 +755,7 @@ cd ..
         df['p'] = np.round(ds_pt.p.values,2)
 
         df.to_csv(foutput, index=False, header=False, sep=' ')
-        print(f'---> Met file {foutput} saved')
+        logger.info(f'---> Met file {foutput} saved')
 
 
     # 0. Add print statements about the need of data currently computed extrenally to TopoPyScale.
@@ -837,7 +841,7 @@ cd ..
     # rename variable columns to match namelist functino varnames
     new_name = {'LAI5':'lai', 'svf_for':'vfhp', 'CH5':'hcan'}
     df_forest = df_forest.rename(columns=new_name)
-    print(df_forest)
+    logger.info(df_forest)
  
     # ----- Loop through all points-------
     # NOTE: eventually this for loop could be parallelized to several cores -----
@@ -873,7 +877,7 @@ cd ..
 
         if cluster_method:
             row_open = df_forest.iloc[pt_ind]
-            write_fsm2oshd_namelist(row_open,
+            write_fsm2oshd_namelist(row_open,  # noqa: F821 (to_fsm2 is unfinished, see NotImplementedError)
                                     pt_ind=pt_ind,
                                     n_digits=n_digits,
                                     fname_format=p/fname_format,
@@ -1096,7 +1100,7 @@ def to_fsm2oshd(mp,
             with open(file_namelist, "w") as nlst_file:
                 nlst_file.write(nlst)
         else:
-            print(f'ERROR: met_file: {file_met} not found')
+            logger.error(f'met_file: {file_met} not found')
             return
 
 
@@ -1165,12 +1169,12 @@ def to_fsm2oshd(mp,
     fnames = [str(p / fname_format) + '_met_' + str(i).zfill(n_digits) + '.txt' for i in range(n_pts)]
     tvt, extra = [None] * n_pts, None
     if type(ds_tvt) in [int, float, np.float64, np.float16, np.float32]:
-        print('Warning: tvt is constant')
+        logger.warning('tvt is constant')
         tvt = [ds_tvt] * n_pts
     elif type(ds_tvt) in [str]:
         if ds_tvt != 'svf_for':
             raise ValueError(f"ds_tvt must be a number, 'svf_for' or a dataset with for_tau, not {ds_tvt}")
-        print('Warning: tvt is constant')
+        logger.warning('tvt is constant')
         tvt = [df_forest.vfhp.iloc[i] for i in range(n_pts)]
     else:
         extra = ds_tvt
@@ -1663,7 +1667,7 @@ def to_surfex(ds,
                                'SCA_SWdown': {'dtype': 'float64'},
                                'ZREF': {'dtype': 'float64'},
                                'UREF': {'dtype': 'float64'}})
-        print('---> File {} saved'.format(foutput))
+        logger.info('---> File {} saved'.format(foutput))
         # clear memory
         fo = None
 

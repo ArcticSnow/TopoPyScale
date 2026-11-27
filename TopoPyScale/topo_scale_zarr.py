@@ -33,6 +33,9 @@ from TopoPyScale import topo_utils as tu
 from TopoPyScale import surface_effect as se
 from TopoPyScale import solar_geom as sg
 from TopoPyScale.toposcale_core import PRECIP_LAPSE_MAX_FACTOR
+import logging
+
+logger = logging.getLogger(__name__)
 
 PLEV_VARS = ['z', 't', 'q', 'u', 'v']
 SURF_VARS = ['z_surf', 'sp', 't2m', 'd2m', 'tp', 'ssrd', 'strd']
@@ -358,7 +361,7 @@ class ClimateDownscaler:
         """
         start = time.time()
         self.setup_output_store()
-        print(f'---> Downscaling {len(self.df)} points x {self.tvec.size} time steps '
+        logger.info(f'---> Downscaling {len(self.df)} points x {self.tvec.size} time steps '
               f'({len(self.point_blocks)} point blocks x {len(self.time_blocks)} time blocks)')
         full_box = self._box(0, len(self.df))
         with zarr.config.set({'array.write_empty_chunks': True}), \
@@ -368,5 +371,5 @@ class ClimateDownscaler:
                     else None
                 list(pool.map(lambda pb: self.process_block(pb[0], pb[1], t0, t1, era), self.point_blocks))
         elapsed = time.time() - start
-        print(f'---> Downscaling finished in {elapsed:.1f} s ({elapsed / len(self.df):.3f} s per point)')
+        logger.info(f'---> Downscaling finished in {elapsed:.1f} s ({elapsed / len(self.df):.3f} s per point)')
         return tu.open_downscaled_store(self.store)

@@ -17,9 +17,20 @@ DERIVED = {'climate.path', 'climate.tmp_path', 'dem.filepath', 'outputs.path', '
 METHODS = {'lower', 'mkdir', 'get', 'exists', 'replace', 'glob', 'name', 'keys'}
 
 
+def doc_block():
+    return re.search(r'```yaml\n(.*?)```', DOC.read_text(), re.S).group(1)
+
+
+def test_reference_config_is_the_documented_example():
+    """config_reference.yml, used to check user configs, is the example of the documentation."""
+    reference = (ROOT / 'TopoPyScale' / 'config_reference.yml').read_text()
+    body = ''.join(line + '\n' for line in reference.splitlines() if not line.startswith('# Reference')
+                   and not line.startswith('# Kept identical'))
+    assert body == doc_block()
+
+
 def doc_keys():
-    block = re.search(r'```yaml\n(.*?)```', DOC.read_text(), re.S).group(1)
-    config = yaml.safe_load(block)
+    config = yaml.safe_load(doc_block())
 
     def flatten(d, prefix=''):
         for k, v in d.items():

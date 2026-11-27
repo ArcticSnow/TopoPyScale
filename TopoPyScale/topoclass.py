@@ -12,7 +12,6 @@ project/
 
 """
 import os
-import pdb
 import shutil
 import sys
 
@@ -27,6 +26,10 @@ from pathlib import Path
 from TopoPyScale import fetch_dem as fd
 from TopoPyScale import fetch_era5 as fe
 from TopoPyScale import era5_store as es
+from TopoPyScale import log as tps_log
+from TopoPyScale import config_check
+import yaml
+from datetime import datetime
 from TopoPyScale import solar_geom as sg
 from TopoPyScale import topo_export as te
 from TopoPyScale import topo_obs as tpo
@@ -38,6 +41,9 @@ from TopoPyScale import surface_effect as se
 from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
 from TopoPyScale import topo_checks as tc
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Topoclass(object):
     """
@@ -46,22 +52,13 @@ class Topoclass(object):
 
     def __init__(self, config_file):
 
-        try:
-            with open(config_file, 'r') as f:
-                self.config = DefaultMunch.fromYAML(f)
-
-            if self.config.project.directory in [None, {}]:
-                self.config.project.directory = Path(os.getcwd())
-            
-            elif not isinstance(self.config.project.directory, Path):
-                self.config.project.directory = Path(self.config.project.directory)
-
-            else:
-                self.config.project.directory = Path(self.config.project.directory)
-
-        except IOError:
-            print(
-                f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
+        if not Path(config_file).is_file():
+            raise FileNotFoundError(f'Config file {config_file} not found (current directory: {os.getcwd()})')
+        with open(config_file, 'r') as f:
+            raw = yaml.safe_load(f)
+        self.config = DefaultMunch.fromDict(raw)
+        self._config_messages = config_check.check_config(raw)
+        self.config.project.directory = Path(self.config.project.directory or os.getcwd())
 
         if self.config.outputs.directory in [None, {}]:
             self.config.outputs.directory = 'outputs'
@@ -72,26 +69,17 @@ class Topoclass(object):
 
         if self.config.outputs.file.clean_outputs:
             # remove outputs directory because if results already exist this causes concat of netcdf files
-            try:
-                shutil.rmtree(self.config.outputs.path)
-                print('---> Output directory cleaned')
-            except:
-                self.config.outputs.path.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(self.config.outputs.path, ignore_errors=True)
+            logger.info('---> Output directory cleaned')
 
         # remove output fsm directory
         if self.config.outputs.file.clean_FSM:
-            try:
-                shutil.rmtree(str(self.config.project.directory / 'fsm_sims'))
-                print('---> FSM directory cleaned')
-            except:
-                print("---> no FSM directory to clean")
+            for folder in ['fsm_sims', 'ensemble']:
+                path = self.config.project.directory / folder
+                if path.exists():
+                    shutil.rmtree(path)
+                    logger.info(f'---> {folder} directory cleaned')
 
-            # remove output fsm directory
-            try:
-                shutil.rmtree(str(self.config.project.directory / 'ensemble'))
-                print("---> Ensemble directory cleaned")
-            except:
-                print("---> no ensemble directory to clean")
 
         # climate path
         if os.path.isabs(self.config.climate[self.config.project.climate].path):
@@ -114,6 +102,9 @@ class Topoclass(object):
         self.config.outputs.path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.tmp_path.mkdir(parents=True, exist_ok=True)
         self.config.outputs.downscaled.mkdir(parents=True, exist_ok=True)
+        self.log_file = self._setup_logging()
+        for m in self._config_messages:   # once the log is set up
+            logger.warning(f'config: {m}')
 
         if not self.config.dem.path:
             self.config.dem.path = self.config.project.directory / 'inputs' / 'dem'
@@ -128,12 +119,12 @@ class Topoclass(object):
             if self.config.project.extent:
                 self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], self.config.project.extent))
             else:
-                print('ERROR: no extent provided. Must follow this format: [latN, latS, lonW, lonE]')
-                sys.exit()
+                raise ValueError(f'DEM {self.config.dem.filepath} not found, and no project.extent to download '
+                                 f'one: give extent as [latN, latS, lonW, lonE]')
 
             fd.fetch_dem(str(self.config.dem.path), self.config.project.extent, self.config.dem.epsg, self.config.dem.file)
         else:
-            print('\n---> DEM file found')
+            logger.info('\n---> DEM file found')
 
         if self.config.project.extent:
             extent_NSWE = self.config.project.extent
@@ -142,15 +133,15 @@ class Topoclass(object):
             # little routine extracting lat/lon extent from DEM
             self.config.project.extent = tp.get_extent_latlon(self.config.dem.filepath, self.config.dem.epsg)
 
-        print(self.config.project.extent)
-        print('Project lat/lon extent:\n')
-        print('\t------------------------------')
-        print('\t|        North:{}          |\n\t|West:{}          East:{}|\n\t|        South:{}          |'.format(
+        logger.info(self.config.project.extent)
+        logger.info('Project lat/lon extent:\n')
+        logger.info('\t------------------------------')
+        logger.info('\t|        North:{}          |\n\t|West:{}          East:{}|\n\t|        South:{}          |'.format(
             np.round(self.config.project.extent.get('latN'), 1),
             np.round(self.config.project.extent.get('lonW'), 1),
             np.round(self.config.project.extent.get('lonE'), 1),
             np.round(self.config.project.extent.get('latS'), 1)))
-        print('\t------------------------------')
+        logger.info('\t------------------------------')
 
         self.toposub = self.Toposub()
         self.plot = Plotting()
@@ -162,7 +153,7 @@ class Topoclass(object):
 
         if self.config.project.climate.lower() == 'era5':
             self.era5_obj = fe.FetchERA5(config=self.config)
-            print("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
+            logger.info("era5 download no longer automatically done in class decalaration - please declare <mp.get_era5()> in run.py file.")
 
         if self.config.project.climate.lower() == 'ifs_forecast':
             self.get_ifs_forecast()
@@ -177,37 +168,37 @@ class Topoclass(object):
         if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
             self.toposub.df_centroids = pd.read_pickle(
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
+            logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
-            print(f'-> WARNING: Centroid file {self.config.outputs.file.df_centroids} not found')
+            logger.warning(f'Centroid file {self.config.outputs.file.df_centroids} not found')
 
         if (self.config.outputs.path / self.config.outputs.file.ds_param).is_file():
             self.toposub.ds_param = xr.open_dataset(
                 self.config.outputs.path / self.config.outputs.file.ds_param)
-            print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
+            logger.info(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
         else:
-            print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
+            logger.warning(f'DEM parameter file {self.config.outputs.file.ds_param} not found')
 
         if (self.config.outputs.path / self.config.outputs.file.ds_solar).is_file():
             self.ds_solar = xr.open_dataset(
                 self.config.outputs.path / self.config.outputs.file.ds_solar)
-            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+            logger.info(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
         else:
-            print(f'-> WARNING: Solar file {self.config.outputs.file.ds_solar} not found')
+            logger.warning(f'Solar file {self.config.outputs.file.ds_solar} not found')
 
         if (self.config.outputs.path / self.config.outputs.file.da_horizon).is_file():
             self.da_horizon = xr.open_dataarray(
                 self.config.outputs.path / self.config.outputs.file.da_horizon)
-            print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+            logger.info(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
         else:
-            print(f'-> WARNING: Horizon file {self.config.outputs.file.da_horizon} not found')
+            logger.warning(f'Horizon file {self.config.outputs.file.da_horizon} not found')
 
         store = self.config.outputs.downscaled / self._downscaled_store_name()
         if store.exists():
             self.downscaled_pts = tu.open_downscaled_store(store)
-            print(f'---> Downscaled points {store.name} exists and loaded')
+            logger.info(f'---> Downscaled points {store.name} exists and loaded')
         else:
-            print(f'-> WARNING: Downscaled points {store.name} not found')
+            logger.warning(f'Downscaled points {store.name} not found')
 
     class Toposub:
         """
@@ -248,10 +239,10 @@ class Topoclass(object):
         Returns:
 
         '''
-        print('---> Testing number of clusters')
-        print(f'Computing scores for {cluster_range} clusters')
+        logger.info('---> Testing number of clusters')
+        logger.info(f'Computing scores for {cluster_range} clusters')
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
-        print(f'Variables used in clustering: {list(df_param.columns.values)}')
+        logger.info(f'Variables used in clustering: {list(df_param.columns.values)}')
 
         df_param = ts.ds_to_indexed_dataframe(self.toposub.ds_param)
         df_nclusters = ts.search_number_of_clusters(df_param,
@@ -262,7 +253,7 @@ class Topoclass(object):
                                                     plot=plot)
 
         # print to console stats about
-        print(df_nclusters)
+        logger.info(df_nclusters)
 
         return df_nclusters
 
@@ -321,7 +312,7 @@ class Topoclass(object):
         valid_elev = ~df_param['elevation'].isna()
         n_nodata = (~valid_elev).sum()
         if n_nodata > 0:
-            print(f'---> Auto-masking {n_nodata} nodata pixels from DEM')
+            logger.info(f'---> Auto-masking {n_nodata} nodata pixels from DEM')
 
         # add mask and cluster feature
         if mask_file in [None, {}]:
@@ -345,7 +336,7 @@ class Topoclass(object):
 
                 raise ValueError(
                     f'The GeoTIFFS of the DEM and the MASK need to have the same bounds/resolution. \n{str_bounds}\n{str_res}')
-            print(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
+            logger.info(f'---> Only consider grid cells inside mask ({Path(mask_file).name})')
 
             # get mask (combine with nodata auto-mask)
             mask = (ts.ds_to_indexed_dataframe(ds_mask, dim_order=['y', 'x'])['mask'] == 1) & valid_elev
@@ -396,7 +387,7 @@ class Topoclass(object):
             df_group['n_clusters'] = np.ceil(self.config.sampling.toposub.n_clusters * df_group.weights).astype(int)
             groups = list(df_group.index)
 
-            print(f'---> Split clustering into {len(groups)} groups.')
+            logger.info(f'---> Split clustering into {len(groups)} groups.')
 
         # ----------cluster per group----------
         self.toposub.df_centroids = pd.DataFrame()
@@ -404,7 +395,7 @@ class Topoclass(object):
 
         for group in groups:
             if split_clustering:
-                print(f'cluster group: {group}')
+                logger.info(f'cluster group: {group}')
                 n_clusters = int(df_group.loc[group].n_clusters)
             else:
                 n_clusters = self.config.sampling.toposub.n_clusters
@@ -445,13 +436,13 @@ class Topoclass(object):
                 # update total clusters
                 i_clusters += n_clusters
             else:
-                print(f"---> Group {group} is not fully within masked area")
+                logger.info(f"---> Group {group} is not fully within masked area")
 
         if not split_clustering:
             # drop cluster_group
             df_param = df_param.drop(columns=['cluster_group'])
         else:
-            print(f'-----> Created in total {i_clusters} clusters in {len(groups)} groups.')
+            logger.info(f'-----> Created in total {i_clusters} clusters in {len(groups)} groups.')
 
         # logic to add variables not used as clustering predictors into df_centroids
         feature_list = self.config.sampling.toposub.clustering_features.keys()
@@ -503,7 +494,7 @@ class Topoclass(object):
         if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
             self.toposub.df_centroids = pd.read_pickle(
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
+            logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
             if self.config.sampling.method.lower() in ['points', 'point']:
                 self.extract_pts_param()
@@ -528,7 +519,7 @@ class Topoclass(object):
             # Store dataframe to pickle
             self.toposub.df_centroids.to_pickle(
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
-            print(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
+            logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} saved')
 
     def _accumulation_window(self):
         # radiation accumulation window of the climate forcing (ERA5: 1 h, whatever the sampling time step)
@@ -537,10 +528,10 @@ class Topoclass(object):
     @staticmethod
     def _warn_old_solar_file(ds_solar, fname):
         if 'solar_geometry_time_offset' not in ds_solar.attrs:
-            print(f'-> WARNING: {fname} was computed at the time stamps, not at the centre of the radiation '
+            logger.warning(f'{fname} was computed at the time stamps, not at the centre of the radiation '
                   'accumulation window (SW then lags the sun by ~30 min). Delete it to recompute it.')
         elif 'solar_constant' not in ds_solar.attrs:
-            print(f'-> WARNING: {fname} was computed by an older version (SWtoa at the window centre, without the '
+            logger.warning(f'{fname} was computed by an older version (SWtoa at the window centre, without the '
                   'Earth-Sun distance, angles quantized to 10 bits). Delete it to recompute it.')
 
     def _solar_geometry(self, start, end, fname):
@@ -560,7 +551,7 @@ class Topoclass(object):
         fname = self.config.outputs.path / self.config.outputs.file.ds_solar
         if fname.is_file():
             self.ds_solar = xr.open_dataset(fname, chunks='auto', engine='h5netcdf')
-            print(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
+            logger.info(f'---> Solar file {self.config.outputs.file.ds_solar} exists and loaded')
             self._warn_old_solar_file(self.ds_solar, fname.name)
         else:
             self.ds_solar = self._solar_geometry(self.config.project.start, self.config.project.end,
@@ -582,9 +573,9 @@ class Topoclass(object):
             da = xr.open_dataarray(fname, engine='h5netcdf').load()
             da.close()
             if tu.horizon_matches_points(da, df):
-                print(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
+                logger.info(f'---> Horizon file {self.config.outputs.file.da_horizon} exists and loaded')
             else:
-                print(f'---> Horizon file {self.config.outputs.file.da_horizon} holds other points: recomputing')
+                logger.info(f'---> Horizon file {self.config.outputs.file.da_horizon} holds other points: recomputing')
                 da = None
         if da is None:
             da = tp.compute_horizon_points(self.config.dem.filepath, df, self.config.dem.horizon_increments,
@@ -598,7 +589,7 @@ class Topoclass(object):
             df['hori_azi_' + str(az)] = hp.sel(azimuth=az).values
         # update df_centroid file with horizons angle
         df.to_pickle(self.config.outputs.path / self.config.outputs.file.df_centroids)
-        print(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
+        logger.info(f'---> Centroids file {self.config.outputs.file.df_centroids} updated with horizons')
 
     def downscale_climate(self):
         """
@@ -651,9 +642,9 @@ class Topoclass(object):
             end = pd.to_datetime(self.config.project.end) + pd.Timedelta('1D') - pd.Timedelta('1h')
             rebuild = times.min() > start or times.max() < end
             if rebuild:
-                print(f'---> {name} covers {times.min()} to {times.max()}, not the project period: rebuilding it')
+                logger.info(f'---> {name} covers {times.min()} to {times.max()}, not the project period: rebuilding it')
         if rebuild:
-            print(f'---> Converting the netcdf files of {nc_dir} to {name}')
+            logger.info(f'---> Converting the netcdf files of {nc_dir} to {name}')
             fe.netcdf_to_zarr(path_to_netcdfs=nc_dir, zarrout=store)
         return store
 
@@ -711,8 +702,8 @@ class Topoclass(object):
                                    snow_partition_method=snow_partition_method,
                                    points=points)
         report.to_csv(self.config.outputs.path / fname, index=False)
-        print(tc.summarize(report, min_status='warning'))
-        print(f'---> Physics-consistency report saved to {fname}')
+        logger.info(tc.summarize(report, min_status='warning'))
+        logger.info(f'---> Physics-consistency report saved to {fname}')
         if strict:
             tc.raise_on_failure(report, level='error' if strict is True else strict)
         return report
@@ -772,7 +763,7 @@ class Topoclass(object):
 
     def get_ifs_forecast(self):
         # run openData script here
-        print("doing forecast stuff here")
+        logger.info("doing forecast stuff here")
 
     def get_WMO_observations(self):
         """
@@ -798,6 +789,28 @@ class Topoclass(object):
         tpo.parse_WMO_insitu_observations()
 
 
+    def _setup_logging(self):
+        """
+        Messages to the terminal (project.verbose: True by default, False for warnings and errors only, or a level
+        name such as 'debug') and to a log file (project.log_file: True by default for
+        outputs/logs/topopyscale_<date>.log, a path, or False). Python warnings go to both.
+        """
+        verbose = self.config.project.verbose
+        verbose = True if verbose is None else verbose
+        log_file = self.config.project.log_file
+        if log_file is None or log_file is True:
+            log_file = self.config.outputs.path / 'logs' / f'topopyscale_{datetime.now():%Y%m%d_%H%M%S}.log'
+        elif log_file:
+            log_file = Path(log_file)
+            if not log_file.is_absolute():
+                log_file = self.config.project.directory / log_file
+        else:
+            log_file = None
+        log_file = tps_log.setup(verbose=verbose, logfile=log_file, capture_warnings=True)
+        if log_file:
+            logger.info(f'---> Log written to {log_file}')
+        return log_file
+
     def _export_jobs(self):
         """Processes writing export files: project.parallelization CPU_cores, 1 if not set."""
         try:
@@ -814,7 +827,7 @@ class Topoclass(object):
 
         """
         path = self.config.outputs.path
-        if 'cluster:labels' in self.toposub.ds_param.keys():
+        if 'cluster_labels' in self.toposub.ds_param.keys():
             label_map = True
             da_label = self.toposub.ds_param.cluster_labels
         else:
@@ -908,7 +921,7 @@ class Topoclass(object):
         out_path = Path(self.config.outputs.path, file_out)
 
         te.to_netcdf(self.downscaled_pts[variables], out_path, variables)
-        print('---> File {} saved'.format(file_out))
+        logger.info('---> File {} saved'.format(file_out))
 
     def to_snowpack(self, fname_format='smet_pt_*.smet'):
         """
@@ -1008,7 +1021,7 @@ class Plotting:
                             cmap=plt.cm.viridis,
                             hillshade=True,
                             **kwargs):
-        print('to be implemented')
+        logger.info('to be implemented')
 
     def map_clusters(self, **kwargs):
         tp.map_clusters(self.ds_down,
@@ -1016,10 +1029,10 @@ class Plotting:
                         **kwargs)
 
     def timeseries(self):
-        print('To be implemented')
+        logger.info('To be implemented')
 
     def solar_geom(self):
-        print('To be implemented')
+        logger.info('To be implemented')
 
     def horizon(self):
-        print('To be implemented')
+        logger.info('To be implemented')

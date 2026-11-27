@@ -7,6 +7,9 @@ S. Filhol, December 2021
 import matplotlib.pyplot as plt
 from matplotlib.colors import LightSource
 import xarray as xr
+import logging
+
+logger = logging.getLogger(__name__)
 
 def map_terrain(ds_param,
                 var='elevation',
@@ -84,7 +87,7 @@ def map_variable(ds_down,
         ds = ds_down
 
     if var=='t':
-        print('Suggestion: use divergent colormap plt.cm.RdBl_r centered around 0C')
+        logger.info('Suggestion: use divergent colormap plt.cm.RdBl_r centered around 0C')
 
     alpha=1
     if hillshade:

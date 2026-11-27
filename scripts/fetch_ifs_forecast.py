@@ -1,3 +1,5 @@
+# Standalone script (work in progress), moved out of the TopoPyScale package: it downloads the ECMWF open-data
+# forecast and converts it with cdo when run, so it must not be imported. Run: python fetch_ifs_forecast.py
 # https://github.com/ecmwf/ecmwf-opendata
 # https://www.ecmwf.int/en/forecasts/datasets/open-data
 

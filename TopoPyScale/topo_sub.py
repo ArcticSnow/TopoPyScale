@@ -21,6 +21,9 @@ from typing import Union, Optional
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 from TopoPyScale import topo_utils as tu
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def ds_to_indexed_dataframe(ds, dim_order=None):
@@ -53,7 +56,7 @@ def scale_df(df_param,
         dataframe: scaled data
     """
     feature_list = features.keys()
-    print('---> Scaling data prior to clustering')
+    logger.info('---> Scaling data prior to clustering')
     df_scaled = pd.DataFrame(scaler.fit_transform(df_param[feature_list].values),
                              columns=df_param[feature_list].columns,
                              index=df_param[feature_list].index)
@@ -111,10 +114,10 @@ def kmeans_clustering(df_param,
     feature_list = features.keys()
     X = df_param[feature_list].to_numpy()
     col_names = df_param[feature_list].columns
-    print('---> Clustering with K-means in {} clusters'.format(n_clusters))
+    logger.info('---> Clustering with K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
     kmeans = cluster.KMeans(n_clusters=n_clusters, random_state=seed, **kwargs).fit(X)
-    print('---> Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
+    logger.info('---> Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
     df_centers = pd.DataFrame(kmeans.cluster_centers_, columns=col_names)
     cluster_labels = kmeans.labels_
     return df_centers, kmeans, cluster_labels
@@ -144,11 +147,11 @@ def minibatch_kmeans_clustering(df_param,
     feature_list = features.keys()
     X = df_param[feature_list].to_numpy()
     col_names = df_param.columns
-    print('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
+    logger.info('---> Clustering with Mini-Batch K-means in {} clusters'.format(n_clusters))
     start_time = time.time()
     miniBkmeans = cluster.MiniBatchKMeans(n_clusters=n_clusters, batch_size=256 * n_cores, random_state=seed,
                                           **kwargs).fit(X)
-    print('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
+    logger.info('---> Mini-Batch Kmean finished in {}s'.format(np.round(time.time() - start_time), 0))
     df_centers = pd.DataFrame(miniBkmeans.cluster_centers_, columns=col_names)
     df_param['cluster_labels'] = miniBkmeans.labels_
     return df_centers, miniBkmeans, df_param['cluster_labels']

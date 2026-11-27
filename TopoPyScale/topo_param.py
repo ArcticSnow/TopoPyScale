@@ -25,6 +25,9 @@ try:
     import numba as nb
 except ImportError:  # pragma: no cover - numba is a dependency, the numpy engine is the fallback
     nb = None
+import logging
+
+logger = logging.getLogger(__name__)
 
 ENGINES = ('numba', 'numpy')
 
@@ -54,7 +57,7 @@ def convert_epsg_pts(xs,ys, epsg_src=4326, epsg_tgt=3844):
         array: Xs 1D arrays of the point coordinates expressed in the target projection
         array: Ys 1D arrays of the point coordinates expressed in the target projection
     """
-    print('Convert coordinates from EPSG:{} to EPSG:{}'.format(epsg_src, epsg_tgt))
+    logger.info('Convert coordinates from EPSG:{} to EPSG:{}'.format(epsg_src, epsg_tgt))
     trans = Transformer.from_crs("epsg:{}".format(epsg_src), "epsg:{}".format(epsg_tgt), always_xy=True)
     Xs, Ys = trans.transform(xs, ys)
     return Xs, Ys
@@ -95,7 +98,7 @@ def extract_pts_param(df_pts, ds_param, method='nearest'):
     Returns: 
         dataframe: df_pts updated with new columns ['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf']
     """
-    print('\n---> Extracting DEM parameters for the given list of point coordinates')
+    logger.info('\n---> Extracting DEM parameters for the given list of point coordinates')
     # delete columns in case they already exist
     df_pts = df_pts.drop(['elevation', 'slope', 'aspect', 'aspect_cos', 'aspect_sin', 'svf'], errors='ignore')
     # create columns, filled with 0
@@ -210,19 +213,19 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     pdir = project_directory
     file_ds = pdir / output_folder / fname
     if file_ds.is_file():
-        print(f'\n---> Dataset {fname} found.')
+        logger.info(f'\n---> Dataset {fname} found.')
         try:
             ds = xr.open_dataset(file_ds)
             # Test if we can actually read the elevation data
             _ = ds.elevation.values
         except (RuntimeError, OSError) as e:
             if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
-                print(f'\n---> Dataset {fname} corrupted (HDF/compression error). Trying h5netcdf backend...')
+                logger.info(f'\n---> Dataset {fname} corrupted (HDF/compression error). Trying h5netcdf backend...')
                 try:
                     ds = xr.open_dataset(file_ds, engine='h5netcdf')
                     _ = ds.elevation.values
                 except Exception:
-                    print(f'\n---> h5netcdf backend failed. Regenerating dataset from DEM...')
+                    logger.info(f'\n---> h5netcdf backend failed. Regenerating dataset from DEM...')
                     if Path(dem_file).is_file():
                         ds = open_dem(dem_file)
                     else:
@@ -232,14 +235,14 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
 
     else:
         if Path(dem_file).is_file():
-            print(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
+            logger.info(f'\n---> No {fname} Dataset found. DEM {dem_file} available.')
             ds = open_dem(dem_file)
 
         else:
             raise ValueError(f'ERROR: No DEM or dataset available')
 
     var_in = list(ds.variables.keys())
-    print('\n---> Extracting DEM parameters (slope, aspect, svf)')
+    logger.info('\n---> Extracting DEM parameters (slope, aspect, svf)')
     dx = ds.x.diff('x').median().values
     dy = ds.y.diff('y').median().values
     
@@ -248,14 +251,14 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
         dem_arr = ds.elevation.values
     except (RuntimeError, OSError) as e:
         if "NetCDF: HDF error" in str(e) or "filter returned failure" in str(e):
-            print(f'---> Error reading elevation data: {str(e)}')
-            print('---> Attempting to load elevation data with different method...')
+            logger.error(f'---> Error reading elevation data: {str(e)}')
+            logger.info('---> Attempting to load elevation data with different method...')
             try:
                 # Try loading the data chunk by chunk or using compute()
                 dem_arr = ds.elevation.load().values
             except Exception:
                 # If all else fails, regenerate from DEM file
-                print('---> All methods failed. Regenerating from original DEM...')
+                logger.info('---> All methods failed. Regenerating from original DEM...')
                 if Path(dem_file).is_file():
                     ds_new = open_dem(dem_file)
                     dem_arr = ds_new.elevation.values
@@ -270,11 +273,11 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
     if file_ds.is_file() and not missing:
         # not rewritten: nothing was computed. Loaded in memory and closed, as the clustering writes to this file
         ds.close()
-        print(f'---> {fname} holds all DEM parameters: loaded')
+        logger.info(f'---> {fname} holds all DEM parameters: loaded')
         return xr.load_dataset(file_ds)
 
     if ('slope' not in var_in) or ('aspect' not in var_in):
-        print('Computing slope and aspect ...')
+        logger.info('Computing slope and aspect ...')
         slope, aspect = gradient_d8(dem_arr, dx, dy)
         ds['slope'] = (["y", "x"], slope)
         ds['aspect'] = (["y", "x"], np.deg2rad(aspect))
@@ -284,7 +287,7 @@ def compute_dem_param(dem_file, fname='ds_param.nc', project_directory=Path('./'
             ds['aspect_sin'] = (["y", "x"], np.sin(np.deg2rad(aspect)))
 
     if 'svf' not in var_in:
-        print('Computing svf ...')
+        logger.info('Computing svf ...')
         svf = sky_view_factor(np.double(dem_arr), dx, dy, n_processes=n_processes)
         ds['svf'] = (["y", "x"], svf)
 
@@ -328,7 +331,7 @@ def compute_horizon(dem_file, azimuth_inc=30, n_processes=1, fname='da_horizon_g
     Returns:
         dataarray: horizon angles [rad], (azimuth, y, x)
     """
-    print('\n---> Computing horizons of every cell with {} degree increments'.format(azimuth_inc))
+    logger.info('\n---> Computing horizons of every cell with {} degree increments'.format(azimuth_inc))
     ds = open_dem(dem_file)
     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
     z = ds.elevation.values.astype(np.float64)
@@ -750,7 +753,7 @@ def horizon_rays(elevation, x, y, px, py, azimuths, max_rays=2_000_000, n_thread
     near = np.isnan(z0)
     z0[near] = z[np.rint(r[near]).astype(np.intp), np.rint(c[near]).astype(np.intp)]
     if np.isnan(z0).any():
-        print(f'-> WARNING: {np.isnan(z0).sum()} points on no-data cells of the DEM get a horizon of 0')
+        logger.warning(f'{np.isnan(z0).sum()} points on no-data cells of the DEM get a horizon of 0')
 
     zmax = np.nanmax(z)
     zf = np.where(np.isnan(z), np.nanmin(z) - 1e4, z)    # no data never forms a horizon
@@ -818,7 +821,7 @@ def compute_horizon_points(dem_file, df_points, azimuth_inc=10, fname='da_horizo
         dataarray: horizon angles [rad], (azimuth, point_name), with the point coordinates x, y
     """
     df_points = df_points.reset_index(drop=True)
-    print(f'\n---> Computing horizons of {len(df_points)} points with {azimuth_inc} degree increments')
+    logger.info(f'\n---> Computing horizons of {len(df_points)} points with {azimuth_inc} degree increments')
     ds = open_dem(dem_file)
     azimuth = np.arange(-180 + azimuth_inc / 2, 180, azimuth_inc)  # center the azimuth in middle of the bin
     hor = horizon_rays(ds.elevation.values, ds.x.values, ds.y.values, df_points.x.values, df_points.y.values,

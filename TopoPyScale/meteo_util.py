@@ -1,6 +1,5 @@
 import numpy as np
 from numpy.random import default_rng
-import pdb
 
 var_era_plevel = {
     'temp': 't',

@@ -42,6 +42,8 @@ project:
     - Author 2
   date: Date at which the project is run  # metadata
   directory: /path/to/project/            # (optional) default: current working directory
+  verbose: True                           # (optional) progress messages in the terminal: True, False (warnings and errors only) or a level such as debug. Default True
+  log_file: True                          # (optional) also write the messages to outputs/logs/topopyscale_<date>.log (True), to a given path, or not (False). Default True
 
   # start and end date of the period of interest. The end day is included
   start: 2018-01-01
@@ -158,6 +160,8 @@ The file `config.yml` is parsed by TopoPyScale at the time the class `topoclass(
 | authors     | [S. Filhol]           | no       | list of strings | written as creator in the metadata of the files exported by `to_cryogrid()`, `to_crocus()`, `to_surfex()` and `to_musa()` |
 | date        | Nov 2021              | no       | string          | metadata: creation date of the downscaling. Not used by the code |
 | directory   | ./path_to_my_project/ | no       | string          | path where the downscaling project is located. Default: Python current working directory |
+| verbose     | True                  | no       | True, False, debug, info, warning | progress messages in the terminal (or notebook) as the run goes. False: warnings and errors only; debug: more detail. Default True. See [Messages and log file](#messages-and-log-file) |
+| log_file    | True                  | no       | True, False, path | write the messages, with time stamps, to `outputs/logs/topopyscale_<date>.log` (True), to the given file (relative to the project directory), or not (False). Python warnings are included. Default True |
 | start       | 2018-10-01            | yes      | %Y-%m-%d        | start date of the downscaling. ERA5 must cover it |
 | end         | 2018-12-31            | yes      | %Y-%m-%d        | end date of the downscaling, included: time steps run up to the last one of that day. ERA5 must cover it |
 | extent      | [60.8, 60.4, 7.1, 7.7] | no      | [latN, latS, lonW, lonE] | lat/lon box in degrees. The ERA5 download adds a 0.4° margin. If the DEM file does not exist, an interactive prompt offers to download one for this box. Default: extent of the DEM |
@@ -270,6 +274,18 @@ Klevavatnet,SN53480,60.7192,7.2085,402259.379226592,6732844.21093029
 
 This file is loaded in the `mp.toposub.df_centroids` dataframe. With `name_column: Name`, the points are named after the column `Name`.
 
+## Messages and log file
+
+TopoPyScale reports what it does through Python's `logging` module (logger `TopoPyScale`). By default the messages appear in the terminal or the notebook as the run goes, and `Topoclass` also writes them to `outputs/logs/topopyscale_<date>.log` with time stamps, together with Python warnings. `project.verbose: False` keeps only warnings and errors on screen; the log file still gets everything. Outside a `Topoclass` run, e.g. when calling `topo_export` functions directly:
+
+```python
+import TopoPyScale
+TopoPyScale.log.setup(verbose=False)                      # quiet
+TopoPyScale.log.setup(verbose='debug', logfile='run.log')  # more detail, also to a file
+```
+
+When `Topoclass` reads `config.yml`, it reports keys it does not read: keys of older versions (see below) with what replaced them, and unknown keys with the closest documented key, since a misspelled key would otherwise be read as empty.
+
 ## Updating an older `config.yml`
 
 Keys renamed or no longer read:
@@ -287,6 +303,9 @@ Keys renamed or no longer read:
 | `clean_up.delete_tmp_dirs` | `clean_up.rm_tmp_dirs` |
 | `climate.era5.rm_daily` | not read: there are no daily files (a message is printed) |
 | `climate.era5.cds_output_format` | not read: netcdf is downloaded (a message is printed for `grib`) |
+| `project.CPU_cores` | not read: `project.parallelization.setting.multicore.CPU_cores` |
+| `toposcale.pt_sampling_method` | not read: `toposcale.interpolation_method` |
+| `dem.dem_resol` | not read: the resolution is read from the DEM file |
 
 ## Parallelization
 

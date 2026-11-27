@@ -24,6 +24,9 @@ import xarray as xr
 
 from TopoPyScale import topo_export as te
 from TopoPyScale import topo_utils as tu
+import logging
+
+logger = logging.getLogger(__name__)
 
 N_BITS = 15  # packing precision of FSM netcdf outputs (int16): resolution = range / 32767
 FSM_OUTPUT_COLUMNS = ['year', 'month', 'day', 'hour', 'sd', 'scf', 'swe', 'tsurf',
@@ -91,7 +94,7 @@ def _run_fsm2oshd(fsm_exec, nam_file, keep_txt=False):
     if proc.returncode != 0 or not os.path.isfile(fout):
         msg = (proc.stderr or proc.stdout or '').strip()[-500:]
         return str(nam_file), f'exit code {proc.returncode}, output {fout} {"found" if os.path.isfile(fout) else "missing"}: {msg}'
-    print('Simulation done: ' + str(nam_file))
+    logger.info('Simulation done: ' + str(nam_file))
     to_netcdf(fout)
     if not keep_txt:
         os.remove(fout)
@@ -124,7 +127,7 @@ def fsm2oshd_sim_parallel(simulation_path='./fsm_sim',
     if shutil.which(exe) is None and not os.path.isfile(exe):
         raise FileNotFoundError(f'FSM executable {exe} not found')
 
-    print('---> Run FSM simulation in parallel')
+    logger.info('---> Run FSM simulation in parallel')
     p = Path(simulation_path)
     patterns = [fsm_forest_nam] + ([fsm_open_nam] if fsm_open_nam is not None else [])
     failed, nlst_all = [], []
@@ -137,14 +140,14 @@ def fsm2oshd_sim_parallel(simulation_path='./fsm_sim',
         results = tu.multicore_pooling(_run_fsm2oshd, zip([fsm_exec] * len(nlst), nlst, [keep_txt] * len(nlst)),
                                        n_cores)
         failed += [(nam, err) for nam, err in (results or []) if err is not None]
-        print(f'---> FSM2oshd simulations {pattern} finished.')
+        logger.info(f'---> FSM2oshd simulations {pattern} finished.')
 
     if failed:
         warnings.warn(f'{len(failed)} FSM2oshd simulations failed:\n' +
                       '\n'.join(f'  {nam}: {err}' for nam, err in failed))
 
     if delete_nlst_files:
-        print('---> Removing FSM simulation config files')
+        logger.info('---> Removing FSM simulation config files')
         for file in nlst_all:
             if file not in [nam for nam, _ in failed]:
                 os.remove(file)
@@ -162,7 +165,7 @@ def txt2ds(fname):
     '''
     df = read_pt_fsm2oshd(fname)
     point_ind = _point_index(fname)
-    print(f'---> Reading FSM data for point_ind = {point_ind}')
+    logger.info(f'---> Reading FSM data for point_ind = {point_ind}')
     ds = xr.Dataset({var: (['time'], df[var].values) for var in OUTPUT_ATTRS},
                     coords={
                         "point_ind": point_ind,
@@ -180,7 +183,7 @@ def _rename_output(fname, fout='fsm_outputs', n_digits=3, remove_file=False, com
     te.to_netcdf(ds, fname_out, complevel=complevel, n_bits=N_BITS)
     if remove_file and os.path.abspath(fname) != os.path.abspath(fname_out):
         os.remove(fname)
-    print(f'--> File {fname_out} saved')
+    logger.info(f'--> File {fname_out} saved')
     return fname_out
 
 
@@ -203,7 +206,7 @@ def output_to_ds(fname_pattern, complevel=9, remove_file=False, fout='fsm_output
     n = len(flist)
     out = tu.multicore_pooling(_rename_output, zip(flist, [fout] * n, [n_digits] * n, [remove_file] * n,
                                                    [complevel] * n), n_cores)
-    print('---> All fsm outputs stored as netcdf')
+    logger.info('---> All fsm outputs stored as netcdf')
     return out
 
 
@@ -232,7 +235,7 @@ def to_netcdf(fname_fsm_sim, complevel=9):
                 'date_created': dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')}
     fout = f"{str(fname_fsm_sim)[:-4]}.nc"
     te.to_netcdf(ds, fout, complevel=complevel, n_bits=N_BITS)
-    print(f"File {fout} saved")
+    logger.info(f"File {fout} saved")
     return fout
 
 
@@ -274,7 +277,7 @@ def _combine_open_forest(fname_df_forest='fsm_sim/df_forest.pckl',
     if remove_forest_open_file:
         os.remove(fname_open)
         os.remove(fname_forest)
-    print(f'--> File {fname_out} saved')
+    logger.info(f'--> File {fname_out} saved')
     return fname_out
 
 
@@ -308,7 +311,7 @@ def aggregate_all_open_forest(fname_df_forest='fsm_sim/df_forest.pckl',
                                    [n_digits] * n,
                                    [forest_threshold] * n),
                                n_cores)
-    print('---> All forest and open outputs combined')
+    logger.info('---> All forest and open outputs combined')
     return out
 
 

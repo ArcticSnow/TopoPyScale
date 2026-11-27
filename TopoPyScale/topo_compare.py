@@ -4,6 +4,9 @@ from scipy import stats
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
 
 def correct_trend(df,
                   reference_col='obs',
@@ -22,7 +25,7 @@ def correct_trend(df,
         dataframe (optional): corrected values
 
     """
-    print('---> Estimating linear detrending of target data')
+    logger.info('---> Estimating linear detrending of target data')
     reg = stats.linregress(df[target_col].values, df[reference_col].values)
 
     # Compute metrics
@@ -37,8 +40,8 @@ def correct_trend(df,
                                                                                      np.round(reg.pvalue,2),
                                                                                      RMSE,
                                                                                      bias)
-    print('=> Results <=')
-    print(tbox)
+    logger.info('=> Results <=')
+    logger.info(tbox)
     metrics = {'reg': reg, 'RMSE': RMSE, 'bias': bias, 'tbox': tbox}
 
     if apply_correction:

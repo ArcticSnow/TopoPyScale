@@ -32,7 +32,9 @@ import glob
 from munch import DefaultMunch
 
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 var_surf_name_google = {'geopotential_at_surface':'z',
@@ -66,10 +68,10 @@ class FetchERA5():
 
         if type(config) is DefaultMunch:
             self.config = config
-            print("---> Config loaded")
+            logger.info("---> Config loaded")
         elif type(config) is str:
             self.config = self.load_config(config_file=config)
-            print(f"---> Config from {config} loaded")
+            logger.info(f"---> Config from {config} loaded")
         else:
             raise ValueError('Cannot find config. Check path to config, or config is a Munch.DefaultMunch object.')
 
@@ -88,15 +90,14 @@ class FetchERA5():
             # downscaled outputs are rewritten
             shutil.rmtree(self.config.outputs.path / "downscaled", ignore_errors=True)
             os.makedirs(self.config.outputs.path / "downscaled", exist_ok=True)
-            print('---> Downscaled directory cleaned')
+            logger.info('---> Downscaled directory cleaned')
 
     @staticmethod
     def load_config(config_file):
-        try:
-            with open(config_file, 'r') as f:
-                return DefaultMunch.fromYAML(f)
-        except IOError:
-            print(f'ERROR: config file does not exist. \n\t Current file path: {config_file}\n\t Current working directory: {os.getcwd()}')
+        if not Path(config_file).is_file():
+            raise FileNotFoundError(f'Config file {config_file} not found (current directory: {os.getcwd()})')
+        with open(config_file, 'r') as f:
+            return DefaultMunch.fromYAML(f)
 
 
     def go_fetch(self, surf_plev='all'):
@@ -120,10 +121,10 @@ class FetchERA5():
         if source == 'gdex' and clim.realtime:
             raise ValueError('realtime needs ERA5T from the CDS: GDEX is updated months later')
         if clim.cds_output_format not in [None, {}, 'netcdf']:
-            print(f'     cds_output_format={clim.cds_output_format} ignored: netcdf is downloaded and written to '
+            logger.info(f'     cds_output_format={clim.cds_output_format} ignored: netcdf is downloaded and written to '
                   f'the zarr store')
         if clim.rm_daily:
-            print('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
+            logger.info('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
         extent = self.config.project.extent
         return fetch_era5_to_zarr(self.config.project.start, self.config.project.end, self.config.climate.path,
                                   latN=extent.get('latN') + 0.4, latS=extent.get('latS') - 0.4,
@@ -200,7 +201,7 @@ def climate_netcdf_dir(climate_path, plev_name='PLEV_*.nc'):
 
 def append_nc_to_zarr_region(ncfile, zarrstore, surf=False):
     ncfile = str(ncfile)
-    print(f"---> Appending {ncfile} to {zarrstore}")
+    logger.info(f"---> Appending {ncfile} to {zarrstore}")
     dp = xr.open_dataset(ncfile, chunks='auto')
     if surf:
         dp = dp.rename({'z':'z_surf'})
@@ -253,7 +254,7 @@ def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
 
     last_time = None
     for i, period in enumerate(periods):
-        print(f'---> Converting {plev_files[period].name} and {surf_files[period].name} to {pz.name}')
+        logger.info(f'---> Converting {plev_files[period].name} and {surf_files[period].name} to {pz.name}')
         with xr.open_dataset(plev_files[period]) as dp, xr.open_dataset(surf_files[period]) as du:
             dp = _standardize_era5(dp)
             du = _standardize_era5(du).rename({'z': 'z_surf'})
@@ -277,7 +278,7 @@ def netcdf_to_zarr(path_to_netcdfs='inputs/climate/yearly',
             ds.to_zarr(pz, mode='w', zarr_format=3, encoding=encoding)
         else:
             ds.to_zarr(pz, mode='a', append_dim='time')
-    print(f'---> {pz} written ({len(periods)} periods)')
+    logger.info(f'---> {pz} written ({len(periods)} periods)')
     return pz
 
 
@@ -307,7 +308,7 @@ def fetch_era5_google_from_zarr(eraDir, startDate, endDate, lonW, latS, lonE, la
     Function to download data from Zarr repository on Google Cloud Storage (https://github.com/google-research/arco-era5/tree/main)
 
     '''
-    print('!!!!!!!!!WORK IN PROGRESS!!!!!!!!!')
+    logger.info('!!!!!!!!!WORK IN PROGRESS!!!!!!!!!')
     ds = xr.open_zarr(
         bucket,
         chunks=None,
@@ -581,7 +582,7 @@ def _cds_fetch(task, raw_dir, variables, area, step, plevels, product, download_
             parts = [(task, variables[:k]), (task, variables[k:])]
         else:
             raise
-        print(f'     {stem.name}: over the CDS cost limit, split in two requests')
+        logger.info(f'     {stem.name}: over the CDS cost limit, split in two requests')
         return [f for i, (t, v) in enumerate(parts)
                 for f in _cds_fetch(t, raw_dir, v, area, step, plevels, product, download_format, verify, retries,
                                     retry_wait, stem=f'{stem}_{i}')]
@@ -678,11 +679,11 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
     tasks = ([es.Task('zsurf', 'zsurf', (pd.Timestamp(start).normalize(),))] if 'surf' in streams else []) \
         + make_tasks(start, end, streams)
     todo = store.missing(tasks)
-    print(f'---> ERA5 from {source.upper()} to {store.path}: {len(todo)} of {len(tasks)} downloads to do '
+    logger.info(f'---> ERA5 from {source.upper()} to {store.path}: {len(todo)} of {len(tasks)} downloads to do '
           f'(box N{area[0]} W{area[1]} S{area[2]} E{area[3]})')
     todo = es.import_legacy(store, todo, es.LegacyFiles(eraDir), area, plev_variables, surf_variables)
     if not todo:
-        print(f'===> {store.path.name} complete')
+        logger.info(f'===> {store.path.name} complete')
         return store.path
 
     raw = eraDir / 'raw'
@@ -690,7 +691,7 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
     if source == 'cds':
         n = int(n_workers or 8)
         if n > CDS_MAX_PARALLEL:
-            print(f'     download_threads={n}: the CDS runs {CDS_MAX_PARALLEL} requests of a user at a time and '
+            logger.info(f'     download_threads={n}: the CDS runs {CDS_MAX_PARALLEL} requests of a user at a time and '
                   f'lowers the priority of users sending more. Using {CDS_MAX_PARALLEL}')
             n = CDS_MAX_PARALLEL
         _cds_client(verify)   # a missing or wrong ~/.cdsapirc fails here, before any thread starts
@@ -703,13 +704,13 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
         root = gdex_root_path(gdex_root)
         if _is_remote(root) and any(t.stream == 'plev' for t in todo):
             n_days = sum(t.stream == 'plev' for t in todo) / es.STEP_HOURS[step]
-            print(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
+            logger.info(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
                   f'whatever the size of the domain. On NCAR systems they are read locally')
         fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
                                   retries=retries, retry_wait=retry_wait)
         es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
     shutil.rmtree(raw, ignore_errors=True)
-    print(f'===> {store.path.name} complete')
+    logger.info(f'===> {store.path.name} complete')
     return store.path
 
 
@@ -741,8 +742,8 @@ def return_last_fullday():
     # else:
     #     last_fullday_data = six_days_ago_utc
     last_fullday_data_str = six_days_ago_utc.strftime("%Y-%m-%d")
-    print("Current time (rounded down) in UTC:", current_time_utc_str)
-    print("Last full day ERA5T data in UTC:", last_fullday_data_str)
+    logger.info(f"Current time (rounded down) in UTC: {current_time_utc_str}")
+    logger.info(f"Last full day ERA5T data in UTC: {last_fullday_data_str}")
 
     return six_days_ago_utc
 
@@ -769,7 +770,7 @@ def unzip_file(file_path):
     if path != out:
         path.unlink()
     os.replace(tmp, out)
-    print(f'---> {path.name} unzipped to {out.name}')
+    logger.info(f'---> {path.name} unzipped to {out.name}')
     return str(out)
 
 
@@ -841,7 +842,7 @@ def era5_request_surf_snowmapper( today, latN, latS, lonE, lonW, eraDir, output_
          'download_format': 'unarchived'
          },
         target)
-    print(target + " complete")
+    logger.info(target + " complete")
 
 
 def era5_request_plev_snowmapper(today, latN, latS, lonE, lonW, eraDir, plevels, output_format= "netcdf"):
@@ -895,4 +896,4 @@ def era5_request_plev_snowmapper(today, latN, latS, lonE, lonW, eraDir, plevels,
             'download_format': 'unarchived'
         },
         target)
-    print(target + " complete")
+    logger.info(target + " complete")
