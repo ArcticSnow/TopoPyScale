@@ -234,7 +234,17 @@ class _Solar:
             return None
         out = sg.solar_block(self.terms, self.lon, self.lat, self.elev, t0, t1, method=self.method,
                              solar_constant=self.solar_constant)
-        return {v: out[v].T for v in ['zenith', 'azimuth', 'elevation', 'SWtoa']}
+        res = {v: out[v].T for v in ['zenith', 'azimuth', 'elevation', 'SWtoa']}
+        if self.terms['n_sub'] > 1:
+            # sun at the sub-steps of the window, as the downscaling shades the direct beam (sun_geocentric)
+            el, az = [], []
+            for k in range(self.terms['n_sub']):
+                sub = {v: np.asarray(self.terms['sub'][v])[t0:t1, k] for v in ('v', 'alpha', 'delta')}
+                e, a = sg.sun_geocentric(sub, self.lat, self.lon)
+                el.append(e.T)
+                az.append(a.T)
+            res['sub_elevation'], res['sub_azimuth'] = np.stack(el, axis=-1), np.stack(az, axis=-1)
+        return res
 
 
 def _tstep_seconds(ds):
@@ -431,6 +441,12 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0, pad=(0, 0)):
     # sun down at the previous, current and next evaluation times: down over the whole accumulation window,
     # whether the geometry is evaluated at the end or at the centre of the window
     prev_down, sun_down, next_down = _prev_cur_next(down_ext, pad, n)
+    # with the sun at the sub-steps of the window (solar geometry computed here), the tests of the direct beam
+    # follow the downscaling: no direct beam if the sun is down, or behind the horizon, at every sub-step
+    sub_el = sol.get('sub_elevation') if isinstance(sol, dict) else None
+    if sub_el is not None:
+        sub_el = sub_el[:, pad[0]:pad[0] + n]
+        sun_down = (sub_el <= 0).all(axis=-1)
     rows.append(_row('direct_with_sun_down', 'SW_direct', ((dr > tol) & sun_down).sum(), sun_down.sum(), 'error',
                      worst=np.nanmax(np.where(sun_down, dr, 0)), note='direct beam while sun below astronomical horizon'))
     night = sun_down & prev_down & next_down
@@ -453,11 +469,18 @@ def check_shortwave(ds, sol=None, terrain=None, tol=1.0, pad=(0, 0)):
                          worst=np.nanmax(excess), note='SW_direct > S0 * cos(illumination angle)'))
     if terrain is not None:
         hor = _horizon_at_sun(terrain, azi_ext)
-        if hor is not None:
-            # behind the horizon at the previous, current and next evaluation times: shaded over the whole
-            # accumulation window (the direct beam is scaled by the sunlit fraction of the window)
+        if hor is not None and sub_el is not None:
+            # behind the horizon (or below the astronomical horizon) at every sub-step of the window, with the sun up
+            # at one of them at least: the downscaling scales the direct beam by the sunlit fraction of the window
+            sub_az = sol['sub_azimuth'][:, pad[0]:pad[0] + n]
+            hor_sub = np.stack([_horizon_at_sun(terrain, sub_az[..., k]) for k in range(sub_az.shape[-1])], axis=-1)
+            shade = ((sub_el <= 0) | (hor_sub > sub_el)).all(axis=-1) & ~sun_down
+        elif hor is not None:
+            # behind the horizon at the previous, current and next evaluation times: an approximation of shaded over
+            # the whole accumulation window, which may miss the sun passing between two peaks
             prev_b, behind, next_b = _prev_cur_next(hor > elev_ext, pad, n)
             shade = behind & prev_b & next_b & ~sun_down
+        if hor is not None:
             rows.append(_row('direct_in_terrain_shadow', 'SW_direct', ((dr > tol) & shade).sum(), shade.sum(), 'error',
                              worst=np.nanmax(np.where(shade, dr, 0)),
                              note='direct beam while sun is behind the local horizon over the whole window'))

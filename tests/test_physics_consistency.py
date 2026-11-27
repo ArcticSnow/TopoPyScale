@@ -246,6 +246,31 @@ def test_shortwave_closure_beam_bound_and_night(summer, tmp_path):
         assert report[key] == 'pass', key
 
 
+def test_terrain_shadow_check_follows_the_substeps_of_the_window():
+    """The sun behind ridges at the centres of three windows, but in a gap between them during the middle one: a
+    direct beam there is right (the downscaling scales it by the sunlit fraction of the window). Behind the ridges
+    at every sub-step, it is an error."""
+    az_bins = np.arange(-165, 180, 30.)
+    terrain = pd.DataFrame({'slope': [0.], 'aspect': [0.], 'elevation': [1500.]})
+    for az in az_bins:
+        terrain[f'hori_azi_{az}'] = np.deg2rad(0. if az == 15 else 60.)   # gap between 0 and 30 deg
+    sun_el = np.deg2rad(30.)
+    centres = np.deg2rad([-5., 35., 75.])
+
+    def report(middle_substeps_deg, direct):
+        sub_az = np.deg2rad(np.array([np.linspace(-25, -5, 6), middle_substeps_deg, np.linspace(70, 90, 6)]))[None]
+        sol = {'elevation': np.full((1, 3), sun_el), 'azimuth': centres[None, :],
+               'zenith': np.full((1, 3), np.pi / 2 - sun_el), 'sub_elevation': np.full(sub_az.shape, sun_el),
+               'sub_azimuth': sub_az}
+        dr = np.array([[0., direct, 0.]])
+        ds = xr.Dataset({'SW_direct': (('point_name', 'time'), dr), 'SW_diffuse': (('point_name', 'time'), dr * 0 + 50),
+                         'SW': (('point_name', 'time'), dr + 50)}, coords={'point_name': ['001'], 'time': np.arange(3)})
+        return statuses(tc.check_shortwave(ds, sol, terrain))[('direct_in_terrain_shadow', 'SW_direct')]
+
+    assert report(np.linspace(5, 65, 6), 100.) == 'pass'      # sunlit through the gap during part of the window
+    assert report(np.linspace(35, 65, 6), 100.) == 'error'    # behind the ridges at every sub-step
+
+
 def test_no_direct_beam_behind_horizon(summer, tmp_path):
     row = syn.make_point(summer, elevation=1500.)
     ds, ds_solar = downscale(summer, row, tmp_path, horizon_deg=25.)

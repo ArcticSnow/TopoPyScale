@@ -244,6 +244,27 @@ def test_earlier_netcdf_files_are_reused(cds, tmp_path):
     assert 'r' not in ds
 
 
+def test_earlier_files_on_a_larger_box_with_more_levels_are_reused(cds, tmp_path):
+    """PLEV_*.nc and SURF_*.nc in the climate folder (as in the examples) holding more nodes and levels."""
+    n, w, s, e = es.snap_area(BOX['latN'], BOX['latS'], BOX['lonW'], BOX['lonE'])
+    lat, lon = es.grid_of([n + 0.5, w - 0.25, s - 0.25, e + 0.5])
+    levels = [1000, 950, 850, 700, 600]
+    times = pd.date_range('2020-01-30', '2020-02-02 23:00', freq='1h')
+    xr.Dataset({v: (('time', 'level', 'latitude', 'longitude'), value(v, times, levels, lat, lon))
+                for v in ['z', 't', 'u', 'v', 'q']},
+               coords={'time': times, 'level': levels, 'latitude': lat, 'longitude': lon}
+               ).to_netcdf(tmp_path / 'PLEV_202001.nc')
+    surf = xr.Dataset({v: (('time', 'latitude', 'longitude'), value(v, times, [0.], lat, lon)[:, 0])
+                       for v in INSTANT + ACCUM}, coords={'time': times, 'latitude': lat, 'longitude': lon})
+    surf['z'] = (('time', 'latitude', 'longitude'), np.broadcast_to(1000 * lat[None, :, None],
+                                                                    (times.size, lat.size, lon.size)))
+    surf.to_netcdf(tmp_path / 'SURF_202001.nc')
+    fake = cds(fail={k: 99 for k in ['zsurf', 'plev_2020-01', 'plev_2020-02', 'surf_2020-01', 'surf_2020-02']})
+    store = fetch(tmp_path)
+    assert fake.calls == []
+    check_store(store, '2020-01-30', '2020-02-02')
+
+
 def test_topoclass_refuses_a_store_with_gaps(cds, tmp_path):
     from munch import DefaultMunch
     from TopoPyScale.topoclass import Topoclass

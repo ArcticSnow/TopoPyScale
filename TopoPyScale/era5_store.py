@@ -582,11 +582,12 @@ class LegacyFiles:
             self._index[stream] = rows
         return self._index[stream]
 
-    def read(self, task, step, area, times=None):
+    def read(self, task, step, area, times=None, levels=None):
         """
         Data of the task from the files, standardized; None if the files do not hold all of it on the grid. Reads the
         variables of self.names ({'plev': [...], 'surf': [...]}, short names) at times (default: the time stamps of
-        the task).
+        the task), on the nodes of area and at levels (default: all levels of the files). Files covering a larger box
+        or more levels are read, as the files shipped with the examples.
         """
         stream = 'surf' if task.stream == 'zsurf' else task.stream
         files = self.index(stream)
@@ -626,9 +627,21 @@ class LegacyFiles:
         except (OSError, KeyError, ValueError, RuntimeError) as e:
             logger.info(f'     {task.key}: earlier netCDF files not used ({_first_line(e)})')
             return None
-        if not (_same(out.latitude.values, lat) and _same(out.longitude.values, lon)):
+        out = _select_nodes(out, lat, lon, levels)
+        if out is None or not (_same(out.latitude.values, lat) and _same(out.longitude.values, lon)):
             return None
         return out
+
+
+def _select_nodes(ds, lat, lon, levels=None):
+    """The nodes lat, lon (and the levels) of a dataset holding them, None if it lacks one."""
+    try:
+        ds = ds.sel(latitude=lat, longitude=lon, method='nearest', tolerance=1e-4)
+        if levels is not None and len(levels) and 'level' in ds.dims:
+            ds = ds.sel(level=[float(v) for v in levels], method='nearest', tolerance=1e-3)
+    except (KeyError, ValueError):
+        return None
+    return ds
 
 
 def import_legacy(store, tasks, legacy, area, plev_variables, surf_variables):
@@ -642,7 +655,7 @@ def import_legacy(store, tasks, legacy, area, plev_variables, surf_variables):
         return tasks
     left, n = [], 0
     for task in tasks:
-        ds = legacy.read(task, store.step, area, store.task_times(task))
+        ds = legacy.read(task, store.step, area, store.task_times(task), levels=store.request['levels'])
         if ds is not None:
             try:
                 store.write(task, ds)
