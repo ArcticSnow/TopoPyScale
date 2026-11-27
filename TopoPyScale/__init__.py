@@ -7,7 +7,7 @@ Example usage: See the documentation
 
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 from TopoPyScale import log  # noqa: E402
 

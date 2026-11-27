@@ -1,6 +1,8 @@
 # Release notes
 
-## 1.1.0 (in development)
+## 1.1.0
+
+The first release since 0.3.3. Version 1.0.0 was prepared but not published: when upgrading from 0.3, read the notes of 1.0.0 below too, then those of 1.1.0.
 
 TopoPyScale 1.1 keeps the memory of long runs bounded, sums the accumulated ERA5 fields at 3 h and 6 h time steps, and adds options for the radiation and the wind. It also reports what it does through a log, checks `config.yml`, and runs its tests on GitHub.
 
@@ -25,7 +27,7 @@ TopoPyScale 1.1 keeps the memory of long runs bounded, sums the accumulated ERA5
 5. **Example configs**: `project.CPU_cores` is not read, so the examples ran on one core. Use `project.parallelization.setting.multicore.CPU_cores`; the config check reports the key. The [examples](https://github.com/ArcticSnow/TopoPyScale_examples) are updated for 1.1.
 6. **Messages** go to the log instead of `print()`. Set `project.verbose: False` for warnings only.
 
-## 1.0.0
+## 1.0.0 (not published)
 
 TopoPyScale 1.0 checks the physics of its outputs, fixes the errors those checks found, and replaces the slow or fragile parts of the workflow.
 
