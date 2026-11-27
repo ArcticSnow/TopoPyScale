@@ -37,6 +37,7 @@ from TopoPyScale import topo_param as tp
 from TopoPyScale import topo_plot as tpl
 from TopoPyScale import topo_sub as ts
 from TopoPyScale import topo_scale_zarr as tz
+from TopoPyScale import wind as wnd
 from TopoPyScale import surface_effect as se
 from TopoPyScale import toposcale_core as core
 from TopoPyScale import topo_utils as tu
@@ -680,7 +681,10 @@ class Topoclass(object):
         variables = self.config.outputs.variables
         df = self.toposub.df_centroids
         surface = se.setup(df, self.config.toposcale.surface_effect, self.config.dem.filepath, self.config.dem.epsg)
-        if surface is not None and surface.get('weight') is not None:
+        wind = wnd.setup(df, self.config.toposcale.wind_downscaling, getattr(self.toposub, 'ds_param', None),
+                         per_cluster=(getattr(self.config.sampling, 'method', None) or 'toposub') == 'toposub',
+                         surface=surface)
+        if (surface is not None and surface.get('weight') is not None) or (wind is not None and 'curvature' in wind):
             df.to_pickle(self.config.outputs.path / self.config.outputs.file.df_centroids)
         cda = tz.ClimateDownscaler(
             era5_zarr_path=self._climate_store(),
@@ -709,7 +713,8 @@ class Topoclass(object):
             direct_diffuse=self.config.toposcale.direct_diffuse or 'empirical',
             lw_terrain_temperature=self.config.toposcale.LW_terrain_temperature or 'air',
             diffuse_model=self.config.toposcale.diffuse_model or 'isotropic',
-            terrain_albedo=self.config.toposcale.SW_terrain_albedo or 0.)
+            terrain_albedo=self.config.toposcale.SW_terrain_albedo or 0.,
+            wind=wind)
         n_core = self.config.project.parallelization.setting.multicore.CPU_cores or 1
         return cda.downscale(n_core=n_core)
 

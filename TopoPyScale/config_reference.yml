@@ -85,6 +85,12 @@ toposcale:
   LW_terrain_temperature: air             # (optional) temperature of the terrain emitting that longwave: air (air temperature at the point), fixed (273.15 K) or a value in K. Default air
   diffuse_model: isotropic                # (optional) sky diffuse on slopes: isotropic or hay_davies (circumsolar part from the sun direction). Default isotropic
   SW_terrain_albedo: 0                    # (optional) albedo of the surrounding terrain reflecting shortwave to the point (output SW_terrain). 0: off. Default 0
+  wind_downscaling:                       # (optional) wind options, applied to the pressure-level wind at the point. Default: none
+    surface_blend: 0                      # weight of the ERA5 10 m wind (fetched with the surface fields when > 0): 0 (off), a value in [0, 1], or surface_effect (terrain weight of surface_effect). Default 0
+    terrain: none                         # none or liston_elder (MicroMet slope and curvature factors). Default none
+    slope_weight: 0.58                    # (optional) MicroMet slope weight. Default 0.58
+    curvature_weight: 0.42                # (optional) MicroMet curvature weight. Default 0.42
+    curvature_length: 500                 # (optional) MicroMet curvature length scale [m]. Default 500
   physics_checks: True                    # (optional) run physics-consistency checks after downscaling: True (report only), 'warning' or 'error' (raise)
   point_block: 100                        # (optional) number of points downscaled together. Default 100
   time_block: 8760                        # (optional) number of time steps downscaled together. Default one year

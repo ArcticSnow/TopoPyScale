@@ -154,6 +154,8 @@ class ClimateDownscaler:
         diffuse_model (str): 'isotropic' (default) or 'hay_davies' (circumsolar part from the sun direction)
         terrain_albedo: albedo of the surrounding terrain reflecting shortwave to the point: 0 (default, off), a
             value, or a DataArray (point_name, time), e.g. snow albedo of a snow model. Adds the output SW_terrain
+        wind (dict): wind options from wind.setup() (None: pressure-level wind). Blending needs u10 and v10 in the
+            ERA5 store
     """
 
     def __init__(self,
@@ -184,7 +186,8 @@ class ClimateDownscaler:
                  direct_diffuse='empirical',
                  lw_terrain_temperature='air',
                  diffuse_model='isotropic',
-                 terrain_albedo=0.):
+                 terrain_albedo=0.,
+                 wind=None):
 
         store_name = store_name or 'down.zarr'
         if not str(store_name).endswith('.zarr'):
@@ -194,11 +197,18 @@ class ClimateDownscaler:
         self.direct_diffuse = direct_diffuse or 'empirical'
         if self.direct_diffuse not in DIRECT_DIFFUSE:
             raise ValueError(f'direct_diffuse {direct_diffuse} not supported, use {" or ".join(DIRECT_DIFFUSE)}')
-        self.surf_vars = SURF_VARS + (['fdir'] if self.direct_diffuse == 'era5' else [])
+        self.wind = wind
+        self.surf_vars = SURF_VARS + (['fdir'] if self.direct_diffuse == 'era5' else []) \
+            + (['u10', 'v10'] if wind is not None and wind.get('blend') is not None else [])
         missing = [v for v in PLEV_VARS + self.surf_vars if v not in self.ERA]
         if missing:
-            hint = (' (direct_diffuse: era5 needs the direct solar radiation: run get_era5() with '
-                    'toposcale.direct_diffuse: era5 to add it)' if missing == ['fdir'] else '')
+            hint = ''
+            if 'fdir' in missing:
+                hint += (' (direct_diffuse: era5 needs the direct solar radiation: run get_era5() with '
+                         'toposcale.direct_diffuse: era5 to add it)')
+            if 'u10' in missing or 'v10' in missing:
+                hint += (' (wind_downscaling.surface_blend needs the ERA5 10 m wind: run get_era5() with the option '
+                         'set to add it)')
             raise ValueError(f'Variables {missing} missing from the ERA5 store {era5_zarr_path}{hint}')
         self.ERA = self.ERA.sortby('level')  # level=-1 must be the lowest in altitude
         self.level_hpa = self.ERA.level.values.astype(float)
@@ -330,6 +340,12 @@ class ClimateDownscaler:
         self._time_index(pd.DatetimeIndex(da_.time.values), name)
         return da_.sel(time=self.tvec).transpose('time', 'point_name')
 
+    def _wind(self, p0, p1):
+        """Wind options of points p0:p1."""
+        if self.wind is None:
+            return None
+        return {k: (v[p0:p1] if k in ('blend', 'curvature') and v is not None else v) for k, v in self.wind.items()}
+
     def _radiation(self, p0, p1, t0, t1):
         """Radiation options of points p0:p1 and time steps t0:t1."""
         return {k: (np.asarray(v[t0:t1, p0:p1].values, dtype=float) if isinstance(v, xr.DataArray) else v)
@@ -367,6 +383,9 @@ class ClimateDownscaler:
                     'accumulation_hours': int(self.acc_hours),
                     'direct_diffuse': self.direct_diffuse,
                     'diffuse_model': self.radiation['diffuse_model'],
+                    'wind_surface_blend': ('none' if self.wind is None or self.wind.get('blend') is None
+                                           else f'{np.min(self.wind["blend"]):.2f} to {np.max(self.wind["blend"]):.2f}'),
+                    'wind_terrain': 'none' if self.wind is None else self.wind.get('terrain', 'none'),
                     'lw_terrain_temperature': (str(self.radiation['lw_terrain_temperature'])
                                                if not isinstance(self.radiation['lw_terrain_temperature'],
                                                                  xr.DataArray) else 'given (point_name, time)'),
@@ -499,7 +518,7 @@ class ClimateDownscaler:
         out = core.downscale_block(plev, surf, self.level_hpa, self.tvec[t0:t1].month.values, points, solar, shade,
                                    self.tstep_h, self.lw_terrain_flag, self.precip_lapse_rate_flag,
                                    self.precip_lapse_rate_max_factor, surface, acc_hours=self.acc_hours,
-                                   radiation=self._radiation(p0, p1, t0, t1))
+                                   radiation=self._radiation(p0, p1, t0, t1), wind=self._wind(p0, p1))
         group = zarr.open_group(str(self.store), mode='r+')
         for v in self.varout:
             group[v][p0:p1, t0:t1] = out[v].T.astype('float32')

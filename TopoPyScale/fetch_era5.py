@@ -25,6 +25,7 @@ except ImportError:
 import cdsapi, os
 from datetime import datetime, timedelta, timezone
 from TopoPyScale import era5_store as es
+from TopoPyScale import wind as wd
 from pathlib import Path
 import zipfile
 import shutil
@@ -127,11 +128,15 @@ class FetchERA5():
             logger.info('     rm_daily ignored: ERA5 is written to the zarr store, without daily files')
         extent = self.config.project.extent
         surf_variables = self.varoi_surf
-        if (getattr(self.config.toposcale, 'direct_diffuse', None) or 'empirical') == 'era5':
-            # direct solar radiation for the direct/diffuse split
+        toposcale = self.config.toposcale or {}
+        extra = []
+        if (getattr(toposcale, 'direct_diffuse', None) or 'empirical') == 'era5':
+            extra.append(es.FDIR)             # direct solar radiation for the direct/diffuse split
+        if wd.needs_surface_wind(getattr(toposcale, 'wind_downscaling', None)):
+            extra += [wd.U10, wd.V10]         # 10 m wind for the blending of the wind
+        if extra:
             surf_variables = list(surf_variables or es.SURF_VARIABLES)
-            if es.FDIR not in surf_variables:
-                surf_variables.append(es.FDIR)
+            surf_variables += [v for v in extra if v not in surf_variables]
         return fetch_era5_to_zarr(self.config.project.start, self.config.project.end, self.config.climate.path,
                                   latN=extent.get('latN') + 0.4, latS=extent.get('latS') - 0.4,
                                   lonE=extent.get('lonE') + 0.4, lonW=extent.get('lonW') - 0.4,
@@ -358,6 +363,7 @@ GDEX_SURF_AN = {'t2m': ('2t', '128_167_2t.ll025sc'), 'd2m': ('2d', '128_168_2d.l
 # accumulations over the hour ending at the valid time (forecast start + step, steps 1 to 12), as on the CDS
 GDEX_SURF_ACCUMU = {'ssrd': '128_169_ssrd.ll025sc', 'strd': '128_175_strd.ll025sc', 'tp': '128_228_tp.ll025sc'}
 GDEX_FDIR = {'fdir': '228_021_fdir.ll025sc'}   # direct solar radiation, read when requested
+GDEX_WIND10 = {'u10': ('10u', '128_165_10u.ll025sc'), 'v10': ('10v', '128_166_10v.ll025sc')}   # when requested
 GDEX_INVARIANT_Z = 'e5.oper.invariant/197901/e5.oper.invariant.128_129_z.ll025sc.1979010100_1979010100.nc'
 
 
@@ -469,12 +475,13 @@ def _gdex_surf_an(root, short, stem, times, box):
     return _gdex_load(path, lambda d: _gdex_box(d.sel(time=times), *box))
 
 
-def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1, accumu=None):
+def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1, accumu=None, analysis=None):
     """
     Write the file of one day and stream ('plev' or 'surf') to target, with the variables and layout of the CDS
     files. The surface geopotential z_surf is added to surface files unless None. With acc_hours > 1, the accumulated
     fields are read at every hour of the windows of acc_hours hours ending at the time steps (from the previous day),
-    to be summed by era5_store. accumu: accumulated fields {name: GDEX stem}, default GDEX_SURF_ACCUMU.
+    to be summed by era5_store. accumu: accumulated fields {name: GDEX stem}, default GDEX_SURF_ACCUMU; analysis:
+    instantaneous surface fields {name: (short name, GDEX stem)}, default GDEX_SURF_AN.
     """
     times = pd.date_range(day, periods=24, freq='1h')[::int(pd.Timedelta(step) / pd.Timedelta('1h'))]
     acc_times = times if acc_hours == 1 else pd.DatetimeIndex(np.unique(es.window_hours(times, acc_hours).ravel()))
@@ -486,7 +493,8 @@ def _gdex_day(root, kind, day, step, box, plevels, z_surf, target, acc_hours=1, 
             out[name] = _gdex_load(path, lambda d: _gdex_box(d.sel(time=times, level=list(plevels)), *box))
         ds = xr.merge([v.rename(k) for k, v in out.items()], join='exact').sortby('level')
     else:
-        out = {name: _gdex_surf_an(root, short, stem, times, box) for name, (short, stem) in GDEX_SURF_AN.items()}
+        out = {name: _gdex_surf_an(root, short, stem, times, box)
+               for name, (short, stem) in (analysis or GDEX_SURF_AN).items()}
         out.update({name: _gdex_accumu(root, stem, acc_times, box)
                     for name, stem in (accumu or GDEX_SURF_ACCUMU).items()})
         if z_surf is not None:
@@ -622,7 +630,8 @@ def _cds_fetch_task(task, plev_variables, surf_variables, acc_hours=1, **kwargs)
     return files
 
 
-def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, acc_hours=1, accumu=None):
+def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, acc_hours=1, accumu=None,
+                analysis=None):
     """Read a task from GDEX and write it to raw_dir (runs in a spawned process, HDF5 reads hold a global lock)."""
     target = Path(raw_dir) / f'{task.key}.nc'
     if target.is_file():
@@ -633,7 +642,7 @@ def _gdex_fetch(task, raw_dir, root, area, step, plevels, retries, retry_wait, a
     def get():
         if task.stream != 'zsurf':
             return Path(_gdex_day(root, task.stream, task.days[0], step, box, plevels, None, target, acc_hours,
-                                  accumu))
+                                  accumu, analysis))
         z = _gdex_load(f'{root}/{GDEX_INVARIANT_Z}',
                        lambda d: _gdex_box(d.isel(time=0, drop=True) if 'time' in d.dims else d, *box))
         tmp = Path(f'{target}.part')
@@ -695,10 +704,10 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
         if product not in [None, 'reanalysis']:
             raise ValueError(f'GDEX only holds the ERA5 reanalysis, not {product}')
         if (plev_variables and list(plev_variables) != es.PLEV_VARIABLES) or \
-                (surf_variables and [v for v in surf_variables if v not in ('geopotential', es.FDIR)]
-                 != es.SURF_VARIABLES):
-            raise ValueError('GDEX gives the variables of the downscaling only (and the direct solar radiation): '
-                             'leave varoi_plev and varoi_surf empty')
+                (surf_variables and [v for v in surf_variables
+                                     if v not in ('geopotential', es.FDIR, wd.U10, wd.V10)] != es.SURF_VARIABLES):
+            raise ValueError('GDEX gives the variables of the downscaling only (and the direct solar radiation and 10 m '
+                             'wind of its options): leave varoi_plev and varoi_surf empty')
     area = es.snap_area(latN, latS, lonW, lonE)
     plev_variables = list(plev_variables or es.PLEV_VARIABLES)
     # the surface geopotential is static: fetched once, not with every month
@@ -746,8 +755,10 @@ def fetch_era5_to_zarr(start, end, eraDir, latN, latS, lonE, lonW, step='1h', pl
             logger.info(f'     Pressure levels are stored as global hourly fields: about {5 * n_days:.0f} GB to transfer '
                   f'whatever the size of the domain. On NCAR systems they are read locally')
         accumu = {**GDEX_SURF_ACCUMU, **(GDEX_FDIR if es.FDIR in surf_variables else {})}
+        analysis = {**GDEX_SURF_AN, **(GDEX_WIND10 if wd.U10 in surf_variables else {})}
         fetch = functools.partial(_gdex_fetch, raw_dir=raw, root=root, area=area, step=step, plevels=plevels,
-                                  retries=retries, retry_wait=retry_wait, acc_hours=acc_hours, accumu=accumu)
+                                  retries=retries, retry_wait=retry_wait, acc_hours=acc_hours, accumu=accumu,
+                                  analysis=analysis)
         es.run(store, todo, fetch, n_workers=n_workers or 4, processes=True)
     shutil.rmtree(raw, ignore_errors=True)
     logger.info(f'===> {store.path.name} complete')

@@ -309,6 +309,33 @@ def wind_speed_direction(u, v):
     return np.sqrt(u ** 2 + v ** 2), np.mod(np.arctan2(-u, -v), 2 * np.pi)
 
 
+def wind_components(ws, wd):
+    """u, v [m s-1] of a wind of speed ws blowing from the direction wd (clockwise from north, rad)."""
+    return -ws * np.sin(wd), -ws * np.cos(wd)
+
+
+def wind_terrain(u, v, slope, aspect, curvature, slope_scale, slope_weight=0.58, curvature_weight=0.42):
+    """
+    Wind weighting and diverting factors of MicroMet (Liston and Elder, 2006, eqs. 15-19).
+
+    Args:
+        u, v (array): wind [m s-1], (time, point)
+        slope, aspect (array): [rad], (point,), aspect 0 = south, positive towards east (TopoPyScale convention)
+        curvature (array): terrain curvature scaled to [-0.5, 0.5] over the DEM, (point,)
+        slope_scale (float): twice the steepest slope of the DEM [rad], scaling the slope in the wind direction
+        slope_weight, curvature_weight (float): gs and gc
+
+    Returns:
+        u, v (array): wind after the terrain modification, (time, point)
+    """
+    ws, wd = wind_speed_direction(u, v)
+    xi = np.pi - np.asarray(aspect, dtype=float)    # azimuth the slope faces, clockwise from north
+    omega_s = np.asarray(slope, dtype=float) * np.cos(wd - xi) / slope_scale if slope_scale > 0 else 0. * wd
+    weight = np.maximum(1 + slope_weight * omega_s + curvature_weight * np.asarray(curvature, dtype=float), 0.)
+    wd = wd - 0.5 * omega_s * np.sin(2 * (xi - wd))
+    return wind_components(weight * ws, wd)
+
+
 def precipitation(tp_m, elev_diff, months, tstep_h, lapse_rate_flag, max_factor=PRECIP_LAPSE_MAX_FACTOR,
                   acc_hours=1, latitude=None):
     """
@@ -441,7 +468,7 @@ def shortwave(ssrd, sp, p, solar, slope, aspect, svf, shade, acc_seconds=3600., 
 # ---------------------------------------------------------------------------------------------------------------------
 def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h, lw_terrain_flag,
                     precip_lapse_rate_flag, precip_lapse_rate_max_factor=PRECIP_LAPSE_MAX_FACTOR, surface=None,
-                    acc_hours=1, radiation=None):
+                    acc_hours=1, radiation=None, wind=None):
     """
     Downscale one block of time steps for a set of points.
 
@@ -465,6 +492,9 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
             point, 'fixed': 273.15 K, a value [K], or an array (time, point)), 'diffuse_model' ('isotropic' or
             'hay_davies'), 'albedo' (of the surrounding terrain, scalar or (time, point); 0: no reflection).
             Default: fixed terrain temperature, isotropic diffuse, no reflection
+        wind (dict): wind options (wind.setup): 'blend' (point,) weight of the ERA5 10 m wind surf['u10'],
+            surf['v10']; 'terrain' 'liston_elder' with 'curvature' (point,), 'slope_scale', 'slope_weight',
+            'curvature_weight'. None: pressure-level wind
 
     Returns:
         dict of (time, point) arrays: t, q, u, v, p, ws, wd, tp, precip_lapse_rate, w, vp, cse, LW,
@@ -483,6 +513,15 @@ def downscale_block(plev, surf, level_hpa, months, points, solar, shade, tstep_h
                                                     surface['weight'], beta, surface.get('dewpoint', True))
             if surface.get('lw_consistent', True):
                 t_lw, q_lw = out['t'], out['q']
+    if wind is not None:
+        if wind.get('blend') is not None:
+            w = np.asarray(wind['blend'], dtype=float)[None, :]
+            out['u'] = out['u'] + w * (surf['u10'] - out['u'])
+            out['v'] = out['v'] + w * (surf['v10'] - out['v'])
+        if wind.get('terrain') == 'liston_elder':
+            out['u'], out['v'] = wind_terrain(out['u'], out['v'], points['slope'], points['aspect'],
+                                              wind['curvature'], wind['slope_scale'], wind['slope_weight'],
+                                              wind['curvature_weight'])
     out['ws'], out['wd'] = wind_speed_direction(out['u'], out['v'])
     out['tp'], out['precip_lapse_rate'] = precipitation(surf['tp'], elev[None, :] - surf['z_surf'] / G, months,
                                                         tstep_h, precip_lapse_rate_flag, precip_lapse_rate_max_factor,

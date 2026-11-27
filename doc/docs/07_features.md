@@ -149,6 +149,16 @@ The terrain around a point fills the part of its view that the sky does not, 1 �
 **Shortwave.** With `toposcale.SW_terrain_albedo` above 0, the terrain reflects the global radiation of a level surface at the point (the direct beam at the elevation of the point, unshaded, plus the grid diffuse) with that albedo: SW_terrain = α (1 − svf) (B_flat + D_grid). It is added to `SW_diffuse` and stored as `SW_terrain`. It is largest in deep valleys and on steep slopes facing bright slopes: with α = 0.8 (fresh snow), svf = 0.7 and 500 W m⁻², it adds 120 W m⁻². `ClimateDownscaler` also takes a DataArray (point_name, time) of albedos, the hook for the albedo of a snow model.
 
 
+## Wind
+
+TopoSCALE takes the wind of the pressure levels at the elevation of the point: free-atmosphere wind, without the drag of the surface. In valleys it is much too strong: at Davos (1594 m, January 2020) the downscaled mean wind speed is 3.1 m s⁻¹ against 1.1 m s⁻¹ measured, while at Weissfluhjoch (2691 m, a summit) it is 5.6 against 5.2. `toposcale.wind_downscaling` offers two options, alone or together:
+
+- `surface_blend`: the wind is blended with the ERA5 10 m wind interpolated to the point, u = u_pl + w (u10 − u_pl) (and the same for v), with w a constant in [0, 1] or `surface_effect`, the terrain weight of the [surface-effect correction](#surface-effect-correction-of-air-temperature) clipped to [0, 1]: points coupled to the ERA5 surface (valleys) get its wind, exposed points (ridges) keep the free-atmosphere wind. Using the temperature weight for the wind is an assumption of TopoPyScale, not a published method. `get_era5()` fetches the 10 m wind with the surface fields when the option is set.
+- `terrain: liston_elder`: the wind weighting and diverting factors of MicroMet (Liston and Elder, 2006), applied after the blending. The speed is multiplied by 1 + γs Ωs + γc Ωc, with Ωs = β cos(θ − ξ) the slope in the direction the wind comes from (β slope, ξ azimuth the slope faces, θ wind direction) and Ωc the curvature of the terrain over the length η (`curvature_length`, default 500 m), each scaled to [−0.5, 0.5] over the DEM (by twice the steepest slope and twice the largest absolute curvature); γs = 0.58 and γc = 0.42 (`slope_weight`, `curvature_weight`). The direction turns by −0.5 Ωs sin(2(ξ − θ)) (Ryan, 1977). The curvature of a cluster is the mean over its cells, the one of a point the value of its cell; it is stored in `df_centroids` as `wind_curvature`. The factors stay within about ±30 %: at Davos the valley wind decreases by 2 % only, and the summit wind of Weissfluhjoch increases by 6 %.
+
+The terrain parameterization of Helbig et al. (2017, Laplacian of the terrain and mean square slope) is not implemented yet.
+
+
 ## Slope, aspect and sky view factor
 
 `mp.compute_dem_param()` computes the elevation, slope, aspect and sky view factor of every DEM cell and saves them to `outputs/ds_param.nc`. An existing `ds_param.nc` is loaded as is: delete it to recompute it (files computed with topocalc by earlier versions differ by about 0.003 in svf, see below).
